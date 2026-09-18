@@ -1,0 +1,21 @@
+---
+description: Payment confirmation must use verification/webhooks, amount checks, and idempotency
+alwaysApply: true
+---
+
+# Payment security
+
+- Never mark payment successful based solely on a frontend return URL.
+- Confirm success via webhook and/or server-side payment verification (Bachs).
+- Verify amount, currency (`NGN`), transaction reference, and booking before `Payment → SUCCESS` and `Booking → CONFIRMED`.
+- Implement idempotency: the same webhook/reference must not double-confirm or double-charge.
+
+```ts
+// ❌ BAD — trust the return-URL query string
+if (query.status === "success") confirmBooking(id);
+
+// ✅ GOOD — verify with the provider, then persist once
+const result = await payments.verify({ reference, bookingId });
+if (alreadyProcessed(reference)) return;
+assertAmountAndCurrency(result, payment);
+```

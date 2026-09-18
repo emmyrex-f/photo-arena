@@ -1,0 +1,40 @@
+---
+description: Project Sanctum — desk identity, owner vs admin access, server-side authorization
+alwaysApply: true
+---
+
+# Project Sanctum
+
+Desk access is decided by **which account authenticated**, not by hidden UI and not by JWT claims.
+
+## Identity
+
+- There is **one studio login email** (the active OWNER email). The login form does not accept another address.
+- The **password** selects the person: owner password → full desk; that admin’s password → only the areas stored on that admin.
+- Passwords must be unique across active desk users so the password cannot match two people.
+- Do not log passwords. Do not print Bachs keys, JWT secrets, or `.env` files.
+
+```ts
+// ❌ BAD — trust the client, or accept any email
+request.user.permissions = dto.permissions;
+await login(dto.email, dto.password); // any staff email
+
+// ✅ GOOD — one desk email; password selects the user; access loaded from DB
+assert.equal(dto.email, owner.email);
+const user = matchActiveUserByPassword(dto.password); // owner wins if it matches
+request.user = loadRoleAndPermissionsFromDb(user.id);
+```
+
+## Authorization
+
+- JWT may carry `sub` and `tokenVersion` only. Ignore role/permission claims inside the token.
+- Reload `role`, `isActive`, `permissions`, and `tokenVersion` from the database on every authenticated request.
+- OWNER always has full access. ADMIN is limited to `permissions` (`*` = full). Hidden nav is not security.
+- Changing an admin’s access or password must bump `tokenVersion` so old sessions die.
+- OWNER-only actions stay OWNER-only (create/edit/delete desk users). Admins cannot grant themselves access.
+
+## Do not
+
+- Trust frontend role, permission checkboxes, or sessionStorage for API authorization.
+- Return different error text for “unknown email” vs “wrong password”.
+- Commit `.env` files or payment secrets.

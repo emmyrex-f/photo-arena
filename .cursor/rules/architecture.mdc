@@ -1,0 +1,22 @@
+---
+description: Modular architecture — keep frontend, backend, and database responsibilities separate
+alwaysApply: true
+---
+
+# Architecture
+
+Use modular architecture. Keep frontend, backend, and database responsibilities separate.
+
+- React pages and components render UI and call APIs. They do not own domain rules.
+- NestJS services are the source of truth for pricing, availability, and booking status.
+- Prisma/PostgreSQL persist data. Do not encode booking or payment rules in the schema alone.
+- Do not place business logic in React components (no price math, slot occupancy, hold expiry, or status transitions in the UI).
+- Display server-returned amounts, slots, and statuses. Never recompute them on the client for charging or confirmation.
+
+```ts
+// ❌ BAD — React deciding the payable amount
+const payable = pkg.priceKobo * 0.95;
+
+// ✅ GOOD — use the amount the API returned
+const payable = hold.amountKobo;
+```

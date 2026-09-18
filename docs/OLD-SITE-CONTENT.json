@@ -1,0 +1,361 @@
+{
+  "_source": "photo arena old/index_27.html",
+  "_extracted": "2026-09-13",
+  "_note": "Verbatim prices and copy for seeding. Prices are provisional (D-19). All amounts are NGN naira — convert to kobo (*100) in seed. Do not invent prices.",
+  "sessions": [
+    {
+      "title": "Personal / Birthday Shoots",
+      "slug": "personal-birthday",
+      "kind": "SESSION",
+      "tagline": "Celebrate in style — solo or with your crew",
+      "fromBadge": "From ₦20,000",
+      "tiers": [
+        { "durationMins": 15, "price": 20000, "includes": "1 outfit · 1 backdrop · 3 photos" },
+        { "durationMins": 30, "price": 40000, "includes": "2 outfits · 2 backdrops · 8 photos" },
+        { "durationMins": 60, "price": 55000, "includes": "3 outfits · 3 backdrops · 10 photos" },
+        { "durationMins": 90, "price": 70000, "includes": "4 outfits · 4 backdrops · 14 photos" }
+      ]
+    },
+    {
+      "title": "Pre-Wedding / Couples",
+      "slug": "pre-wedding",
+      "kind": "SESSION",
+      "tagline": "Tell your love story before the big day",
+      "fromBadge": "From ₦40,000",
+      "tiers": [
+        { "durationMins": 30, "price": 40000, "includes": "1 outfit · 3 photos" },
+        { "durationMins": 60, "price": 60000, "includes": "2 outfits · 8 photos" },
+        { "durationMins": 90, "price": 70000, "includes": "3 outfits · 12 photos" },
+        { "durationMins": 120, "price": 90000, "includes": "4 outfits · 15 photos" }
+      ]
+    },
+    {
+      "title": "Family Shoots",
+      "slug": "family",
+      "kind": "SESSION",
+      "tagline": "Timeless portraits for the whole family",
+      "fromBadge": "From ₦40,000",
+      "tiers": [
+        { "durationMins": 30, "price": 40000, "includes": "1 outfit · 5 photos" },
+        { "durationMins": 60, "price": 60000, "includes": "2 outfits · 8 photos" },
+        { "durationMins": 90, "price": 80000, "includes": "3 outfits · 14 photos" }
+      ]
+    },
+    {
+      "title": "Corporate Headshots",
+      "slug": "corporate",
+      "kind": "SESSION",
+      "tagline": "Sharp, professional — make your first impression count",
+      "fromBadge": "From ₦25,000",
+      "tiers": [
+        { "durationMins": 15, "price": 25000, "includes": "1 outfit · 1 backdrop · 3 photos" },
+        { "durationMins": 30, "price": 50000, "includes": "2 outfits · 2 backdrops · 8 photos" },
+        { "durationMins": 60, "price": 69000, "includes": "3 outfits · 3 backdrops · 10 photos" },
+        { "durationMins": 90, "price": 88000, "includes": "4 outfits · 4 backdrops · 14 photos" }
+      ]
+    },
+    {
+      "title": "Maternity Shoots",
+      "slug": "maternity",
+      "kind": "SESSION",
+      "tagline": "Celebrate the beauty of new life",
+      "fromBadge": "From ₦25,000",
+      "tiers": [
+        { "durationMins": 30, "price": 25000, "includes": "1 outfit · 1 theme · 4 photos (premium retouch)" },
+        { "durationMins": 60, "price": 40000, "includes": "2 outfits · 2 backdrops · 8 photos (premium retouch)" },
+        { "durationMins": 120, "price": 60000, "includes": "3 outfits · 3 backdrops · 15 photos (premium retouch)" }
+      ]
+    },
+    {
+      "title": "Bundle of Joy · 0–1 Year",
+      "slug": "bundle-of-joy-0-1",
+      "kind": "SESSION",
+      "tagline": "Precious newborn & infant sessions",
+      "fromBadge": "From ₦40,000",
+      "tiers": [
+        { "durationMins": 60, "price": 40000, "includes": "1 outfit · 1 theme · 4 photos (premium retouch)" },
+        { "durationMins": 120, "price": 60000, "includes": "2 outfits · 2 themes · 10 photos (premium retouch)" },
+        { "durationMins": 180, "price": 80000, "includes": "3 outfits · 3 themes · 14 photos (premium retouch)", "note": "Siblings/parent +₦5,000" }
+      ]
+    },
+    {
+      "title": "Bundle of Joy · 2–6 Years",
+      "slug": "bundle-of-joy-2-6",
+      "kind": "SESSION",
+      "tagline": "Playful sessions for toddlers & young children",
+      "fromBadge": "From ₦30,000",
+      "tiers": [
+        { "durationMins": 30, "price": 30000, "includes": "1 outfit · 1 theme · 4 photos" },
+        { "durationMins": 60, "price": 50000, "includes": "2 outfits · 2 themes · 8 photos" },
+        { "durationMins": 120, "price": 65000, "includes": "3 outfits · 3 themes · 12 photos" },
+        { "durationMins": 180, "price": 75000, "includes": "4 outfits · 4 themes · 16 photos", "note": "Siblings/parent +₦5,000" }
+      ]
+    },
+    {
+      "title": "Teens Shoot · 7–15 Years",
+      "slug": "teens",
+      "kind": "SESSION",
+      "tagline": "Confidence, style & personality — captured",
+      "fromBadge": "From ₦25,000",
+      "tiers": [
+        { "durationMins": 30, "price": 25000, "includes": "1 outfit · 1 themed setup · 4 photos" },
+        { "durationMins": 45, "price": 45000, "includes": "2 outfits · 2 themed setups · 8 photos" },
+        { "durationMins": 90, "price": 60000, "includes": "3 outfits · 3 themed setups · 12 photos" }
+      ]
+    }
+  ],
+  "aestheticSets": [
+    {
+      "title": "The Curated Wall",
+      "slug": "curated-wall",
+      "kind": "SET",
+      "description": "A sculptural white niche wall — dramatic & editorial",
+      "tiers": [
+        { "durationMins": 15, "price": 30000, "includes": "1 outfit · 4 photos" },
+        { "durationMins": 30, "price": 55000, "includes": "2 outfits · 8 photos" }
+      ]
+    },
+    {
+      "title": "The Curated Cove",
+      "slug": "curated-cove",
+      "kind": "SET",
+      "description": "Arched alcoves & soft lighting — calm, luxurious",
+      "tiers": [
+        { "durationMins": 15, "price": 30000, "includes": "1 outfit · 4 photos" },
+        { "durationMins": 30, "price": 55000, "includes": "2 outfits · 8 photos" }
+      ]
+    },
+    {
+      "title": "The Arched Retreat",
+      "slug": "arched-retreat",
+      "kind": "SET",
+      "description": "Warm golden arches — intimate & dreamy",
+      "tiers": [
+        { "durationMins": 15, "price": 30000, "includes": "1 outfit · 4 photos" },
+        { "durationMins": 30, "price": 45000, "includes": "2 outfits · 8 photos" }
+      ]
+    },
+    {
+      "title": "Aurora Wave",
+      "slug": "aurora-wave",
+      "kind": "SET",
+      "description": "LED-lit floating shelves on a cloud-blue wall",
+      "tiers": [
+        { "durationMins": 15, "price": 25000, "includes": "1 outfit · 4 photos" },
+        { "durationMins": 30, "price": 55000, "includes": "2 outfits · 8 photos" }
+      ]
+    }
+  ],
+  "booths": [
+    {
+      "title": "Swing Attitude",
+      "slug": "booth-swing-attitude",
+      "kind": "BOOTH",
+      "description": "Orange swing booth with cloud canopy",
+      "tiers": [
+        { "durationMins": 15, "price": 15000, "includes": "Booth hire · bring your own photographer or phone" },
+        { "durationMins": 30, "price": 25000, "includes": "Booth hire · bring your own photographer or phone" },
+        { "durationMins": 60, "price": 45000, "includes": "Booth hire · bring your own photographer or phone" }
+      ]
+    },
+    {
+      "title": "Odogwu Vibes",
+      "slug": "booth-odogwu-vibes",
+      "kind": "BOOTH",
+      "description": "Bold typographic backdrop — boss energy",
+      "tiers": [
+        { "durationMins": 15, "price": 15000, "includes": "Booth hire · bring your own photographer or phone" },
+        { "durationMins": 30, "price": 25000, "includes": "Booth hire · bring your own photographer or phone" },
+        { "durationMins": 60, "price": 45000, "includes": "Booth hire · bring your own photographer or phone" }
+      ]
+    },
+    {
+      "title": "Let's Party Booth",
+      "slug": "booth-lets-party",
+      "kind": "BOOTH",
+      "description": "Neon nights, vinyl walls & checkerboard floor",
+      "tiers": [
+        { "durationMins": 15, "price": 15000, "includes": "Booth hire · bring your own photographer or phone" },
+        { "durationMins": 30, "price": 25000, "includes": "Booth hire · bring your own photographer or phone" },
+        { "durationMins": 60, "price": 45000, "includes": "Booth hire · bring your own photographer or phone" }
+      ]
+    },
+    {
+      "title": "Telephone Booth",
+      "slug": "booth-telephone",
+      "kind": "BOOTH",
+      "description": "Iconic cream telephone box — timeless & fun",
+      "tiers": [
+        { "durationMins": 15, "price": 15000, "includes": "Booth hire · bring your own photographer or phone" },
+        { "durationMins": 30, "price": 25000, "includes": "Booth hire · bring your own photographer or phone" },
+        { "durationMins": 60, "price": 45000, "includes": "Booth hire · bring your own photographer or phone" }
+      ]
+    }
+  ],
+  "backdropRentals": [
+    {
+      "title": "The Curated Wall (Rental)",
+      "slug": "backdrop-curated-wall",
+      "kind": "BACKDROP",
+      "description": "Premium sculptural niche wall rental",
+      "tiers": [
+        { "durationMins": 20, "price": 25000, "includes": "Backdrop hire · bring your own photographer or phone" },
+        { "durationMins": 60, "price": 50000, "includes": "Backdrop hire · bring your own photographer or phone" }
+      ]
+    },
+    {
+      "title": "The Curated Cove (Rental)",
+      "slug": "backdrop-curated-cove",
+      "kind": "BACKDROP",
+      "description": "Arched alcove backdrop rental",
+      "tiers": [
+        { "durationMins": 20, "price": 25000, "includes": "Backdrop hire · bring your own photographer or phone" },
+        { "durationMins": 60, "price": 50000, "includes": "Backdrop hire · bring your own photographer or phone" }
+      ]
+    },
+    {
+      "title": "The Arched Retreat (Rental)",
+      "slug": "backdrop-arched-retreat",
+      "kind": "BACKDROP",
+      "description": "Golden arch backdrop rental",
+      "tiers": [
+        { "durationMins": 20, "price": 20000, "includes": "Backdrop hire · bring your own photographer or phone" },
+        { "durationMins": 60, "price": 45000, "includes": "Backdrop hire · bring your own photographer or phone" }
+      ]
+    },
+    {
+      "title": "Aurora Wave (Rental)",
+      "slug": "backdrop-aurora-wave",
+      "kind": "BACKDROP",
+      "description": "LED floating-shelf backdrop rental",
+      "tiers": [
+        { "durationMins": 20, "price": 25000, "includes": "Backdrop hire · bring your own photographer or phone" },
+        { "durationMins": 60, "price": 50000, "includes": "Backdrop hire · bring your own photographer or phone" }
+      ]
+    }
+  ],
+  "studioRental": {
+    "title": "Studio Space Rental",
+    "slug": "studio-space-rental",
+    "kind": "RENTAL",
+    "description": "Hourly hire of the studio, lighting, and backdrops for photographers and brands.",
+    "tiers": [
+      { "durationMins": 60, "price": 40000, "includes": "Full studio access · all backdrops & props · professional lighting" }
+    ]
+  },
+  "policies": {
+    "deliveryDays": "3–4 working days after shoot",
+    "expressPercent": "30",
+    "expressNote": "Within 24hrs · +30% charge (max 8 photos)",
+    "extraImageKobo": "300000",
+    "vatPercent": "7.5",
+    "accompanyingMax": "1",
+    "imageUsage": "Photo Arena may use photos for promos unless exclusive package purchased"
+  },
+  "testimonials": [
+    {
+      "name": "Chioma A.",
+      "role": "Birthday Shoot",
+      "rating": 5,
+      "quote": "Amazing experience from start to finish! The studio was well set up, the lighting was perfect and the photos came out absolutely stunning. My birthday shoot was everything I imagined and more. I will definitely be coming back!"
+    },
+    {
+      "name": "Temi O.",
+      "role": "Kids Photography",
+      "rating": 5,
+      "quote": "The team at Photo Arena made my kids feel so comfortable and relaxed. The themed sets are beautiful and the photographers really know how to capture children naturally. The photos exceeded my expectations — so vivid and professional!"
+    },
+    {
+      "name": "Emeka N.",
+      "role": "Corporate Headshot",
+      "rating": 5,
+      "quote": "I needed a last-minute corporate headshot and they delivered! No appointment needed, I just walked in. The result was so clean and professional — my LinkedIn profile has never looked better. Highly recommend for any corporate shoots."
+    },
+    {
+      "name": "Ada & Chidi",
+      "role": "Pre-Wedding Shoot",
+      "rating": 5,
+      "quote": "Our pre-wedding photos were done here and we are completely in love with every single shot. The backdrops are stunning, the lighting is world-class. Photo Arena is hands down the best studio in Port Harcourt. Thank you so much!"
+    }
+  ],
+  "serviceCards": [
+    { "title": "Birthday Photography", "description": "Celebrate your special day with stunning, joyful photos that capture the energy, excitement, and pure happiness of your birthday moment." },
+    { "title": "Children Photography", "description": "Capture the magic of childhood with fun, vibrant kids' shoots designed to bring out natural smiles and precious expressions in a safe, playful environment." },
+    { "title": "Pre-Wedding Photos", "description": "Tell your love story before the big day. Our pre-wedding shoots are intimate, romantic, and beautifully crafted for couples who want something truly special." },
+    { "title": "Professional Indoor Portraits", "description": "Elevate your personal brand with polished, studio-lit portraits. Perfect for profiles, portfolios, and anyone who wants to look their absolute best." },
+    { "title": "Passport / Visa Photos", "description": "Get compliant, professional passport and visa photos quickly. We know the requirements so your photos are accepted on the first try — every time." },
+    { "title": "Corporate Headshots", "description": "First impressions matter. Our corporate headshots are sharp, confident, and polished — ideal for LinkedIn, company websites, and executive profiles." }
+  ],
+  "whyCards": [
+    { "title": "Professional Lighting", "text": "Our studio is equipped with professional-grade lighting setups designed to flatter every skin tone and style — no dark, unflattering shots here." },
+    { "title": "Walk-In Friendly", "text": "No appointment needed. Come as you are, any day of the week. Our doors are open from 8AM to 6PM daily for your convenience." },
+    { "title": "Diverse Experiences", "text": "From corporate headshots to birthday blowouts, kids portraits to passport photos — we cover every milestone and need under one roof." },
+    { "title": "Mobile-Friendly Arena", "text": "Prefer your own phone? We have a personal arena space designed for mobile phone shoots — just bring yourself and your creativity." },
+    { "title": "Premium Experience", "text": "From the moment you walk in, you'll feel the difference. Our studio is crafted for comfort, creativity, and exceptional results every time." },
+    { "title": "Prime Location", "text": "Conveniently located on Peter Odili Road, Port Harcourt — easy to find, easy to reach, and worth every drive." }
+  ],
+  "tourFeatures": [
+    { "title": "Professional Lighting Rigs", "text": "Studio-grade softboxes and LED panels tuned for perfect skin tones every time." },
+    { "title": "Multiple Themed Sets", "text": "Curated backdrops for every mood — minimalist, dramatic, romantic, and playful." },
+    { "title": "Comfortable Lounge Area", "text": "Relax before your shoot in our welcoming reception area." }
+  ],
+  "faq": [
+    {
+      "question": "Do I need to book an appointment in advance?",
+      "answer": "Walk-ins are welcome during opening hours (Mon–Sat 8AM–6PM, Sunday 12PM–6PM). For a guaranteed slot, especially for longer packages, book online or ask staff to reserve a future time."
+    },
+    {
+      "question": "What should I wear to my shoot?",
+      "answer": "Wear something you feel confident and comfortable in. Solid colours tend to photograph beautifully, but we encourage you to express your personal style. For corporate shoots, smart/professional attire works best. For birthday and personal shoots, feel free to wear outfits that reflect your personality — you can even bring a change of clothing!"
+    },
+    {
+      "question": "How long does a typical shoot take?",
+      "answer": "The session occupies the full booked package duration. Individual sessions often run 30–60 minutes. Family, kids, and pre-wedding sessions may be longer depending on the package."
+    },
+    {
+      "question": "When will I receive my photos?",
+      "answer": "Passport and visa photos are typically printed the same day. For other sessions, standard delivery is 3–4 working days. Express delivery (within 24 hours, max 8 photos) is available for +30%. Confirm current turnaround with the team when you arrive."
+    },
+    {
+      "question": "Can I use my own phone to take photos in the studio?",
+      "answer": "Yes. There is a dedicated Personal Arena space for mobile shoots. Lighting and backdrops are prepared; you create the frames. This is included in personal shoot packages — mention it when you arrive."
+    },
+    {
+      "question": "Do you offer studio rental for photographers?",
+      "answer": "Yes. Studio hire starts from ₦40,000 per hour on the current provisional list and includes access to backdrops, props, and lighting. Call 09059813823 to check availability. Individual booths and backdrops can also be hired separately."
+    },
+    {
+      "question": "How do I pay for my session?",
+      "answer": "Online bookings are paid in full through Bachs and receive a 5% discount. Walk-in and staff-created reservations can be paid at the studio (cash or bank transfer). Bookings are non-refundable. Rescheduling attracts a 15% charge. 7.5% VAT is applied to client bills."
+    }
+  ],
+  "contactSessionOptions": [
+    "Personal / Birthday Shoots",
+    "Pre-Wedding / Couples Shoot",
+    "Family Shoot",
+    "Corporate Headshots",
+    "Maternity Shoot",
+    "Bundle of Joy (0–1 Year)",
+    "Bundle of Joy (2–6 Years)",
+    "Teens Shoot (7–15 Years)",
+    "The Curated Wall",
+    "The Curated Cove",
+    "The Arched Retreat",
+    "Aurora Wave",
+    "Space Rental — Swing Attitude",
+    "Space Rental — Odogwu Vibes",
+    "Space Rental — Let's Party Booth",
+    "Space Rental — Telephone Booth",
+    "Space Rental — Curated Wall Backdrop",
+    "Space Rental — Curated Cove Backdrop",
+    "Space Rental — Arched Retreat Backdrop",
+    "Space Rental — Aurora Wave Backdrop",
+    "General Enquiry"
+  ],
+  "_conflicts": [
+    "FAQ previously said delivery 24–72 hours; Bookings policies strip says 3–4 working days. Seed FAQ answer above reconciles both (standard 3–4 days + express option).",
+    "Home package badges (Personal from ₦25k, Bundle from ₦45k) are marketing summaries; Bookings page prices are authoritative for seed.",
+    "Old site hours said every day 8AM–6PM; confirmed hours are Mon–Sat 8–6 / Sunday 12–6 — use confirmed hours.",
+    "Teens has a 45-minute tier — booking engine uses 30-min increments; 45-min packages still occupy 45 minutes (slotFits uses package duration)."
+  ]
+}

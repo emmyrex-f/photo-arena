@@ -1,0 +1,330 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String
+  role         Role
+  createdAt    DateTime  @default(now())
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  updatedAt    DateTime  @default(now()) @updatedAt
+  /// Incremented on deactivate, role change, password change/reset. JWT `ver` must match.
+  tokenVersion Int       @default(0)
+  permissions  String[]  @default(["*"])
+}
+
+model StudioResource {
+  id       String    @id @default(cuid())
+  name     String
+  isActive Boolean   @default(true)
+  bookings Booking[]
+}
+
+model Customer {
+  id        String    @id @default(cuid())
+  name      String
+  phone     String    @unique
+  email     String?
+  createdAt DateTime  @default(now())
+  notes     String?
+  tags      String[]  @default([])
+  updatedAt DateTime  @default(now()) @updatedAt
+  bookings  Booking[]
+}
+
+model Service {
+  id                String      @id @default(cuid())
+  slug              String      @unique
+  name              String
+  description       String
+  startingPriceKobo Int
+  isActive          Boolean     @default(true)
+  isProvisional     Boolean     @default(true)
+  createdAt         DateTime    @default(now())
+  kind              ServiceKind @default(SESSION)
+  sortOrder         Int         @default(0)
+  /// Short card copy.
+  summary           String?
+  updatedAt         DateTime    @default(now()) @updatedAt
+  packages          Package[]
+}
+
+model Package {
+  id              String    @id @default(cuid())
+  serviceId       String
+  name            String
+  durationMinutes Int
+  includes        String
+  priceKobo       Int
+  isActive        Boolean   @default(true)
+  isProvisional   Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  sortOrder       Int       @default(0)
+  updatedAt       DateTime  @default(now()) @updatedAt
+  bookings        Booking[]
+  service         Service   @relation(fields: [serviceId], references: [id])
+}
+
+model Booking {
+  id                String         @id @default(cuid())
+  customerId        String
+  packageId         String
+  resourceId        String
+  startTime         DateTime
+  endTime           DateTime
+  status            BookingStatus
+  source            BookingSource
+  holdExpiresAt     DateTime?
+  notes             String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  /// Payable amount frozen at hold/creation (kobo).
+  amountKobo        Int?
+  /// Public payment reference (e.g. PA-XXXXXXXX).
+  reference         String?        @unique
+  /// Snapshot booking (CANCELLED) that holds the previous slot after a reschedule.
+  rescheduledFromId String?
+  customer          Customer       @relation(fields: [customerId], references: [id])
+  package           Package        @relation(fields: [packageId], references: [id])
+  resource          StudioResource @relation(fields: [resourceId], references: [id])
+  payments          Payment[]
+
+  @@index([startTime, status])
+  @@index([resourceId, startTime])
+}
+
+model Payment {
+  id                String        @id @default(cuid())
+  bookingId         String
+  amountKobo        Int
+  currency          String        @default("NGN")
+  status            PaymentStatus @default(PENDING)
+  method            PaymentMethod
+  provider          String
+  reference         String        @unique
+  transactionId     String?
+  paidAt            DateTime?
+  createdAt         DateTime      @default(now())
+  /// Bachs checkout_id (chk_…) used for verify + webhook correlation.
+  providerSessionId String?
+  booking           Booking       @relation(fields: [bookingId], references: [id])
+
+  @@index([status, createdAt])
+  @@index([providerSessionId])
+}
+
+/// Dedupes Bachs (and future) webhook deliveries — at-least-once safe.
+model ProcessedWebhookEvent {
+  id        String   @id
+  provider  String
+  type      String
+  reference String?
+  createdAt DateTime @default(now())
+
+  @@index([provider, createdAt])
+}
+
+model PricingRule {
+  id       String  @id @default(cuid())
+  key      String  @unique
+  /// Basis points. 500 = 5%.
+  bps      Int
+  isActive Boolean @default(true)
+}
+
+model NotificationRecipient {
+  id       String  @id @default(cuid())
+  email    String
+  isActive Boolean @default(true)
+}
+
+model NotificationLog {
+  id        String   @id @default(cuid())
+  event     String
+  channel   String
+  to        String
+  payload   String
+  createdAt DateTime @default(now())
+
+  @@index([event, channel, to])
+  @@index([createdAt])
+}
+
+model BusinessSettings {
+  id    String @id @default(cuid())
+  key   String @unique
+  value String
+}
+
+model GalleryImage {
+  id         String       @id @default(cuid())
+  /// Original file name (uploads) or static file name (seeded).
+  filename   String?
+  category   String
+  alt        String
+  sortOrder  Int          @default(0)
+  featured   Boolean      @default(false)
+  isActive   Boolean      @default(true)
+  createdAt  DateTime     @default(now())
+  height     Int?
+  kind       MediaKind    @default(GALLERY)
+  thumbUrl   String?
+  /// Public path, e.g. /uploads/gallery/abc.jpg or /gallery/01-birthdays.jpg
+  url        String
+  width      Int?
+  MediaUsage MediaUsage[]
+
+  @@index([kind, isActive, sortOrder])
+}
+
+model Testimonial {
+  id          String   @id @default(cuid())
+  quote       String
+  name        String
+  role        String?
+  rating      Int?
+  isPublished Boolean  @default(false)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+}
+
+model Faq {
+  id        String   @id @default(cuid())
+  question  String
+  answer    String
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+model Enquiry {
+  id           String        @id @default(cuid())
+  name         String
+  email        String
+  phone        String?
+  sessionType  String?
+  message      String
+  status       EnquiryStatus @default(NEW)
+  internalNote String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @default(now()) @updatedAt
+
+  @@index([status, createdAt])
+}
+
+model NewsletterSubscriber {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  isActive  Boolean  @default(true)
+  source    String?
+  createdAt DateTime @default(now())
+}
+
+model BlogPost {
+  id            String    @id @default(cuid())
+  slug          String    @unique
+  title         String
+  excerpt       String
+  /// Markdown.
+  content       String
+  coverImageUrl String?
+  tags          String[]  @default([])
+  isPublished   Boolean   @default(false)
+  publishedAt   DateTime?
+  authorId      String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @default(now()) @updatedAt
+
+  @@index([isPublished, publishedAt])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  userEmail String
+  action    String
+  entity    String
+  entityId  String?
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([entity, entityId])
+}
+
+model MediaUsage {
+  id           String       @id
+  mediaId      String
+  usageType    String
+  entityId     String
+  sortOrder    Int          @default(0)
+  createdAt    DateTime     @default(now())
+  GalleryImage GalleryImage @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+
+  @@unique([mediaId, usageType, entityId])
+  @@index([mediaId])
+  @@index([usageType, entityId])
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  STAFF
+}
+
+enum BookingSource {
+  ONLINE
+  WALK_IN
+  ADMIN
+}
+
+enum BookingStatus {
+  TEMPORARY_HOLD
+  PENDING
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  SUCCESS
+  FAILED
+}
+
+enum PaymentMethod {
+  ONLINE_BACHS
+  STUDIO
+}
+
+enum ServiceKind {
+  SESSION
+  SET
+  BOOTH
+  BACKDROP
+  RENTAL
+}
+
+enum EnquiryStatus {
+  NEW
+  REPLIED
+  CLOSED
+}
+
+enum MediaKind {
+  GALLERY
+  BLOG
+  CONTENT
+}

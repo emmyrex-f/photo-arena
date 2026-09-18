@@ -1,0 +1,22 @@
+---
+description: Security — secrets, auth, input validation, and untrusted client data
+alwaysApply: true
+---
+
+# Security
+
+- Never expose secrets (API keys, JWT secrets, Bachs keys, SMTP passwords, webhook secrets).
+- Never log credentials or secrets.
+- Never trust frontend prices. Recalculate payable amounts on the backend from database package prices.
+- Enforce authorization server-side on every admin and privileged route. Do not rely on hidden UI.
+- Validate all external input (body, query, params, webhooks, uploads).
+- Never commit `.env` files or Bachs keys.
+
+```ts
+// ❌ BAD
+console.log("login", { email, password });
+booking.amountKobo = dto.amountKobo;
+
+// ✅ GOOD
+booking.amountKobo = pricingService.onlinePriceKobo(pkg.priceKobo);
+```

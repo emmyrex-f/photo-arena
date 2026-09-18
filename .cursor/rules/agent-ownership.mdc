@@ -1,0 +1,12 @@
+---
+description: Subagent ownership so parallel work does not collide on schema, payments, or booking.
+alwaysApply: true
+---
+
+# Agent ownership
+
+- Booking overlap/holds: `backend/src/bookings/` + `resource-lock.ts` only, coordinated with payments for CONFIRMED.
+- Payments/webhooks: `backend/src/payments/` only.
+- Prisma schema/migrations: one change at a time; parent agent serializes.
+- Public UI tokens/pages vs admin UI: do not restyle both blindly in one edit if another agent owns the other.
+- Never put secrets in docs, skills, or git.

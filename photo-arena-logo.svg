@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1200 760"
+  role="img"
+  aria-labelledby="title description"
+>
+  <title id="title">Photo Arena by Nufx Media</title>
+
+  <desc id="description">
+    Bold Photo Arena logo with white geometric lettering and a golden camera aperture.
+  </desc>
+
+  <!-- Transparent background -->
+
+  <!-- Main wordmark -->
+  <g
+    fill="#FFFFFF"
+    font-family="Arial Black, Montserrat, Arial, sans-serif"
+    font-weight="900"
+    text-anchor="middle"
+  >
+    <text
+      x="600"
+      y="235"
+      font-size="190"
+      letter-spacing="-12"
+    >
+      PHOTO
+    </text>
+
+    <text
+      x="600"
+      y="470"
+      font-size="205"
+      letter-spacing="-15"
+    >
+      ARENA
+    </text>
+
+    <text
+      x="600"
+      y="590"
+      font-size="54"
+      letter-spacing="8"
+    >
+      BY NUFX MEDIA
+    </text>
+  </g>
+
+  <!-- Golden camera aperture -->
+  <g transform="translate(600 170)">
+    <circle
+      r="70"
+      fill="#F5B51B"
+    />
+
+    <!-- Aperture blades -->
+    <path
+      d="M 0 -60 L 31 -18 L 18 31 L -31 18 Z"
+      fill="#FFD84A"
+    />
+
+    <path
+      d="M 60 0 L 18 31 L -31 18 L -18 -31 Z"
+      fill="#E89B00"
+    />
+
+    <path
+      d="M 0 60 L -31 18 L -18 -31 L 31 -18 Z"
+      fill="#FFCA28"
+    />
+
+    <path
+      d="M -60 0 L -18 -31 L 31 -18 L 18 31 Z"
+      fill="#D98800"
+    />
+
+    <!-- Aperture center -->
+    <circle
+      r="20"
+      fill="#FFF3B0"
+    />
+
+    <circle
+      r="9"
+      fill="#1B1B1B"
+    />
+  </g>
+
+  <!-- Decorative geometric line -->
+  <path
+    d="M 225 500
+       H 350
+       L 375 525
+       H 825
+       L 850 500
+       H 975"
+    fill="none"
+    stroke="#FFFFFF"
+    stroke-width="12"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>

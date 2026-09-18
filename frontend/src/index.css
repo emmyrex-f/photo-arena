@@ -1,0 +1,741 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Single shorthand so duration isn't overridden by transition-opacity's baked-in 150ms. */
+.hero-video-fade {
+  transition: opacity 1.2s ease-out;
+}
+
+.hero-copy {
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.95),
+    0 2px 6px rgba(0, 0, 0, 0.85),
+    0 6px 20px rgba(0, 0, 0, 0.75),
+    0 0 36px rgba(0, 0, 0, 0.7);
+}
+
+.hero-copy-glow {
+  background: radial-gradient(
+    ellipse 85% 75% at 28% 42%,
+    rgba(0, 0, 0, 0.72) 0%,
+    rgba(0, 0, 0, 0.42) 48%,
+    transparent 74%
+  );
+}
+
+.hero-edge-bottom {
+  background: linear-gradient(
+    to top,
+    rgba(11, 13, 15, 0.75) 0%,
+    transparent 100%
+  );
+}
+
+/* Book Now: contained package rail on small screens, grid on large. */
+.pa-package-rail {
+  display: flex;
+  align-items: stretch;
+  gap: var(--pa-stack-sm);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  contain: inline-size paint;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.pa-package-rail::-webkit-scrollbar {
+  display: none;
+}
+
+.pa-package-rail > article {
+  display: flex;
+  width: min(20rem, calc(100% - 1.25rem));
+  flex: 0 0 min(20rem, calc(100% - 1.25rem));
+  flex-direction: column;
+  min-width: 0;
+  scroll-snap-align: start;
+  overflow: hidden;
+}
+
+.pa-package-rail > article:last-child {
+  width: min(20rem, 100%);
+  flex-basis: min(20rem, 100%);
+}
+
+@media (min-width: 1024px) {
+  .pa-package-rail {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow: visible;
+    contain: none;
+    scroll-snap-type: none;
+  }
+
+  .pa-package-rail > article,
+  .pa-package-rail > article:last-child {
+    width: auto;
+    flex: none;
+  }
+}
+
+@media (min-width: 1280px) {
+  .pa-package-rail {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.nav-edge {
+  background: linear-gradient(to bottom, rgba(11, 13, 15, 0.7), transparent);
+}
+
+.nav-edge-up {
+  background: linear-gradient(to top, rgba(11, 13, 15, 0.7), transparent);
+}
+
+:root {
+  --color-bg: #0b0d0f;
+  --color-surface: #181c20;
+  --color-elevated: #22272c;
+  --color-dark: #111417;
+  --color-dark-deep: #0b0d0f;
+  --color-overlay: rgba(11, 13, 15, 0.72);
+  --color-text: #f3f4f6;
+  --color-text-secondary: #c5cad0;
+  --color-text-muted: #9ca3aa;
+  --color-text-inverse: #f3f4f6;
+  --color-text-inverse-muted: #9ca3aa;
+  --color-on-accent: #0b0d0f;
+  --color-accent: #c8b89a;
+  --color-accent-hover: #d8c9ad;
+  --color-champagne: #c8b89a;
+  --color-border: #30363d;
+  --color-border-subtle: rgba(48, 54, 61, 0.7);
+  --color-border-strong: #3d444d;
+  --color-border-on-dark: rgba(243, 244, 246, 0.12);
+  --color-success: #6fa58a;
+  --color-warning: #d1a65a;
+  --color-error: #d97878;
+
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.24), 0 16px 40px -20px rgba(0, 0, 0, 0.55);
+  --shadow-nav: 0 1px 0 rgba(48, 54, 61, 0.8), 0 12px 32px -18px rgba(0, 0, 0, 0.6);
+
+  /*
+   * 8px public spacing scale (see src/lib/theme.ts layout.spacing).
+   * Tailwind aliases: px-gutter, py-section-y, mt-stack, p-card, gap-grid-lg, …
+   */
+  --pa-gutter: 1.25rem;
+  --pa-section-y: 5rem;
+  --pa-header-y: 4rem;
+  /* Logo 56px + vertical padding; matches the fixed public header. */
+  --pa-nav-h: calc(56px + (var(--pa-eyebrow) * 2));
+  --pa-footer-y: 2.5rem;
+  --pa-label: 0.5rem;
+  --pa-eyebrow: 0.75rem;
+  --pa-stack-sm: 1rem;
+  --pa-stack: 1.25rem;
+  --pa-stack-lg: 2rem;
+  --pa-stack-xl: 3rem;
+  --pa-stack-2xl: 3.5rem;
+  --pa-control: 0.75rem;
+  --pa-form: 1.25rem;
+  --pa-card-sm: 1rem;
+  --pa-card: 1.5rem;
+  --pa-card-lg: 2rem;
+  --pa-grid-tight: 0.5rem;
+  --pa-grid: 1.5rem;
+  --pa-grid-lg: 3rem;
+
+  /* Mobile chrome: Book bar is 0 on desktop and on /book (html.pa-book-bar-off). */
+  --pa-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --pa-fab-size: 3rem;
+  --pa-fab-gap: 0.75rem;
+  --pa-book-bar: 0px;
+  --pa-consent: 0px;
+  --pa-page-pad: 0px;
+}
+
+@media (min-width: 640px) {
+  :root {
+    --pa-gutter: 2rem;
+    --pa-nav-h: calc(68px + (var(--pa-eyebrow) * 2));
+  }
+}
+
+@media (min-width: 768px) {
+  :root {
+    --pa-section-y: 7rem;
+    --pa-header-y: 5rem;
+    --pa-card-lg: 2.5rem;
+  }
+}
+
+/* Authored utilities so tokens apply even if JIT misses theme.spacing keys. */
+@layer utilities {
+  .px-gutter {
+    padding-left: var(--pa-gutter);
+    padding-right: var(--pa-gutter);
+  }
+  .py-section-y {
+    padding-top: var(--pa-section-y);
+    padding-bottom: var(--pa-section-y);
+  }
+  .py-header-y {
+    padding-top: var(--pa-header-y);
+    padding-bottom: var(--pa-header-y);
+  }
+  .py-footer-y {
+    padding-top: var(--pa-footer-y);
+    padding-bottom: var(--pa-footer-y);
+  }
+  .p-card {
+    padding: var(--pa-card);
+  }
+  .p-card-sm {
+    padding: var(--pa-card-sm);
+  }
+  .p-card-lg {
+    padding: var(--pa-card-lg);
+  }
+  .mt-stack {
+    margin-top: var(--pa-stack);
+  }
+  .mb-stack {
+    margin-bottom: var(--pa-stack);
+  }
+  .mt-stack-sm {
+    margin-top: var(--pa-stack-sm);
+  }
+  .mt-stack-lg {
+    margin-top: var(--pa-stack-lg);
+  }
+  .mb-stack-lg {
+    margin-bottom: var(--pa-stack-lg);
+  }
+  .mt-stack-xl {
+    margin-top: var(--pa-stack-xl);
+  }
+  .mb-stack-xl {
+    margin-bottom: var(--pa-stack-xl);
+  }
+  .pt-stack-xl {
+    padding-top: var(--pa-stack-xl);
+  }
+  .py-stack {
+    padding-top: var(--pa-stack);
+    padding-bottom: var(--pa-stack);
+  }
+  .pb-grid {
+    padding-bottom: var(--pa-grid);
+  }
+  .gap-form {
+    gap: var(--pa-form);
+  }
+  .space-y-stack-sm > :not([hidden]) ~ :not([hidden]) {
+    --tw-space-y-reverse: 0;
+    margin-top: calc(var(--pa-stack-sm) * calc(1 - var(--tw-space-y-reverse)));
+    margin-bottom: calc(var(--pa-stack-sm) * var(--tw-space-y-reverse));
+  }
+  .space-y-stack-lg > :not([hidden]) ~ :not([hidden]) {
+    --tw-space-y-reverse: 0;
+    margin-top: calc(var(--pa-stack-lg) * calc(1 - var(--tw-space-y-reverse)));
+    margin-bottom: calc(var(--pa-stack-lg) * var(--tw-space-y-reverse));
+  }
+  .space-y-stack-xl > :not([hidden]) ~ :not([hidden]) {
+    --tw-space-y-reverse: 0;
+    margin-top: calc(var(--pa-stack-xl) * calc(1 - var(--tw-space-y-reverse)));
+    margin-bottom: calc(var(--pa-stack-xl) * var(--tw-space-y-reverse));
+  }
+  .space-y-stack-2xl > :not([hidden]) ~ :not([hidden]) {
+    --tw-space-y-reverse: 0;
+    margin-top: calc(var(--pa-stack-2xl) * calc(1 - var(--tw-space-y-reverse)));
+    margin-bottom: calc(var(--pa-stack-2xl) * var(--tw-space-y-reverse));
+  }
+  .space-y-control > :not([hidden]) ~ :not([hidden]) {
+    --tw-space-y-reverse: 0;
+    margin-top: calc(var(--pa-control) * calc(1 - var(--tw-space-y-reverse)));
+    margin-bottom: calc(var(--pa-control) * var(--tw-space-y-reverse));
+  }
+  .mb-eyebrow {
+    margin-bottom: var(--pa-eyebrow);
+  }
+  .mt-eyebrow {
+    margin-top: var(--pa-eyebrow);
+  }
+  .mt-label {
+    margin-top: var(--pa-label);
+  }
+  .py-eyebrow {
+    padding-top: var(--pa-eyebrow);
+    padding-bottom: var(--pa-eyebrow);
+  }
+  .py-stack-sm {
+    padding-top: var(--pa-stack-sm);
+    padding-bottom: var(--pa-stack-sm);
+  }
+  .pb-stack-lg {
+    padding-bottom: var(--pa-stack-lg);
+  }
+  .gap-stack {
+    gap: var(--pa-stack);
+  }
+  .gap-stack-lg {
+    gap: var(--pa-stack-lg);
+  }
+  .gap-grid {
+    gap: var(--pa-grid);
+  }
+  .gap-grid-lg {
+    gap: var(--pa-grid-lg);
+  }
+  .gap-grid-tight {
+    gap: var(--pa-grid-tight);
+  }
+  .gap-control {
+    gap: var(--pa-control);
+  }
+  .space-y-form > :not([hidden]) ~ :not([hidden]) {
+    --tw-space-y-reverse: 0;
+    margin-top: calc(var(--pa-form) * calc(1 - var(--tw-space-y-reverse)));
+    margin-bottom: calc(var(--pa-form) * var(--tw-space-y-reverse));
+  }
+  .space-y-stack > :not([hidden]) ~ :not([hidden]) {
+    --tw-space-y-reverse: 0;
+    margin-top: calc(var(--pa-stack) * calc(1 - var(--tw-space-y-reverse)));
+    margin-bottom: calc(var(--pa-stack) * var(--tw-space-y-reverse));
+  }
+  .px-admin-gutter {
+    padding-left: var(--admin-gutter, 1rem);
+    padding-right: var(--admin-gutter, 1rem);
+  }
+  .h-admin-header {
+    height: var(--admin-header-h, 3.5rem);
+  }
+  .py-admin-nav {
+    padding-top: var(--admin-nav-y, 0.75rem);
+    padding-bottom: var(--admin-nav-y, 0.75rem);
+  }
+  .px-admin-stack-sm {
+    padding-left: var(--admin-stack-sm, 1rem);
+    padding-right: var(--admin-stack-sm, 1rem);
+  }
+  .py-admin-stack-sm {
+    padding-top: var(--admin-stack-sm, 1rem);
+    padding-bottom: var(--admin-stack-sm, 1rem);
+  }
+  .px-admin-gap {
+    padding-left: var(--admin-gap, 0.75rem);
+    padding-right: var(--admin-gap, 0.75rem);
+  }
+  .py-admin-gap {
+    padding-top: var(--admin-gap, 0.75rem);
+    padding-bottom: var(--admin-gap, 0.75rem);
+  }
+  .space-y-admin-stack-sm > :not([hidden]) ~ :not([hidden]) {
+    --tw-space-y-reverse: 0;
+    margin-top: calc(var(--admin-stack-sm, 1rem) * calc(1 - var(--tw-space-y-reverse)));
+    margin-bottom: calc(var(--admin-stack-sm, 1rem) * var(--tw-space-y-reverse));
+  }
+  .p-admin-card {
+    padding: var(--admin-card, 1.5rem);
+  }
+  .p-admin-card-sm {
+    padding: var(--admin-card-sm, 1rem);
+  }
+  .pb-admin-control {
+    padding-bottom: var(--admin-control, 0.5rem);
+  }
+  .py-stack-2xl {
+    padding-top: var(--pa-stack-2xl);
+    padding-bottom: var(--pa-stack-2xl);
+  }
+  .gap-admin-stack-sm {
+    gap: var(--admin-stack-sm, 1rem);
+  }
+  .gap-admin-gap {
+    gap: var(--admin-gap, 0.75rem);
+  }
+  .gap-admin-control {
+    gap: var(--admin-control, 0.5rem);
+  }
+  .mt-admin-control {
+    margin-top: var(--admin-control, 0.5rem);
+  }
+  .space-y-admin-control > :not([hidden]) ~ :not([hidden]) {
+    --tw-space-y-reverse: 0;
+    margin-top: calc(var(--admin-control, 0.5rem) * calc(1 - var(--tw-space-y-reverse)));
+    margin-bottom: calc(var(--admin-control, 0.5rem) * var(--tw-space-y-reverse));
+  }
+  .space-x-admin-control > :not([hidden]) ~ :not([hidden]) {
+    --tw-space-x-reverse: 0;
+    margin-right: calc(var(--admin-control, 0.5rem) * var(--tw-space-x-reverse));
+    margin-left: calc(var(--admin-control, 0.5rem) * calc(1 - var(--tw-space-x-reverse)));
+  }
+  .space-y-admin > :not([hidden]) ~ :not([hidden]) {
+    --tw-space-y-reverse: 0;
+    margin-top: calc(var(--admin-stack, 1.25rem) * calc(1 - var(--tw-space-y-reverse)));
+    margin-bottom: calc(var(--admin-stack, 1.25rem) * var(--tw-space-y-reverse));
+  }
+  /* Let explicit resets win over compound padding tokens (e.g. Section + pt-0). */
+  .pt-0 {
+    padding-top: 0;
+  }
+  .pb-0 {
+    padding-bottom: 0;
+  }
+}
+
+@media (max-width: 1023px) {
+  :root {
+    /* border 1px + pt 12px + button 44px + pb max(12px, safe-area) */
+    --pa-book-bar: calc(1px + 0.75rem + 2.75rem + max(0.75rem, var(--pa-safe-bottom)));
+  }
+  html.pa-book-bar-off {
+    --pa-book-bar: 0px;
+  }
+}
+
+/* Space for the sticky bar, optional consent sheet, and FAB row. */
+@media (max-width: 1023px) {
+  :root {
+    --pa-page-pad: calc(
+      var(--pa-book-bar) + var(--pa-consent) + var(--pa-fab-size) + var(--pa-fab-gap)
+    );
+  }
+}
+
+.pa-fab-anchor {
+  bottom: max(
+    calc(var(--pa-book-bar) + var(--pa-consent) + var(--pa-fab-gap)),
+    var(--pa-fab-gap),
+    var(--pa-safe-bottom)
+  );
+}
+
+@media (min-width: 1024px) {
+  .pa-fab-anchor {
+    bottom: max(2rem, calc(var(--pa-consent) + 1.5rem));
+  }
+}
+
+/* Compact consent sheet sits on the Book Now bar; on /book it uses the safe area. */
+.pa-consent-sheet {
+  bottom: var(--pa-book-bar);
+  padding-bottom: 0.5rem;
+}
+
+html.pa-book-bar-off .pa-consent-sheet {
+  padding-bottom: max(0.5rem, var(--pa-safe-bottom));
+}
+
+html.pa-consent-on {
+  --pa-consent: 10.5rem;
+}
+
+@media (max-width: 1023px) {
+  html.pa-consent-on {
+    /* FABs hide while the sheet is up so they cannot sit on the cookie or the CTA. */
+    --pa-page-pad: calc(var(--pa-book-bar) + var(--pa-consent));
+  }
+
+  html.pa-consent-on .pa-fab-anchor {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
+}
+
+@media (min-width: 1024px) {
+  .pa-consent-sheet {
+    bottom: 0;
+    padding-bottom: 1.5rem;
+  }
+
+  html.pa-consent-on {
+    --pa-consent: 8.5rem;
+  }
+}
+
+/* Slightly lifted charcoal sections. Semantic tokens stay the same language. */
+.tone-dark {
+  --color-bg: #111417;
+  --color-text: #f3f4f6;
+  --color-text-secondary: #c5cad0;
+  --color-text-muted: #9ca3aa;
+  --color-border: #30363d;
+  --color-border-subtle: rgba(48, 54, 61, 0.7);
+  --color-border-strong: #3d444d;
+  --color-surface: #181c20;
+  --color-elevated: #22272c;
+  --color-champagne: #c8b89a;
+  background: var(--color-dark);
+  color: var(--color-text);
+}
+
+.tone-deep {
+  --color-bg: #0b0d0f;
+  --color-text: #f3f4f6;
+  --color-text-secondary: #c5cad0;
+  --color-text-muted: #9ca3aa;
+  --color-border: #30363d;
+  --color-border-subtle: rgba(48, 54, 61, 0.7);
+  --color-border-strong: #3d444d;
+  --color-surface: #181c20;
+  --color-elevated: #22272c;
+  background: var(--color-dark-deep);
+  color: var(--color-text);
+}
+
+html {
+  scroll-behavior: auto;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: Inter, system-ui, sans-serif;
+  font-feature-settings: "kern", "liga", "calt";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+.font-display {
+  font-family: Manrope, Inter, system-ui, sans-serif;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  font-feature-settings: "kern", "liga", "calt";
+}
+
+.font-hero {
+  font-family: "Playfair Display", Georgia, serif;
+  font-feature-settings: "kern", "liga", "dlig";
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+
+::selection {
+  background: rgba(200, 184, 154, 0.35);
+}
+
+img,
+video {
+  display: block;
+  max-width: 100%;
+}
+
+/* Native form controls inherit brand colours (date input icon, select arrows). */
+input,
+select,
+textarea,
+button {
+  font: inherit;
+  color: inherit;
+}
+
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239CA3AA' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 0.9rem center;
+  padding-right: 2.75rem;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  opacity: 0.6;
+  cursor: pointer;
+}
+
+/* Hairline helpers */
+.hairline {
+  border-color: var(--color-border);
+}
+
+/* Fine grain texture for dark editorial sections */
+.grain::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.06;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.9 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  mix-blend-mode: soft-light;
+}
+
+/* Prose for blog articles + legal pages */
+.prose-pa {
+  color: var(--color-text-secondary);
+  font-size: 1.0625rem;
+  line-height: 1.8;
+}
+.prose-pa > * + * {
+  margin-top: 1.25em;
+}
+.prose-pa h2,
+.prose-pa h3,
+.prose-pa h4 {
+  font-family: Manrope, Inter, system-ui, sans-serif;
+  font-weight: 600;
+  color: var(--color-text);
+  line-height: 1.2;
+  letter-spacing: -0.03em;
+}
+.prose-pa h2 {
+  font-size: 1.85rem;
+  margin-top: 2.5em;
+}
+.prose-pa h3 {
+  font-size: 1.4rem;
+  margin-top: 2em;
+}
+.prose-pa h4 {
+  font-size: 1.15rem;
+}
+.prose-pa p strong {
+  color: var(--color-text);
+  font-weight: 600;
+}
+.prose-pa a {
+  color: var(--color-accent-hover);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.prose-pa ul,
+.prose-pa ol {
+  padding-left: 1.4em;
+}
+.prose-pa ul {
+  list-style: disc;
+}
+.prose-pa ol {
+  list-style: decimal;
+}
+.prose-pa li + li {
+  margin-top: 0.5em;
+}
+.prose-pa blockquote {
+  border-left: 1px solid var(--color-accent);
+  padding-left: 1.25rem;
+  font-family: Manrope, Inter, system-ui, sans-serif;
+  font-weight: 500;
+  font-size: 1.2rem;
+  line-height: 1.5;
+  letter-spacing: -0.02em;
+  color: var(--color-text);
+}
+.prose-pa img {
+  width: 100%;
+  height: auto;
+}
+.prose-pa hr {
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  margin: 3em 0;
+}
+.prose-pa code {
+  font-size: 0.9em;
+  background: var(--color-surface);
+  padding: 0.1em 0.35em;
+}
+.prose-pa table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+.prose-pa th,
+.prose-pa td {
+  text-align: left;
+  padding: 0.75rem 0.5rem;
+  border-top: 1px solid var(--color-border);
+}
+.prose-pa th {
+  color: var(--color-text);
+  font-weight: 500;
+}
+
+/* Public form controls — same padding as Contact / Book. */
+.pa-label {
+  display: block;
+  margin-bottom: var(--pa-label);
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+}
+.pa-input {
+  min-height: 2.75rem;
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--color-elevated);
+  background: var(--color-bg);
+  padding-left: var(--pa-stack-sm);
+  padding-right: var(--pa-stack-sm);
+  color: var(--color-text);
+}
+select.pa-input {
+  padding-right: 2.75rem;
+}
+.pa-card {
+  border: 1px solid var(--color-elevated);
+  padding: var(--pa-card);
+}
+
+/* Editorial masonry — intrinsic image heights, no distortion. 8px scale. */
+.masonry {
+  column-count: 1;
+  column-gap: var(--pa-control);
+}
+.masonry-item {
+  break-inside: avoid;
+  margin-bottom: var(--pa-control);
+  display: block;
+}
+.masonry-item img {
+  width: 100%;
+  height: auto;
+  display: block;
+  background: var(--color-surface);
+}
+@media (min-width: 640px) {
+  .masonry {
+    column-count: 2;
+  }
+}
+@media (min-width: 1024px) {
+  .masonry {
+    column-count: 3;
+    column-gap: var(--pa-stack-sm);
+  }
+  .masonry-item {
+    margin-bottom: var(--pa-stack-sm);
+  }
+}
+@media (min-width: 1440px) {
+  .masonry {
+    column-count: 4;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
