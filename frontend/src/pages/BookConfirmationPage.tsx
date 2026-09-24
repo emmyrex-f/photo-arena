@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { Download, Calendar } from "lucide-react";
 import { PageHeader } from "../components/layout/PageHeader";
 import { Button } from "../components/ui/Button";
+import { CameraSpinner } from "../components/ui/CameraSpinner";
 import { Container } from "../components/ui/Container";
 import { Section } from "../components/ui/Section";
 import { formatLagosDateTime, formatLagosRange } from "../lib/datetime";
@@ -16,6 +17,7 @@ import {
 } from "../lib/publicApi";
 import { Seo } from "../lib/seo";
 import { site } from "../lib/site";
+import { useSiteInfo } from "../lib/settings";
 
 /**
  * Mirrors backend truth only. The browser returning from Bachs is never treated as proof of payment.
@@ -71,6 +73,7 @@ const COPY: Record<Exclude<UiState, "loading">, { title: string; description: st
 
 export function BookConfirmationPage() {
   const [params] = useSearchParams();
+  const info = useSiteInfo();
   const reference = cleanParam(params.get("reference"));
   const bookingId = cleanParam(params.get("bookingId"));
   const isMock = params.get("mock") === "1";
@@ -100,14 +103,14 @@ export function BookConfirmationPage() {
           /* fall through to booking status */
         }
       }
-      if (bookingId) {
-        return fetchBookingStatus(bookingId);
+      if (bookingId && reference) {
+        return fetchBookingStatus(bookingId, reference);
       }
       return null;
     }
 
     async function run() {
-      if (!reference && !bookingId) {
+      if (!reference) {
         setState("failed");
         setMessage("Missing booking reference.");
         return;
@@ -169,7 +172,9 @@ export function BookConfirmationPage() {
       />
       <Section>
         <Container className="max-w-xl">
-          {state === "loading" ? <p className="text-text-secondary">Please wait…</p> : null}
+          {state === "loading" ? (
+            <CameraSpinner label="Checking payment" caption="Please wait…" />
+          ) : null}
 
           {booking && state !== "loading" ? (
             <dl className="pa-card space-y-stack-sm text-sm">
@@ -242,8 +247,8 @@ export function BookConfirmationPage() {
 
           <p className="mt-stack-lg text-sm text-text-muted">
             Questions?{" "}
-            <a href={site.phoneHref} className="text-accent">
-              {site.phone}
+            <a href={info.phoneHref} className="text-accent">
+              {info.phone}
             </a>{" "}
             ·{" "}
             <Link to="/contact" className="text-accent">

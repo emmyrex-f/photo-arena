@@ -1,243 +1,242 @@
-import { FormEvent, useEffect, useState } from "react";
-import { KeyRound, Monitor, Moon, Sun } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import { Save, Settings } from "lucide-react";
 import { Button } from "../../admin/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../admin/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "../../admin/components/ui/card";
+import { ErrorBanner } from "../../admin/components/ui/error-banner";
 import { Input } from "../../admin/components/ui/input";
 import { Label } from "../../admin/components/ui/label";
-import { PageHeader } from "../../admin/components/ui/page-header";
-import { RoleBadge } from "../../admin/components/ui/status-badge";
+import { Skeleton } from "../../admin/components/ui/skeleton";
+import { Switch } from "../../admin/components/ui/switch";
+import { Textarea } from "../../admin/components/ui/textarea";
 import { toast } from "../../admin/components/ui/toaster";
 import { useAdminApi } from "../../admin/lib/adminApi";
-import type { ThemePreference } from "../../admin/lib/theme";
-import { useAdminTheme } from "../../admin/lib/theme";
-import { ChangePasswordDialog } from "../../components/admin/ChangePasswordDialog";
+import type { SettingsMap } from "../../admin/lib/types";
 import { errorMessage } from "../../lib/api";
-import { useAuth } from "../../lib/auth";
-import { cn } from "../../lib/cn";
 
-const THEMES: Array<{ value: ThemePreference; label: string; icon: typeof Sun }> = [
-  { value: "light", label: "Light", icon: Sun },
-  { value: "dark", label: "Dark", icon: Moon },
-  { value: "system", label: "System", icon: Monitor },
-];
+const POLICY_KEYS = [
+  "policies.deliveryDays",
+  "policies.expressPercent",
+  "policies.expressMaxPhotos",
+  "policies.expressNote",
+  "policies.extraImageKobo",
+  "policies.vatPercent",
+  "policies.accompanyingMax",
+  "policies.promoUsage",
+  "policies.nonRefundable",
+  "policies.rescheduleFeePercent",
+  "policies.onlineDiscountPercent",
+] as const;
+
+const ANALYTICS_KEYS = ["analytics.ga4Id", "analytics.metaPixelId"] as const;
+
+type PolicyKey = (typeof POLICY_KEYS)[number];
+type AnalyticsKey = (typeof ANALYTICS_KEYS)[number];
+type EditableKey = PolicyKey | AnalyticsKey;
+
+const LABELS: Record<EditableKey, string> = {
+  "policies.deliveryDays": "Standard delivery",
+  "policies.expressPercent": "Express surcharge %",
+  "policies.expressMaxPhotos": "Express max photos",
+  "policies.expressNote": "Express note",
+  "policies.extraImageKobo": "Extra image (kobo)",
+  "policies.vatPercent": "VAT %",
+  "policies.accompanyingMax": "Max accompanying guests",
+  "policies.promoUsage": "Promo usage note",
+  "policies.nonRefundable": "Non-refundable",
+  "policies.rescheduleFeePercent": "Reschedule fee %",
+  "policies.onlineDiscountPercent": "Online discount %",
+  "analytics.ga4Id": "GA4 measurement ID",
+  "analytics.metaPixelId": "Meta Pixel ID",
+};
+
+const DEFAULTS: Record<EditableKey, string> = {
+  "policies.deliveryDays": "3–4 working days",
+  "policies.expressPercent": "30",
+  "policies.expressMaxPhotos": "8",
+  "policies.expressNote": "Within 24hrs · +30% charge (max 8 photos)",
+  "policies.extraImageKobo": "300000",
+  "policies.vatPercent": "7.5",
+  "policies.accompanyingMax": "1",
+  "policies.promoUsage": "Photo Arena may use photos for promos unless exclusive package purchased",
+  "policies.nonRefundable": "true",
+  "policies.rescheduleFeePercent": "15",
+  "policies.onlineDiscountPercent": "5",
+  "analytics.ga4Id": "",
+  "analytics.metaPixelId": "",
+};
+
+function pick(source: SettingsMap): Record<EditableKey, string> {
+  const next = { ...DEFAULTS };
+  for (const key of [...POLICY_KEYS, ...ANALYTICS_KEYS]) {
+    if (typeof source[key] === "string") next[key] = source[key]!;
+  }
+  return next;
+}
 
 export function AdminSettingsPage() {
-  const { user, lastLoginAt, applyAccount } = useAuth();
   const api = useAdminApi();
-  const { theme, setTheme, resolved } = useAdminTheme();
-  const [passwordOpen, setPasswordOpen] = useState(false);
-  const owner = user?.role === "OWNER";
-
-  const [name, setName] = useState(user?.name ?? "");
-  const [email, setEmail] = useState(user?.email ?? "");
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+  const [saved, setSaved] = useState<Record<EditableKey, string>>(DEFAULTS);
+  const [draft, setDraft] = useState<Record<EditableKey, string>>(DEFAULTS);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    if (!user) return;
-    setName(user.name);
-    setEmail(user.email);
-  }, [user]);
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const map = await api.settings.get();
+      const next = pick(map);
+      setSaved(next);
+      setDraft(next);
+    } catch (err) {
+      setError(errorMessage(err, "Could not load settings"));
+    } finally {
+      setLoading(false);
+    }
+  }, [api]);
 
-  async function onSaveLogin(event: FormEvent) {
-    event.preventDefault();
-    if (newPassword && newPassword.length < 8) {
-      toast.error("New password must be at least 8 characters");
-      return;
-    }
-    if (newPassword && newPassword !== confirmPassword) {
-      toast.error("New passwords do not match");
-      return;
-    }
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const dirty = useMemo(() => {
+    return ([...POLICY_KEYS, ...ANALYTICS_KEYS] as EditableKey[]).some((key) => draft[key] !== saved[key]);
+  }, [draft, saved]);
+
+  async function onSave() {
     setSaving(true);
     try {
-      const result = await api.auth.updateAccount({
-        currentPassword,
-        name: name.trim(),
-        email: email.trim().toLowerCase(),
-        ...(newPassword ? { newPassword } : {}),
-      });
-      applyAccount(
-        {
-          id: result.user.id,
-          email: result.user.email,
-          name: result.user.name,
-          role: result.user.role,
-          permissions: result.user.permissions,
-          isActive: result.user.isActive,
-          lastLoginAt: result.user.lastLoginAt,
-        },
-        result.token,
-      );
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmPassword("");
-      toast.success("Login details updated");
+      const payload: SettingsMap = {};
+      for (const key of [...POLICY_KEYS, ...ANALYTICS_KEYS] as EditableKey[]) {
+        if (draft[key] !== saved[key]) payload[key] = draft[key];
+      }
+      const map = await api.settings.put(payload);
+      const next = pick(map);
+      setSaved(next);
+      setDraft(next);
+      toast.success("Settings saved");
     } catch (err) {
-      toast.error(errorMessage(err, "Could not update login details"));
+      toast.error(errorMessage(err, "Could not save settings"));
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <div className="space-y-admin">
-      <PageHeader
-        title="Settings"
-        description={
-          owner
-            ? "Theme and desk login details for the owner account."
-            : "Theme, password and account details for this desk session."
-        }
-      />
+    <div className="pa-settings space-y-admin-stack">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="font-display text-3xl font-normal tracking-tight text-foreground sm:text-[2rem]">
+            Settings
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Studio policies and analytics. Site copy lives under Content.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" asChild>
+            <Link to="/admin/content">Site content</Link>
+          </Button>
+          <Button type="button" variant="outline" asChild>
+            <Link to="/admin/notifications">Notifications</Link>
+          </Button>
+          <Button type="button" onClick={() => void onSave()} disabled={!dirty || loading} loading={saving}>
+            <Save strokeWidth={1.5} />
+            Save changes
+          </Button>
+        </div>
+      </header>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Appearance</CardTitle>
-            <CardDescription>Stored in this browser as pa_admin_theme. Currently resolving to {resolved}.</CardDescription>
-          </CardHeader>
-          <CardContent className="grid grid-cols-3 gap-2">
-            {THEMES.map((item) => (
-              <button
-                key={item.value}
-                type="button"
-                onClick={() => setTheme(item.value)}
-                className={cn(
-                  "flex flex-col items-center gap-2 rounded-lg border px-3 py-4 text-sm transition",
-                  theme === item.value ? "border-primary bg-primary/10" : "border-border hover:bg-muted/40",
-                )}
-              >
-                <item.icon className="h-4 w-4" />
-                {item.label}
-              </button>
-            ))}
-          </CardContent>
-        </Card>
+      <ErrorBanner message={error} onRetry={() => void load()} retrying={loading} />
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">{owner ? "Desk login" : "Account"}</CardTitle>
-            <CardDescription>
-              {owner
-                ? "This email is the studio sign-in address. Confirm with your current password to save."
-                : "Signed-in desk user."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            {owner ? (
-              <form className="space-y-4" onSubmit={onSaveLogin}>
-                <div className="space-y-2">
-                  <Label htmlFor="login-name">Name</Label>
-                  <Input
-                    id="login-name"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    autoComplete="name"
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="login-email">Login email</Label>
-                  <Input
-                    id="login-email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    autoComplete="username"
-                    required
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-muted-foreground">Role:</span>
-                  {user ? <RoleBadge role={user.role} /> : null}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="login-current">Current password</Label>
-                  <Input
-                    id="login-current"
-                    type="password"
-                    autoComplete="current-password"
-                    value={currentPassword}
-                    onChange={(e) => setCurrentPassword(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="login-new">New password (optional)</Label>
-                  <Input
-                    id="login-new"
-                    type="password"
-                    autoComplete="new-password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    minLength={8}
-                  />
-                </div>
-                {newPassword ? (
-                  <div className="space-y-2">
-                    <Label htmlFor="login-confirm">Confirm new password</Label>
+      {loading ? (
+        <div className="space-y-3">
+          <Skeleton className="h-48 w-full rounded-xl" />
+          <Skeleton className="h-32 w-full rounded-xl" />
+        </div>
+      ) : (
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle className="font-display text-lg font-normal">Studio policies</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-admin-gap sm:grid-cols-2">
+              {POLICY_KEYS.map((key) => {
+                if (key === "policies.nonRefundable") {
+                  return (
+                    <div
+                      key={key}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2 sm:col-span-2"
+                    >
+                      <div>
+                        <p className="text-sm text-foreground">{LABELS[key]}</p>
+                        <p className="text-xs text-muted-foreground">Shown on public policy surfaces.</p>
+                      </div>
+                      <Switch
+                        checked={draft[key] === "true"}
+                        onCheckedChange={(on) => setDraft((prev) => ({ ...prev, [key]: on ? "true" : "false" }))}
+                        aria-label={LABELS[key]}
+                      />
+                    </div>
+                  );
+                }
+                if (key === "policies.promoUsage" || key === "policies.expressNote") {
+                  return (
+                    <div key={key} className="space-y-1.5 sm:col-span-2">
+                      <Label htmlFor={key}>{LABELS[key]}</Label>
+                      <Textarea
+                        id={key}
+                        value={draft[key]}
+                        onChange={(event) => setDraft((prev) => ({ ...prev, [key]: event.target.value }))}
+                        rows={2}
+                      />
+                    </div>
+                  );
+                }
+                return (
+                  <div key={key} className="space-y-1.5">
+                    <Label htmlFor={key}>{LABELS[key]}</Label>
                     <Input
-                      id="login-confirm"
-                      type="password"
-                      autoComplete="new-password"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      required
-                      minLength={8}
+                      id={key}
+                      value={draft[key]}
+                      onChange={(event) => setDraft((prev) => ({ ...prev, [key]: event.target.value }))}
                     />
                   </div>
-                ) : null}
-                {lastLoginAt ? (
-                  <p className="text-xs text-muted-foreground">
-                    Session started {new Date(lastLoginAt).toLocaleString()}
-                  </p>
-                ) : null}
-                <Button type="submit" loading={saving}>
-                  Save login details
-                </Button>
-              </form>
-            ) : (
-              <>
-                <p>
-                  <span className="text-muted-foreground">Name:</span> {user?.name}
-                </p>
-                <p>
-                  <span className="text-muted-foreground">Email:</span> {user?.email}
-                </p>
-                <div className="flex items-center gap-2">
-                  <span className="text-muted-foreground">Role:</span>
-                  {user ? <RoleBadge role={user.role} /> : null}
+                );
+              })}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="font-display text-lg font-normal">Analytics</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-admin-gap sm:grid-cols-2">
+              {ANALYTICS_KEYS.map((key) => (
+                <div key={key} className="space-y-1.5">
+                  <Label htmlFor={key}>{LABELS[key]}</Label>
+                  <Input
+                    id={key}
+                    value={draft[key]}
+                    onChange={(event) => setDraft((prev) => ({ ...prev, [key]: event.target.value }))}
+                    placeholder="Leave blank to disable"
+                  />
                 </div>
-                {lastLoginAt ? (
-                  <p className="text-xs text-muted-foreground">
-                    Session started {new Date(lastLoginAt).toLocaleString()}
-                  </p>
-                ) : null}
-                <Button variant="outline" onClick={() => setPasswordOpen(true)}>
-                  <KeyRound />
-                  Change password
-                </Button>
-              </>
-            )}
-          </CardContent>
-        </Card>
+              ))}
+              <p className="text-xs text-muted-foreground sm:col-span-2">
+                IDs load on the public site only after cookie consent.
+              </p>
+            </CardContent>
+          </Card>
 
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-base">About Photo Arena desk</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm text-muted-foreground">
-            <p>Admin portal for Photo Arena — Port Harcourt walk-in portrait studio.</p>
-            <p>Money is stored in kobo; times display in Africa/Lagos. Public site content is managed under Content.</p>
-            <p>API base: /api · Uploads: /uploads</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      <ChangePasswordDialog open={passwordOpen} onOpenChange={setPasswordOpen} />
+          <p className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Settings className="h-3.5 w-3.5" aria-hidden />
+            Theme preference is in the header menu. Login email is the studio owner account.
+          </p>
+        </>
+      )}
     </div>
   );
 }

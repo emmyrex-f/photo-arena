@@ -10,6 +10,7 @@ import {
 } from "../../lib/publicApi";
 import { usePublicData } from "../../lib/usePublicData";
 import { Button } from "../ui/Button";
+import { CameraSpinner } from "../ui/CameraSpinner";
 import { Container } from "../ui/Container";
 import { Eyebrow, Heading } from "../ui/Heading";
 import { Section } from "../ui/Section";
@@ -32,52 +33,62 @@ export function ServicesPreviewSection() {
   const preview = useMemo(() => pickPreview(data ?? []), [data]);
 
   return (
-    <Section className="bg-surface/30">
+    <Section className="bg-surface">
       <Container>
         <Reveal className="mb-stack-xl max-w-2xl">
-          <Eyebrow>Sessions</Eyebrow>
-          <Heading>What we photograph</Heading>
+          <Eyebrow>Our Services</Eyebrow>
+          <Heading className="mt-stack-sm">What we photograph</Heading>
           <p className="mt-stack text-text-secondary">
             The major session types. Full package details and duration options are on the services page.
           </p>
         </Reveal>
         {loading && preview.length === 0 ? (
-          <p className="text-text-secondary">Loading sessions…</p>
+          <CameraSpinner label="Loading sessions" caption="Loading sessions…" />
         ) : (
-          <Stagger className="grid gap-px bg-elevated md:grid-cols-2">
+          <Stagger className="grid gap-stack md:grid-cols-2">
             {preview.map((service) => {
               const image = serviceHeroSrc(service);
               const from = formatNairaFromKobo(service.startingPriceKobo);
               return (
-                <StaggerItem key={service.id} className="bg-bg p-card-lg">
-                  {image ? (
-                    <Link
-                      to={`/services#${service.slug}`}
-                      className="block"
-                    >
+                <StaggerItem key={service.id}>
+                  <Link
+                    to={`/services#${service.slug}`}
+                    className="group relative block aspect-[4/5] overflow-hidden rounded-2xl sm:aspect-[4/3]"
+                  >
+                    {image ? (
                       <img
                         src={image}
                         alt=""
-                        className="mb-6 aspect-[4/5] w-full object-cover object-top transition-opacity hover:opacity-90 sm:aspect-[4/3]"
+                        className="absolute inset-0 h-full w-full object-cover object-top transition duration-700 group-hover:scale-[1.04]"
                       />
-                      <span className="sr-only">View {service.name} on the services page</span>
-                    </Link>
-                  ) : null}
-                  <h3 className="font-display text-2xl text-text">{service.name}</h3>
-                  {service.summary ? (
-                    <p className="mt-eyebrow text-sm leading-relaxed text-text-secondary">{service.summary}</p>
-                  ) : null}
-                  <p className="mt-6 text-sm text-accent">
-                    From {from}
-                    {service.kind === "RENTAL" ? "/hr" : ""}
-                  </p>
+                    ) : (
+                      <div className="absolute inset-0 bg-ink" />
+                    )}
+                    <div
+                      aria-hidden="true"
+                      className="absolute inset-0 bg-gradient-to-t from-ink via-ink/45 to-ink/10"
+                    />
+                    <div className="absolute inset-x-0 bottom-0 p-card">
+                      <h3 className="font-display text-2xl text-white">{service.name}</h3>
+                      {service.summary ? (
+                        <p className="mt-eyebrow line-clamp-2 text-sm leading-relaxed text-sage">
+                          {service.summary}
+                        </p>
+                      ) : null}
+                      <p className="mt-3 text-sm font-medium text-accent">
+                        From {from}
+                        {service.kind === "RENTAL" ? "/hr" : ""}
+                      </p>
+                    </div>
+                    <span className="sr-only">View {service.name} on the services page</span>
+                  </Link>
                 </StaggerItem>
               );
             })}
           </Stagger>
         )}
         <Reveal className="mt-stack-xl">
-          <Button to="/services" variant="secondary">
+          <Button to="/services">
             View All Services
             <ArrowRight className="h-4 w-4" aria-hidden="true" />
           </Button>

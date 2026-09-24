@@ -58,7 +58,7 @@ function lagosDateOffset(days: number): string {
 
 async function createHoldCheckout(label: string) {
   const packages = await api<
-    Array<{ id: string; packages: Array<{ id: string; durationMinutes: number }> }>
+    Array<{ id: string; packages: Array<{ id: string; durationMinutes: number; priceKobo?: number }> }>
   >("GET", "/bookings/packages");
   assert.ok(okStatus(packages.status), `${label}: packages ${packages.status}`);
   const first = packages.data[0];
@@ -79,18 +79,20 @@ async function createHoldCheckout(label: string) {
   }
   assert.ok(slot, `${label}: no open slots in next 14 days`);
 
+  const stamp = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
   const hold = await api<{
     bookingId: string;
     reference: string;
-    amountKobo: number;
+    pricing: { payableKobo: number };
   }>("POST", "/bookings/hold", {
     packageId: pkg.id,
     startTime: slot,
     customerName: `Flow Test ${label}`,
-    customerPhone: "+2348010000000",
-    customerEmail: `flow-${label.toLowerCase().replace(/\s+/g, "-")}@example.com`,
+    customerPhone: `0801${stamp.slice(-7)}`,
+    customerEmail: `flow-${label.toLowerCase().replace(/\s+/g, "-")}-${stamp}@example.com`,
   });
   assert.ok(okStatus(hold.status), `${label}: hold ${hold.status} ${JSON.stringify(hold.data)}`);
+  assert.ok(hold.data.pricing?.payableKobo, `${label}: hold missing payableKobo`);
 
   const checkout = await api<{ provider: string; checkoutUrl: string; reference: string }>(
     "POST",
@@ -112,6 +114,7 @@ async function createHoldCheckout(label: string) {
     bookingId: hold.data.bookingId,
     reference: hold.data.reference,
     providerSessionId: `mock_${hold.data.reference}`,
+    amountBachs: (hold.data.pricing.payableKobo / 100).toFixed(2),
   };
 }
 
@@ -120,6 +123,7 @@ async function postWebhook(opts: {
   type: string;
   reference: string;
   checkoutId: string;
+  amount: string;
   status?: string;
 }) {
   const payload = JSON.stringify({
@@ -132,7 +136,7 @@ async function postWebhook(opts: {
       checkout_id: opts.checkoutId,
       reference: opts.reference,
       status: opts.status ?? (opts.type === "collection.succeeded" ? "SUCCEEDED" : "FAILED"),
-      amount: "57000.00",
+      amount: opts.amount,
       currency: "NGN",
       metadata: { reference: opts.reference },
     },
@@ -149,15 +153,19 @@ async function postWebhook(opts: {
     },
     body: payload,
   });
-  const data = (await response.json()) as { received?: boolean; duplicate?: boolean };
+  const data = (await response.json()) as {
+    received?: boolean;
+    duplicate?: boolean;
+    ignored?: string;
+  };
   return { status: response.status, data };
 }
 
-async function bookingStatus(bookingId: string) {
+async function bookingStatus(bookingId: string, reference: string) {
   return api<{
     status: string;
     payment: { status: string; reference: string } | null;
-  }>("GET", `/bookings/${bookingId}/status`);
+  }>("GET", `/bookings/${bookingId}/status?reference=${encodeURIComponent(reference)}`);
 }
 
 async function main() {
@@ -171,11 +179,13 @@ async function main() {
     type: "collection.succeeded",
     reference: success.reference,
     checkoutId: success.providerSessionId,
+    amount: success.amountBachs,
   });
   assert.ok(okStatus(ok1.status), `T1 webhook ${ok1.status}`);
   assert.equal(ok1.data.received, true);
+  assert.notEqual(ok1.data.ignored, "amount_mismatch", `T1 ignored ${ok1.data.ignored}`);
   assert.notEqual(ok1.data.duplicate, true);
-  const afterSuccess = await bookingStatus(success.bookingId);
+  const afterSuccess = await bookingStatus(success.bookingId, success.reference);
   assert.equal(afterSuccess.data.status, "CONFIRMED", "T1 booking CONFIRMED");
   assert.equal(afterSuccess.data.payment?.status, "SUCCESS", "T1 payment SUCCESS");
   console.log("Test 1 — successful payment ✓");
@@ -186,11 +196,12 @@ async function main() {
     type: "collection.succeeded",
     reference: success.reference,
     checkoutId: success.providerSessionId,
+    amount: success.amountBachs,
   });
   assert.ok(okStatus(dup.status), `T4 webhook ${dup.status}`);
   assert.equal(dup.data.received, true);
   assert.equal(dup.data.duplicate, true, "T4 duplicate webhook");
-  const stillOne = await bookingStatus(success.bookingId);
+  const stillOne = await bookingStatus(success.bookingId, success.reference);
   assert.equal(stillOne.data.status, "CONFIRMED");
   assert.equal(stillOne.data.payment?.status, "SUCCESS");
   console.log("Test 4 — duplicate webhook ✓");
@@ -202,11 +213,12 @@ async function main() {
     type: "collection.failed",
     reference: failed.reference,
     checkoutId: failed.providerSessionId,
+    amount: failed.amountBachs,
     status: "FAILED",
   });
   assert.ok(okStatus(failHook.status), `T2 webhook ${failHook.status}`);
   assert.equal(failHook.data.received, true);
-  const afterFail = await bookingStatus(failed.bookingId);
+  const afterFail = await bookingStatus(failed.bookingId, failed.reference);
   assert.equal(afterFail.data.status, "TEMPORARY_HOLD", "T2 booking stays hold");
   assert.equal(afterFail.data.payment?.status, "FAILED", "T2 payment FAILED");
   console.log("Test 2 — failed payment ✓");
@@ -218,11 +230,12 @@ async function main() {
     type: "collection.abandoned",
     reference: abandoned.reference,
     checkoutId: abandoned.providerSessionId,
+    amount: abandoned.amountBachs,
     status: "ABANDONED",
   });
   assert.ok(okStatus(abandonHook.status), `T3 webhook ${abandonHook.status}`);
   assert.equal(abandonHook.data.received, true);
-  const afterAbandon = await bookingStatus(abandoned.bookingId);
+  const afterAbandon = await bookingStatus(abandoned.bookingId, abandoned.reference);
   assert.equal(afterAbandon.data.status, "TEMPORARY_HOLD", "T3 booking stays hold");
   assert.ok(
     afterAbandon.data.payment?.status === "PROCESSING" ||

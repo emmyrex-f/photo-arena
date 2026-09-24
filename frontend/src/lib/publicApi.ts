@@ -60,6 +60,9 @@ export type PublicPackage = {
   id: string;
   name: string;
   durationMinutes: number;
+  outfitCount?: number | null;
+  backdropCount?: number | null;
+  editedPhotoCount?: number | null;
   includes: string;
   priceKobo: number;
   /** Server-calculated online payable. Absent on offline fallback catalogue. */
@@ -331,13 +334,17 @@ export type BookingStatusResponse = {
   endTime: string;
   holdExpiresAt: string | null;
   package: { name: string; durationMinutes: number };
-  customer: { name: string; email: string };
+  /** Public status never includes email/phone — name only after reference gate. */
+  customer: { name: string; email?: string | null };
   amountKobo: number | null;
   payment: { status: "PENDING" | "SUCCESS" | "FAILED" | string; method: string; provider: string | null; paidAt: string | null } | null;
 };
 
-export function fetchBookingStatus(bookingId: string): Promise<BookingStatusResponse> {
-  return request<BookingStatusResponse>(`/bookings/${encodeURIComponent(bookingId)}/status`);
+export function fetchBookingStatus(bookingId: string, reference: string): Promise<BookingStatusResponse> {
+  const qs = new URLSearchParams({ reference });
+  return request<BookingStatusResponse>(
+    `/bookings/${encodeURIComponent(bookingId)}/status?${qs.toString()}`,
+  );
 }
 
 export function verifyPayment(reference: string): Promise<BookingStatusResponse> {
@@ -360,7 +367,7 @@ export const SERVICE_KIND_LABELS: Record<ServiceKind, { title: string; eyebrow: 
   SESSION: {
     eyebrow: "Photography sessions",
     title: "Sessions",
-    blurb: "Directed studio sessions with our photographer. Choose a duration; every package includes edited photographs.",
+    blurb: "Directed studio sessions with our photographer. Choose an outfit option; duration and deliverables are shown for each.",
   },
   SET: {
     eyebrow: "Aesthetic backgrounds",
@@ -383,6 +390,32 @@ export const SERVICE_KIND_LABELS: Record<ServiceKind, { title: string; eyebrow: 
     blurb: "Hourly hire of the room, lighting and backdrops for photographers and brands.",
   },
 };
+
+export function formatOutfitCount(count: number): string {
+  return count === 1 ? "1 outfit" : `${count} outfits`;
+}
+
+export function formatPackageDeliverables(
+  pkg: Pick<PublicPackage, "backdropCount" | "editedPhotoCount">,
+): string | null {
+  const parts: string[] = [];
+  if (pkg.backdropCount != null) {
+    parts.push(pkg.backdropCount === 1 ? "1 backdrop" : `${pkg.backdropCount} backdrops`);
+  }
+  if (pkg.editedPhotoCount != null) {
+    parts.push(pkg.editedPhotoCount === 1 ? "1 photo" : `${pkg.editedPhotoCount} photos`);
+  }
+  return parts.length ? parts.join(" · ") : null;
+}
+
+export function sortPublicPackages(packages: PublicPackage[]): PublicPackage[] {
+  return [...packages].sort((a, b) => {
+    const aOutfit = a.outfitCount;
+    const bOutfit = b.outfitCount;
+    if (aOutfit != null && bOutfit != null && aOutfit !== bOutfit) return aOutfit - bOutfit;
+    return a.durationMinutes - b.durationMinutes || a.sortOrder - b.sortOrder;
+  });
+}
 
 export function groupServicesByKind(services: PublicService[]): { kind: ServiceKind; services: PublicService[] }[] {
   return SERVICE_KIND_ORDER.map((kind) => ({

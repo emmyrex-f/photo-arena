@@ -9,7 +9,7 @@ export const site = {
   instagram: "https://www.instagram.com/photoarenang",
   instagramHandle: "@photoarenang",
   facebook: "https://www.facebook.com/share/1DKYw3rfJK/",
-  tiktok: "",
+  tiktok: "https://www.tiktok.com/@photoarenang",
   domain: "photoarenang.com",
   url: "https://photoarenang.com",
   address: {
@@ -44,6 +44,20 @@ export const site = {
       "Before you walk in, walk through. See the backdrops, the lighting and the space — and imagine yourself in the frame.",
     videoUrl: "",
   },
+  cta: {
+    heading: "Ready to book your session?",
+    body:
+      "Reserve a studio session online and receive 5% off. Walk-ins are welcome Monday–Saturday 8:00 AM – 6:00 PM and Sunday 12:00 PM – 6:00 PM.",
+    buttonLabel: "Book a Session",
+    buttonHref: "/book",
+  },
+  about: {
+    headline: "Welcome",
+    body: "Photo Arena is a walk-in portrait studio in Port Harcourt. The room, the lights, and the sets are ready. You bring the occasion.",
+    imageUrl: "/media/about.jpg",
+    ctaLabel: "Read More",
+    ctaHref: "/about",
+  },
   seo: {
     defaultTitle: "Photo Arena — Port Harcourt Portrait Studio",
     defaultDescription:
@@ -66,6 +80,7 @@ export const exploreLinks = [
   { to: "/services", label: "Services" },
   { to: "/portfolio", label: "Portfolio" },
   { to: "/book", label: "Book Now" },
+  { to: "/blog", label: "Journal" },
   { to: "/contact", label: "Contact" },
   { to: "/faq", label: "FAQ" },
 ] as const;

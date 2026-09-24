@@ -1,19 +1,20 @@
 import type { LucideIcon } from "lucide-react";
 import {
   Bell,
-  BookOpen,
-  CalendarDays,
+  CalendarCheck,
   CreditCard,
+  FileText,
   GalleryHorizontalEnd,
+  Home,
   Images,
-  LayoutDashboard,
-  Mail,
+  LayoutGrid,
+  MessageSquare,
+  Newspaper,
   Quote,
-  Settings2,
+  Settings,
   Shield,
-  Sparkles,
+  User,
   Users,
-  UsersRound,
 } from "lucide-react";
 import { hasDeskPermission, type DeskPermission } from "./permissions";
 import type { Role } from "./types";
@@ -22,6 +23,8 @@ export type NavItem = {
   to: string;
   label: string;
   icon: LucideIcon;
+  /** Optional count badge (e.g. notifications). Omit or 0 to hide. */
+  badge?: number | string;
   /** If set, only these roles see the item. */
   roles?: Role[];
   /** Desk area. Settings is always visible once signed in. */
@@ -39,14 +42,14 @@ export const ADMIN_NAV: NavItem[] = [
   {
     to: "/admin",
     label: "Dashboard",
-    icon: LayoutDashboard,
+    icon: Home,
     permission: "dashboard",
     keywords: ["home", "overview", "stats"],
   },
   {
     to: "/admin/bookings",
     label: "Bookings",
-    icon: CalendarDays,
+    icon: CalendarCheck,
     permission: "bookings",
     keywords: ["schedule", "appointments", "calendar", "week", "day"],
   },
@@ -60,30 +63,37 @@ export const ADMIN_NAV: NavItem[] = [
   {
     to: "/admin/customers",
     label: "Customers",
-    icon: UsersRound,
+    icon: User,
     permission: "customers",
     keywords: ["crm", "clients"],
   },
   {
     to: "/admin/enquiries",
     label: "Enquiries",
-    icon: Mail,
+    icon: MessageSquare,
     permission: "enquiries",
     keywords: ["inbox", "leads", "contact", "messages"],
   },
   {
     to: "/admin/services",
     label: "Services",
-    icon: Sparkles,
+    icon: LayoutGrid,
     permission: "services",
     keywords: ["catalog", "packages", "pricing", "duration"],
   },
   {
     to: "/admin/content",
     label: "Content",
-    icon: BookOpen,
+    icon: FileText,
     permission: "content",
-    keywords: ["cms", "blog", "faq", "settings"],
+    keywords: ["cms", "faq", "settings", "homepage"],
+  },
+  {
+    to: "/admin/blog",
+    label: "Blog",
+    icon: Newspaper,
+    permission: "content",
+    keywords: ["posts", "articles", "stories"],
   },
   {
     to: "/admin/portfolio",
@@ -113,7 +123,12 @@ export const ADMIN_NAV: NavItem[] = [
     permission: "notifications",
     keywords: ["email", "smtp", "reminders"],
   },
-  { to: "/admin/settings", label: "Settings", icon: Settings2, keywords: ["theme", "password", "account", "login", "email"] },
+  {
+    to: "/admin/settings",
+    label: "Settings",
+    icon: Settings,
+    keywords: ["theme", "password", "account", "login", "email"],
+  },
   {
     to: "/admin/users",
     label: "Users",
@@ -135,15 +150,16 @@ const SECTION_ORDER: Array<{ id: string; label?: string; paths: string[] }> = [
   { id: "home", paths: ["/admin"] },
   {
     id: "operations",
-    label: "Operations",
+    label: "OPERATIONS",
     paths: ["/admin/bookings", "/admin/payments", "/admin/customers", "/admin/enquiries"],
   },
   {
     id: "content",
-    label: "Content",
+    label: "CONTENT",
     paths: [
       "/admin/services",
       "/admin/content",
+      "/admin/blog",
       "/admin/portfolio",
       "/admin/gallery",
       "/admin/testimonials",
@@ -151,7 +167,7 @@ const SECTION_ORDER: Array<{ id: string; label?: string; paths: string[] }> = [
   },
   {
     id: "system",
-    label: "System",
+    label: "SYSTEM",
     paths: ["/admin/notifications", "/admin/settings", "/admin/users", "/admin/audit"],
   },
 ];
@@ -166,7 +182,7 @@ export function navForUser(user: { role?: Role; permissions?: string[] } | null 
 
 export function navForRole(role: Role | undefined): NavItem[] {
   if (!role) return [];
-  return navForUser({ role, permissions: role === "ADMIN" ? ["*"] : [] });
+  return navForUser({ role, permissions: role === "ADMIN" || role === "OWNER" ? ["*"] : [] });
 }
 
 export function navSectionsForUser(user: { role?: Role; permissions?: string[] } | null | undefined): NavSection[] {
@@ -180,10 +196,17 @@ export function navSectionsForUser(user: { role?: Role; permissions?: string[] }
 }
 
 export function navSectionsForRole(role: Role | undefined): NavSection[] {
-  return navSectionsForUser(role ? { role, permissions: role === "ADMIN" ? ["*"] : [] } : null);
+  return navSectionsForUser(
+    role ? { role, permissions: role === "ADMIN" || role === "OWNER" ? ["*"] : [] } : null,
+  );
 }
 
-export function permissionForPath(pathname: string): DeskPermission | null {
+/**
+ * Desk permission required for a path.
+ * - `null` → settings (always allowed once signed in)
+ * - `undefined` → unknown path (deny)
+ */
+export function permissionForPath(pathname: string): DeskPermission | null | undefined {
   const path = pathname.replace(/\/+$/, "") || "/admin";
   if (path === "/admin/settings") return null;
   if (path === "/admin") return "dashboard";
@@ -198,7 +221,7 @@ export function permissionForPath(pathname: string): DeskPermission | null {
   if (path.startsWith("/admin/notifications")) return "notifications";
   if (path.startsWith("/admin/users")) return "users";
   if (path.startsWith("/admin/audit")) return "audit";
-  return "dashboard";
+  return undefined;
 }
 
 export function canAccessAdminPath(
@@ -206,7 +229,8 @@ export function canAccessAdminPath(
   pathname: string,
 ): boolean {
   const permission = permissionForPath(pathname);
-  if (!permission) return true;
+  if (permission === undefined) return false;
+  if (permission === null) return true;
   return hasDeskPermission(user, permission);
 }
 
@@ -231,6 +255,7 @@ export function pageTitleFromPath(pathname: string): { title: string; crumbs: st
     "/admin/services": "Services",
     "/admin/gallery": "Media Library",
     "/admin/content": "Content",
+    "/admin/blog": "Blog",
     "/admin/payments": "Payments",
     "/admin/notifications": "Notifications",
     "/admin/users": "Users",
@@ -241,6 +266,7 @@ export function pageTitleFromPath(pathname: string): { title: string; crumbs: st
   if (path.startsWith("/admin/customers/") && path !== "/admin/customers") {
     return { title: "Customer", crumbs: ["Customers", "Detail"] };
   }
+  if (path === "/admin/blog" || path === "/admin/blog/") return { title: "Blog", crumbs: ["Content", "Blog"] };
   if (path === "/admin/blog/new") return { title: "New post", crumbs: ["Content", "Blog", "New"] };
   if (path.startsWith("/admin/blog/")) return { title: "Edit post", crumbs: ["Content", "Blog", "Edit"] };
 

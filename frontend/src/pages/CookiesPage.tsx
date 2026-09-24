@@ -2,12 +2,11 @@ import { Link } from "react-router-dom";
 import { PageHeader } from "../components/layout/PageHeader";
 import { Container } from "../components/ui/Container";
 import { Section } from "../components/ui/Section";
-import { useConsent } from "../lib/consent";
 import { Seo } from "../lib/seo";
-import { site } from "../lib/site";
+import { useSiteInfo } from "../lib/settings";
 
 export function CookiesPage() {
-  const { openPreferences } = useConsent();
+  const info = useSiteInfo();
 
   return (
     <>
@@ -19,13 +18,13 @@ export function CookiesPage() {
       <PageHeader
         eyebrow="Legal"
         title="Cookie policy"
-        description="This site uses cookies and similar technologies. You control optional cookies from the banner or settings link below."
+        description="This site uses cookies and similar technologies. You control optional cookies from the banner on your first visit."
       />
       <Section>
         <Container className="prose-pa max-w-2xl">
           <h2>What cookies are</h2>
           <p>
-            Cookies are small text files stored on your device. {site.name} uses them so the site works,
+            Cookies are small text files stored on your device. {info.name} uses them so the site works,
             to remember your consent choice, and — only if you agree — to measure traffic and run ads.
           </p>
 
@@ -47,16 +46,8 @@ export function CookiesPage() {
 
           <h2>Your choices</h2>
           <p>
-            On your first visit you can accept all, reject non-essential, or manage preferences. Change
-            your mind anytime via{" "}
-            <button
-              type="button"
-              onClick={openPreferences}
-              className="text-accent-hover underline underline-offset-3"
-            >
-              Cookie settings
-            </button>{" "}
-            in the footer, or see our <Link to="/privacy">Privacy notice</Link>.
+            On your first visit you can accept all or reject optional cookies. See our{" "}
+            <Link to="/privacy">Privacy notice</Link> for how we handle personal data.
           </p>
 
           <h2>NDPR</h2>

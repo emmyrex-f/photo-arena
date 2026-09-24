@@ -1,95 +1,203 @@
-import { useState } from "react";
-import { ChevronDown, ChevronRight, Shield } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { ChevronLeft, ChevronRight, Shield } from "lucide-react";
+import { Badge } from "../../admin/components/ui/badge";
+import { Button } from "../../admin/components/ui/button";
 import { EmptyState } from "../../admin/components/ui/empty-state";
 import { ErrorBanner } from "../../admin/components/ui/error-banner";
 import { Input } from "../../admin/components/ui/input";
-import { PageHeader } from "../../admin/components/ui/page-header";
-import { Pagination } from "../../admin/components/ui/pagination";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../admin/components/ui/select";
 import { Skeleton } from "../../admin/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../../admin/components/ui/table";
 import { useAdminApi } from "../../admin/lib/adminApi";
-import { formatLagosDateTime, humanize } from "../../admin/lib/format";
-import { useQuery } from "../../admin/lib/useQuery";
-import { cn } from "../../lib/cn";
+import { formatLagosDateTime } from "../../admin/lib/format";
+import type { AuditLog } from "../../admin/lib/types";
+import { errorMessage } from "../../lib/api";
+
+const PAGE_SIZE = 50;
+
+const ENTITY_OPTIONS = [
+  "ALL",
+  "booking",
+  "payment",
+  "customer",
+  "enquiry",
+  "service",
+  "gallery",
+  "testimonial",
+  "blog",
+  "settings",
+  "user",
+  "notification",
+  "media_usage",
+] as const;
 
 export function AdminAuditPage() {
   const api = useAdminApi();
   const [q, setQ] = useState("");
-  const [entity, setEntity] = useState("");
+  const [qDraft, setQDraft] = useState("");
+  const [entity, setEntity] = useState<string>("ALL");
   const [page, setPage] = useState(1);
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [items, setItems] = useState<AuditLog[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const query = useQuery(
-    () => api.audit.list({ q: q.trim() || undefined, entity: entity.trim() || undefined, page, pageSize: 25 }),
-    [q, entity, page],
-  );
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await api.audit.list({
+        page,
+        pageSize: PAGE_SIZE,
+        q: q || undefined,
+        entity: entity === "ALL" ? undefined : entity,
+      });
+      setItems(result.items);
+      setTotal(result.total);
+    } catch (err) {
+      setError(errorMessage(err, "Could not load audit log"));
+    } finally {
+      setLoading(false);
+    }
+  }, [api, page, q, entity]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
-    <div className="space-y-admin">
-      <PageHeader title="Audit log" description="Every admin write is recorded here." />
-      <ErrorBanner message={query.error} onRetry={() => void query.refetch()} retrying={query.fetching} />
+    <div className="pa-audit space-y-admin-stack">
+      <header>
+        <h1 className="font-display text-3xl font-normal tracking-tight text-foreground sm:text-[2rem]">
+          Audit
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground">Desk activity history. Read-only.</p>
+      </header>
 
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <Input
-          placeholder="Search action, email…"
-          value={q}
-          onChange={(e) => {
+      <ErrorBanner message={error} onRetry={() => void load()} retrying={loading} />
+
+      <section className="flex flex-col gap-admin-gap sm:flex-row sm:flex-wrap sm:items-center" aria-label="Filters">
+        <form
+          className="flex flex-wrap gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
             setPage(1);
-            setQ(e.target.value);
+            setQ(qDraft.trim());
           }}
-          className="sm:max-w-sm"
-        />
-        <Input
-          placeholder="Entity (booking, service…)"
+        >
+          <Input
+            value={qDraft}
+            onChange={(event) => setQDraft(event.target.value)}
+            placeholder="Search action, email, or entity id…"
+            className="sm:max-w-sm"
+            aria-label="Search audit log"
+          />
+          <Button type="submit" variant="outline">
+            Search
+          </Button>
+        </form>
+        <Select
           value={entity}
-          onChange={(e) => {
+          onValueChange={(value) => {
+            setEntity(value);
             setPage(1);
-            setEntity(e.target.value);
           }}
-          className="sm:max-w-xs"
-        />
-      </div>
+        >
+          <SelectTrigger className="w-[11rem]" aria-label="Filter by entity">
+            <SelectValue placeholder="Entity" />
+          </SelectTrigger>
+          <SelectContent>
+            {ENTITY_OPTIONS.map((option) => (
+              <SelectItem key={option} value={option}>
+                {option === "ALL" ? "All entities" : option}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </section>
 
-      {query.loading ? (
-        Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)
-      ) : !query.data?.items.length ? (
-        <EmptyState icon={Shield} title="No audit entries" />
+      {loading ? (
+        <div className="space-y-2">
+          {Array.from({ length: 8 }).map((_, index) => (
+            <Skeleton key={index} className="h-12 w-full rounded-xl" />
+          ))}
+        </div>
+      ) : items.length === 0 ? (
+        <EmptyState icon={Shield} title="No audit entries" description="Desk actions will appear here." />
       ) : (
         <>
-          <div className="space-y-2">
-            {query.data.items.map((row) => {
-              const open = openId === row.id;
-              return (
-                <div key={row.id} className="rounded-lg border border-border bg-card">
-                  <button
-                    type="button"
-                    className="flex w-full items-start gap-3 px-3 py-3 text-left"
-                    onClick={() => setOpenId(open ? null : row.id)}
-                  >
-                    {open ? <ChevronDown className="mt-0.5 h-4 w-4 shrink-0" /> : <ChevronRight className="mt-0.5 h-4 w-4 shrink-0" />}
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{humanize(row.action)}</p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {row.userEmail} · {row.entity}
-                        {row.entityId ? ` #${row.entityId.slice(0, 8)}` : ""}
-                      </p>
-                    </div>
-                    <p className="shrink-0 text-[11px] text-muted-foreground">{formatLagosDateTime(row.createdAt)}</p>
-                  </button>
-                  <div className={cn("border-t border-border px-3 py-3", !open && "hidden")}>
-                    <pre className="overflow-x-auto rounded-md bg-muted/50 p-3 text-xs">
-                      {row.meta == null ? "No meta" : JSON.stringify(row.meta, null, 2)}
-                    </pre>
-                  </div>
-                </div>
-              );
-            })}
+          <div className="overflow-hidden rounded-xl border border-border bg-card">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>When</TableHead>
+                  <TableHead>Actor</TableHead>
+                  <TableHead>Action</TableHead>
+                  <TableHead>Entity</TableHead>
+                  <TableHead>Id</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {items.map((row) => (
+                  <TableRow key={row.id}>
+                    <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                      {formatLagosDateTime(row.createdAt)}
+                    </TableCell>
+                    <TableCell className="text-sm">{row.userEmail || "—"}</TableCell>
+                    <TableCell>
+                      <Badge variant="muted">{row.action}</Badge>
+                    </TableCell>
+                    <TableCell className="text-sm">{row.entity}</TableCell>
+                    <TableCell className="max-w-[10rem] truncate font-mono text-xs text-muted-foreground">
+                      {row.entityId || "—"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </div>
-          <Pagination
-            page={query.data.page}
-            pageSize={query.data.pageSize}
-            total={query.data.total}
-            onPageChange={setPage}
-          />
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs text-muted-foreground">
+              {total} events · page {page} of {pageCount}
+            </p>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Prev
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={page >= pageCount}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                Next
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
         </>
       )}
     </div>

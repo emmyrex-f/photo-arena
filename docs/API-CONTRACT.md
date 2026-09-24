@@ -38,7 +38,7 @@ Use `npx prisma db push` during development (no migrations dir exists yet). Seed
 
 ### Settings keys (BusinessSettings)
 
-Public-safe keys are prefixed with `site.`, `social.`, `hero.`, `tour.`, `instagram.`, `analytics.`, `seo.`. Everything else is admin-only.
+Public-safe keys are prefixed with `site.`, `social.`, `hero.`, `tour.`, `cta.`, `about.`, `instagram.`, `analytics.`, `seo.`. Everything else is admin-only.
 
 | Key | Example | Notes |
 |---|---|---|
@@ -58,6 +58,8 @@ Public-safe keys are prefixed with `site.`, `social.`, `hero.`, `tour.`, `instag
 | `hero.subheadline` | text | |
 | `hero.videoUrl` | `/LANDSCAPE.mp4` | |
 | `tour.heading` / `tour.body` / `tour.videoUrl` | `/video_mp4.mp4` | studio tour section |
+| `cta.heading` / `cta.body` / `cta.buttonLabel` / `cta.buttonHref` | home booking CTA | |
+| `about.headline` / `about.body` / `about.imageUrl` / `about.ctaLabel` / `about.ctaHref` | home About strip | |
 | `instagram.items` | JSON `[{ "image": "/gallery/01-birthdays.jpg", "href": "https://instagram.com/p/..." }]` | Instagram strip (static for now) |
 | `analytics.ga4Id` | `G-XXXX` | loaded only after consent |
 | `analytics.metaPixelId` | `123...` | loaded only after consent |
@@ -74,7 +76,7 @@ Public-safe keys are prefixed with `site.`, `social.`, `hero.`, `tour.`, `instag
 ### Content
 | Method | Path | Response |
 |---|---|---|
-| GET | `/public/settings` | `Record<string,string>` — only public-safe prefixes (`site.`, `social.`, `hero.`, `tour.`, `instagram.`, `analytics.`, `seo.`, `policies.`) |
+| GET | `/public/settings` | `Record<string,string>` — only public-safe prefixes (`site.`, `social.`, `hero.`, `tour.`, `cta.`, `about.`, `instagram.`, `analytics.`, `seo.`, `policies.`) |
 | GET | `/public/services` | `Service[]` with `packages: Package[]` (active only, ordered by `sortOrder`). Service fields: `id, slug, name, kind, summary, description, startingPriceKobo, isProvisional, sortOrder, media: { id, url, thumbUrl, alt } \| null`, packages[{ id, name, durationMinutes, includes, priceKobo, isProvisional, sortOrder }]` |
 | GET | `/public/gallery` | `GalleryImage[]` where `isActive && kind=GALLERY`, ordered by `sortOrder`. Fields: `id, url, thumbUrl, alt, category, featured, width, height, sortOrder, media: { id, url, thumbUrl, alt } \| null`. `url`/`thumbUrl`/`alt` resolve from MediaUsage (`usageType=portfolio`) when an active overlay is attached; otherwise the GalleryImage’s own file (existing fallback). |
 | GET | `/public/testimonials` | `Testimonial[]` where `isPublished`, ordered |
@@ -112,28 +114,81 @@ Hold expiry: a scheduled job (`@nestjs/schedule`, every minute) sets expired `TE
 | PATCH | `/auth/account` | OWNER only. Body `{ currentPassword, name?, email?, newPassword? }` → `{ user, token? }`. `email` is the studio desk login. `token` is returned when the password changes. |
 
 ### Dashboard
-`GET /admin/dashboard` →
+`GET /admin/dashboard` → (JWT + desk permission `dashboard`). Day boundaries are **Africa/Lagos**. Money fields are integer **kobo**; the client formats ₦.
+
 ```json
 {
-  "today": { "date": "2026-09-13", "bookings": [BookingRecord], "count": 3 },
-  "counts": { "pendingPayments": 2, "activeHolds": 1, "upcoming7d": 12, "newEnquiries": 4, "customers": 120 },
-  "revenue": { "todayKobo": 0, "weekKobo": 0, "monthKobo": 0 },
-  "series": [{ "date": "2026-08-15", "bookings": 2, "revenueKobo": 12000000 }],   // last 30 days
-  "recentEnquiries": [Enquiry],   // 5 newest
-  "recentPayments": [Payment]     // 5 newest with booking.customer
+  "today": {
+    "date": "2026-09-22",
+    "bookingsCount": 12,
+    "bookingsDelta": 3,
+    "revenueTotalKobo": 18000000,
+    "revenueDeltaKobo": 2000000,
+    "revenueDeltaPct": 12.0,
+    "todos": { "unpaidBookings": 2, "newEnquiries": 1, "total": 3 },
+    "upcomingTomorrowCount": 8
+  },
+  "todaysBookings": [
+    {
+      "id": "…",
+      "startTime": "2026-09-22T09:00:00.000Z",
+      "customerName": "Emmanuel A.",
+      "serviceName": "Birthday Shoots",
+      "status": "CONFIRMED",
+      "paymentStatus": "PAID",
+      "reference": "PA-XXXXXXXX"
+    }
+  ],
+  "weeklyRevenue": {
+    "totalKobo": 72000000,
+    "deltaPct": 18.0,
+    "weekStart": "2026-09-21",
+    "daily": [
+      { "date": "2026-09-21", "label": "Mon", "revenueKobo": 12000000 }
+    ]
+  },
+  "needsAttention": [
+    {
+      "bookingId": "…",
+      "customerName": "Sarah M.",
+      "amountDueKobo": 4500000,
+      "reference": "PA-XXXXXXXX",
+      "status": "PENDING",
+      "canMarkPaid": true,
+      "startTime": "2026-09-22T10:00:00.000Z"
+    }
+  ],
+  "tomorrowsBookings": [
+    {
+      "id": "…",
+      "startTime": "2026-09-23T07:00:00.000Z",
+      "customerName": "Ada O.",
+      "serviceName": "Portrait"
+    }
+  ]
 }
 ```
 
+Notes:
+- `bookingsDelta` = today’s floor bookings − yesterday’s (absolute). Floor statuses: `PENDING`, `CONFIRMED`, `COMPLETED` (excludes `TEMPORARY_HOLD`).
+- `revenueDeltaPct` / `weeklyDeltaPct` = percent change vs prior period; **`null` when the prior period revenue is 0** (client falls back to `revenueDeltaKobo` absolute ₦).
+- `weeklyRevenue.daily` is calendar Mon–Sun for the Lagos week containing `today.date`.
+- `paymentStatus` is derived: `PAID` | `UNPAID` | `PARTIAL`.
+- `amountDueKobo` / outstanding use frozen `booking.amountKobo` when set; otherwise `PricingService` by booking source (never raw client package list price alone for ONLINE).
+- `canMarkPaid` is `true` only when `status === PENDING` and outstanding > 0. Studio payment via `POST /admin/bookings/:id/payment` charges **full outstanding** server-side (body may include `note` only; client amounts are ignored) and confirms the booking.
+- Unpaid / todo totals count all outstanding PENDING/CONFIRMED bookings (not capped).
+- Mark paid / reminders are **not** part of this GET; use bookings payment endpoint + audit.
 ### Bookings
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/admin/packages` | existing (all active packages with service) |
 | GET | `/admin/availability?date&durationMinutes` | existing |
+| GET | `/admin/bookings/stats` | desk KPI strip: `totalLast30` (count + `deltaPct` vs prior 30d), `today` (count + delta vs yesterday), `todayRevenue` (kobo + `deltaPct`/`deltaKobo`), `unpaid.count`. Lagos day boundaries. Floor statuses exclude `TEMPORARY_HOLD`. |
 | GET | `/admin/bookings?date=` | existing (day) |
 | GET | `/admin/bookings/range?from=YYYY-MM-DD&to=YYYY-MM-DD&status=&q=` | list for calendar views (inclusive dates, Lagos) |
 | GET | `/admin/bookings/:id` | existing |
 | POST | `/admin/bookings` | existing (OWNER/ADMIN) |
-| POST | `/admin/bookings/:id/payment` | existing — body optional `{ amountKobo?, note? }` |
+| POST | `/admin/bookings/:id/payment` | body optional `{ note? }` only — server charges full outstanding and confirms |
 | PATCH | `/admin/bookings/:id/status` | existing |
 | PATCH | `/admin/bookings/:id` | body `{ notes? }` |
 | POST | `/admin/bookings/:id/reschedule` | body `{ startTime }` → new time, records 15% `RESCHEDULE_FEE` as a pending Payment line (method STUDIO, status PENDING) and audit log. OWNER/ADMIN |
@@ -143,16 +198,19 @@ Hold expiry: a scheduled job (`@nestjs/schedule`, every minute) sets expired `TE
 ### Customers (CRM)
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/admin/customers?q=&page=&pageSize=&tag=` | paginated; each item includes `bookingCount`, `lastBookingAt`, `totalPaidKobo` |
-| GET | `/admin/customers/:id` | customer + `bookings` (with package, payments) |
+| GET | `/admin/customers/summary` | `{ total, newCustomers, upcomingBookings }` each with `count` + optional `deltaPct` (vs prior 30 days) |
+| GET | `/admin/customers?q=&page=&pageSize=&tag=&status=` | paginated; `status=active\|inactive`; items include `bookingCount`, `lastBookingAt`, `nextBookingAt`, `isActive`, `totalPaidKobo` |
+| GET | `/admin/customers/:id` | customer + `bookings` (with package, payments) + `bookingCount`, `upcomingCount`, `completedCount`, `nextBookingAt`, `isActive`, `totalPaidKobo` |
 | PATCH | `/admin/customers/:id` | body `{ name?, email?, notes?, tags? }` OWNER/ADMIN |
 | GET | `/admin/customers/export.csv` | CSV download |
 
 ### Enquiries
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/admin/enquiries?status=&page=` | paginated |
-| PATCH | `/admin/enquiries/:id` | body `{ status?, internalNote? }` |
+| GET | `/admin/enquiries/summary` | `{ total, new, replied, closed }` each `{ count, deltaPct }`; `tabs: { all, new, replied, closed }` |
+| GET | `/admin/enquiries?status=&q=&page=&pageSize=` | paginated; `status=NEW\|REPLIED\|CLOSED`; search name/email/phone/message/sessionType |
+| GET | `/admin/enquiries/:id` | single enquiry |
+| PATCH | `/admin/enquiries/:id` | body `{ status?, internalNote? }` OWNER/ADMIN |
 | DELETE | `/admin/enquiries/:id` | OWNER/ADMIN |
 
 ### Services & pricing (OWNER/ADMIN for writes)
@@ -199,9 +257,9 @@ Files saved under `backend/uploads/<kind>/<uuid>.<ext>`, served statically at `/
 ### Payments
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/admin/payments?from=&to=&status=&method=&page=` | paginated, includes `booking.customer`, `booking.package` |
+| GET | `/admin/payments?from=&to=&status=&method=&q=&page=&pageSize=` | paginated; includes `booking.customer`, `booking.package.service`. `q` matches payment/booking reference or customer name/phone/email. Date filter is Lagos calendar days on `createdAt`. |
 | GET | `/admin/payments/export.csv?from=&to=` | CSV |
-| GET | `/admin/payments/summary?from=&to=` | `{ totalKobo, count, byMethod: { STUDIO: kobo, ONLINE_BACHS: kobo } }` |
+| GET | `/admin/payments/summary?from=&to=` | Legacy: `{ totalKobo, count, byMethod }` (SUCCESS only). Desk KPIs: `range`, `revenue` / `successful` / `pending` / `failed` each with `deltaPct` vs prior equal-length window (`null` when prior is 0). Default range = last 7 Lagos days ending today. Pending = `PENDING`+`PROCESSING`. Failed = `FAILED` (no customer refunds in domain). |
 | GET | `/admin/payments/integration` | Bachs connection status (no secrets): provider, environment, webhookUrl, readyForLive, … |
 
 ### Notifications

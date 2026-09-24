@@ -43,7 +43,7 @@ export function InstagramStrip() {
         <Reveal className="mb-stack-xl flex flex-col justify-between gap-6 sm:flex-row sm:items-end">
           <div>
             <Eyebrow>Instagram</Eyebrow>
-            <Heading as="h2">From the feed</Heading>
+            <Heading as="h2" className="mt-stack-sm">From the feed</Heading>
           </div>
           {instagram ? (
             <a
@@ -68,7 +68,7 @@ export function InstagramStrip() {
                 src={tile.image}
                 alt={tile.href ? "" : alt || "Photograph at Photo Arena"}
                 loading="lazy"
-                className="aspect-square w-full object-cover object-top transition duration-500 hover:opacity-90"
+                className="aspect-square w-full rounded-xl object-cover object-top transition duration-500 hover:opacity-90"
               />
             );
             return (

@@ -1,20 +1,36 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ImagePlus, Images, Trash2, Upload } from "lucide-react";
+import { useCallback, useMemo, useRef, useState, type DragEvent, type FormEvent } from "react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ImageIcon,
+  MoreHorizontal,
+  Pencil,
+  Star,
+  Trash2,
+  Upload,
+} from "lucide-react";
+import { ActiveBadge } from "../../admin/components/ui/status-badge";
 import { Badge } from "../../admin/components/ui/badge";
 import { Button } from "../../admin/components/ui/button";
-import { ConfirmDialog } from "../../admin/components/ui/confirm-dialog";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "../../admin/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "../../admin/components/ui/dropdown-menu";
 import { EmptyState } from "../../admin/components/ui/empty-state";
 import { ErrorBanner } from "../../admin/components/ui/error-banner";
-import { FormField } from "../../admin/components/ui/form-field";
 import { Input } from "../../admin/components/ui/input";
-import { PageHeader } from "../../admin/components/ui/page-header";
+import { Label } from "../../admin/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -23,509 +39,651 @@ import {
   SelectValue,
 } from "../../admin/components/ui/select";
 import { Skeleton } from "../../admin/components/ui/skeleton";
-import { ActiveBadge } from "../../admin/components/ui/status-badge";
+import { StatCard } from "../../admin/components/ui/stat-card";
 import { Switch } from "../../admin/components/ui/switch";
-import { Tabs, TabsList, TabsTrigger } from "../../admin/components/ui/tabs";
 import { toast } from "../../admin/components/ui/toaster";
-import { ServiceMediaPicker, type SelectedServiceMedia } from "../../admin/components/ServiceMediaPicker";
 import { useAdminApi } from "../../admin/lib/adminApi";
-import { mediaInUseFromError, type MediaInUseConflict } from "../../admin/lib/media-usage";
+import { mediaInUseFromError } from "../../admin/lib/media-usage";
 import type { GalleryImage, MediaKind } from "../../admin/lib/types";
 import { useQuery } from "../../admin/lib/useQuery";
 import { errorMessage } from "../../lib/api";
-import { canManageBookings, useAuth } from "../../lib/auth";
 import { cn } from "../../lib/cn";
+import { mediaUrl } from "../../lib/publicApi";
 
-const KINDS: Array<{ value: "ALL" | MediaKind; label: string }> = [
-  { value: "ALL", label: "All" },
-  { value: "GALLERY", label: "Gallery" },
-  { value: "BLOG", label: "Blog" },
-  { value: "CONTENT", label: "Content" },
-];
-
-const MAX_FILES = 10;
 const MAX_BYTES = 15 * 1024 * 1024;
+const MAX_FILES = 10;
 const ACCEPT = "image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp";
 
-type KindFilter = "ALL" | MediaKind;
-type ActiveFilter = "all" | "active" | "inactive";
+const KIND_OPTIONS: Array<{ value: MediaKind; label: string }> = [
+  { value: "GALLERY", label: "Gallery" },
+  { value: "CONTENT", label: "Content" },
+  { value: "BLOG", label: "Blog" },
+];
 
-function kindLabel(kind: MediaKind) {
-  if (kind === "GALLERY") return "Gallery";
-  if (kind === "BLOG") return "Blog";
-  return "Content";
+const SUGGESTED_CATEGORIES = ["birthdays", "portraits", "corporate", "kids", "general"] as const;
+
+function isAllowedImage(file: File) {
+  const type = file.type.toLowerCase();
+  const name = file.name.toLowerCase();
+  return (
+    type === "image/jpeg" ||
+    type === "image/png" ||
+    type === "image/webp" ||
+    name.endsWith(".jpg") ||
+    name.endsWith(".jpeg") ||
+    name.endsWith(".png") ||
+    name.endsWith(".webp")
+  );
 }
 
-function displayName(image: GalleryImage) {
-  if (image.filename?.trim()) return image.filename.trim();
-  const path = (image.url || "").split("/").pop();
-  return path || image.category || "Untitled";
+function kindLabel(kind: MediaKind): string {
+  const match = KIND_OPTIONS.find((row) => row.value === kind);
+  return match?.label ?? kind;
 }
 
-function previewSrc(image: GalleryImage) {
-  return image.media?.thumbUrl || image.media?.url || image.thumbUrl || image.url;
-}
-
-function dimensions(image: GalleryImage) {
-  if (typeof image.width === "number" && image.width > 0 && typeof image.height === "number" && image.height > 0) {
-    return `${image.width}×${image.height}`;
+function usageTypeLabel(usageType: string): string {
+  switch (usageType) {
+    case "service":
+      return "Service";
+    case "portfolio":
+      return "Portfolio";
+    case "testimonial":
+      return "Testimonial";
+    case "blog":
+      return "Blog";
+    default:
+      return usageType;
   }
-  return null;
 }
 
-export function AdminGalleryPage({ purpose = "library" }: { purpose?: "library" | "portfolio" }) {
+type EditForm = {
+  alt: string;
+  category: string;
+  featured: boolean;
+  isActive: boolean;
+};
+
+export function AdminGalleryPage() {
   const api = useAdminApi();
-  const { user } = useAuth();
-  const manage = canManageBookings(user?.role);
-  const isPortfolio = purpose === "portfolio";
-  const [kindFilter, setKindFilter] = useState<KindFilter>(isPortfolio ? "GALLERY" : "ALL");
-  const [activeFilter, setActiveFilter] = useState<ActiveFilter>("all");
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const [kindFilter, setKindFilter] = useState<"ALL" | MediaKind>("ALL");
+  const [statusFilter, setStatusFilter] = useState<"ALL" | "active" | "inactive">("ALL");
+  const [categoryFilter, setCategoryFilter] = useState("ALL");
+  const [query, setQuery] = useState("");
   const [uploadKind, setUploadKind] = useState<MediaKind>("GALLERY");
-  const [dragOver, setDragOver] = useState(false);
+  const [uploadCategory, setUploadCategory] = useState("general");
   const [progress, setProgress] = useState<number | null>(null);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const [edit, setEdit] = useState<GalleryImage | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<GalleryImage | null>(null);
+  const [editForm, setEditForm] = useState<EditForm | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
 
-  useEffect(() => {
-    if (kindFilter !== "ALL") setUploadKind(kindFilter);
-  }, [kindFilter]);
-
-  const query = useQuery(
+  const listQuery = useQuery(
     () =>
       api.gallery.list({
-        kind: isPortfolio ? "GALLERY" : kindFilter === "ALL" ? undefined : kindFilter,
-        isActive: activeFilter === "all" ? undefined : activeFilter === "active",
+        ...(kindFilter !== "ALL" ? { kind: kindFilter } : {}),
+        ...(statusFilter === "active" ? { isActive: true } : {}),
+        ...(statusFilter === "inactive" ? { isActive: false } : {}),
       }),
-    [kindFilter, activeFilter, isPortfolio],
+    [kindFilter, statusFilter],
   );
 
+  const images = listQuery.data ?? [];
+
+  const categories = useMemo(() => {
+    const set = new Set<string>(SUGGESTED_CATEGORIES);
+    for (const image of images) {
+      if (image.category?.trim()) set.add(image.category.trim().toLowerCase());
+    }
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [images]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return images.filter((image) => {
+      if (categoryFilter !== "ALL" && image.category.toLowerCase() !== categoryFilter) return false;
+      if (!q) return true;
+      return (
+        image.alt.toLowerCase().includes(q) ||
+        (image.filename ?? "").toLowerCase().includes(q) ||
+        image.category.toLowerCase().includes(q)
+      );
+    });
+  }, [images, categoryFilter, query]);
+
+  const orderedIds = useMemo(
+    () => [...images].sort((a, b) => a.sortOrder - b.sortOrder).map((row) => row.id),
+    [images],
+  );
+
+  const stats = useMemo(() => {
+    const total = images.length;
+    const active = images.filter((row) => row.isActive).length;
+    const featured = images.filter((row) => row.featured).length;
+    const inactive = total - active;
+    return { total, active, featured, inactive };
+  }, [images]);
+
+  const openEdit = useCallback((image: GalleryImage) => {
+    setEditing(image);
+    setEditForm({
+      alt: image.alt,
+      category: image.category,
+      featured: image.featured,
+      isActive: image.isActive,
+    });
+  }, []);
+
+  const closeEdit = useCallback(() => {
+    setEditing(null);
+    setEditForm(null);
+    setEditSaving(false);
+  }, []);
+
   const uploadFiles = useCallback(
-    async (files: FileList | File[]) => {
-      const list = Array.from(files);
-      const allowed = list.filter((file) => {
-        const type = file.type.toLowerCase();
-        const name = file.name.toLowerCase();
-        return (
-          type === "image/jpeg" ||
-          type === "image/png" ||
-          type === "image/webp" ||
-          name.endsWith(".jpg") ||
-          name.endsWith(".jpeg") ||
-          name.endsWith(".png") ||
-          name.endsWith(".webp")
-        );
-      });
-      if (!allowed.length) {
-        setUploadError("Only JPEG, PNG, or WebP images are allowed");
-        toast.error("Only JPEG, PNG, or WebP images are allowed");
+    async (fileList: FileList | File[]) => {
+      const files = [...fileList];
+      if (!files.length) return;
+      if (files.length > MAX_FILES) {
+        toast.error(`Upload up to ${MAX_FILES} files at a time`);
         return;
       }
-      if (allowed.some((file) => file.size > MAX_BYTES)) {
-        setUploadError("Each file must be 15 MB or smaller");
-        toast.error("Each file must be 15 MB or smaller");
-        return;
+      for (const file of files) {
+        if (!isAllowedImage(file)) {
+          toast.error("Only JPEG, PNG, or WebP images are allowed");
+          return;
+        }
+        if (file.size > MAX_BYTES) {
+          toast.error("Each file must be 15 MB or smaller");
+          return;
+        }
       }
-      const batch = allowed.slice(0, MAX_FILES);
+
       const form = new FormData();
       form.append("kind", uploadKind);
-      for (const file of batch) form.append("files", file);
-      setUploadError(null);
+      form.append("category", uploadCategory.trim() || "general");
+      for (const file of files) form.append("files", file);
+
       setProgress(0);
       try {
-        await api.gallery.upload(form, setProgress);
-        toast.success(`Uploaded ${batch.length} image${batch.length === 1 ? "" : "s"}`);
-        await query.refetch();
+        const rows = await api.gallery.upload(form, setProgress);
+        listQuery.setData((current) => {
+          const next = current ? [...rows, ...current.filter((row) => !rows.some((r) => r.id === row.id))] : rows;
+          return next.sort((a, b) => a.sortOrder - b.sortOrder);
+        });
+        toast.success(rows.length === 1 ? "Image uploaded" : `${rows.length} images uploaded`);
       } catch (err) {
-        const message = errorMessage(err);
-        setUploadError(message);
-        toast.error(message);
+        toast.error(errorMessage(err, "Upload failed"));
       } finally {
         setProgress(null);
       }
     },
-    [api, query, uploadKind],
+    [api, listQuery, uploadCategory, uploadKind],
   );
 
-  const emptyHint = useMemo(() => {
-    if (isPortfolio) {
-      return "Upload a gallery image in the Media Library, or add one here. Then attach a library asset if you want to replace the displayed photo.";
+  const onDrop = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      setDragOver(false);
+      if (event.dataTransfer.files?.length) void uploadFiles(event.dataTransfer.files);
+    },
+    [uploadFiles],
+  );
+
+  async function saveEdit(event: FormEvent) {
+    event.preventDefault();
+    if (!editing || !editForm) return;
+    setEditSaving(true);
+    try {
+      const updated = await api.gallery.update(editing.id, {
+        alt: editForm.alt.trim() || "Gallery image",
+        category: editForm.category.trim() || "general",
+        featured: editForm.featured,
+        isActive: editForm.isActive,
+      });
+      listQuery.setData((current) =>
+        current ? current.map((row) => (row.id === updated.id ? { ...row, ...updated } : row)) : [updated],
+      );
+      toast.success("Image updated");
+      closeEdit();
+    } catch (err) {
+      toast.error(errorMessage(err, "Could not update image"));
+      setEditSaving(false);
     }
-    if (kindFilter !== "ALL" || activeFilter !== "all") {
-      return "No assets match these filters. Clear filters or upload a new image.";
+  }
+
+  async function toggleFlag(image: GalleryImage, patch: Partial<Pick<GalleryImage, "featured" | "isActive">>) {
+    setBusyId(image.id);
+    try {
+      const updated = await api.gallery.update(image.id, patch);
+      listQuery.setData((current) =>
+        current ? current.map((row) => (row.id === updated.id ? { ...row, ...updated } : row)) : [updated],
+      );
+    } catch (err) {
+      toast.error(errorMessage(err, "Could not update image"));
+    } finally {
+      setBusyId(null);
     }
-    return "Upload images once here, then reuse them across gallery, services, and other CMS sections.";
-  }, [kindFilter, activeFilter, isPortfolio]);
+  }
+
+  async function removeImage(image: GalleryImage) {
+    if (!window.confirm(`Delete “${image.alt || image.filename || "this image"}”? This cannot be undone.`)) {
+      return;
+    }
+    setBusyId(image.id);
+    try {
+      await api.gallery.remove(image.id);
+      listQuery.setData((current) => (current ? current.filter((row) => row.id !== image.id) : []));
+      if (editing?.id === image.id) closeEdit();
+      toast.success("Image deleted");
+    } catch (err) {
+      const conflict = mediaInUseFromError(err);
+      if (conflict) {
+        const detail = conflict.usages
+          .slice(0, 3)
+          .map((u) => `${usageTypeLabel(u.usageType)} (${u.entityId.slice(0, 8)}…)`)
+          .join(", ");
+        toast.error(
+          detail
+            ? `${conflict.message} In use: ${detail}`
+            : conflict.message,
+        );
+      } else {
+        toast.error(errorMessage(err, "Could not delete image"));
+      }
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function moveImage(image: GalleryImage, direction: -1 | 1) {
+    const ordered = [...images].sort((a, b) => a.sortOrder - b.sortOrder);
+    const index = ordered.findIndex((row) => row.id === image.id);
+    const swapIndex = index + direction;
+    if (index < 0 || swapIndex < 0 || swapIndex >= ordered.length) return;
+
+    const next = [...ordered];
+    const [removed] = next.splice(index, 1);
+    next.splice(swapIndex, 0, removed);
+    const ids = next.map((row) => row.id);
+
+    setBusyId(image.id);
+    try {
+      await api.gallery.reorder(ids);
+      listQuery.setData(
+        next.map((row, sortOrder) => ({
+          ...row,
+          sortOrder,
+        })),
+      );
+    } catch (err) {
+      toast.error(errorMessage(err, "Could not reorder"));
+      await listQuery.refetch();
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   return (
-    <div className="min-w-0 space-y-admin overflow-x-hidden">
-      <PageHeader
-        eyebrow={isPortfolio ? "Public site" : "Central library"}
-        title={isPortfolio ? "Portfolio" : "Media Library"}
-        description={
-          isPortfolio
-            ? "Each gallery item on the public portfolio. Attach a Media Library image to replace what visitors see, or leave it empty to keep the original file."
-            : "Upload once and reuse across the desk. Assets stay in this library even when a page stops using them."
-        }
-      />
-      <ErrorBanner message={query.error} onRetry={() => void query.refetch()} retrying={query.fetching} />
+    <div className="pa-gallery space-y-admin-stack">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="font-display text-3xl font-normal tracking-tight text-foreground sm:text-[2rem]">
+            Media Library
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Upload and manage images for the portfolio, services, and content.
+          </p>
+        </div>
+        <Button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          disabled={progress != null}
+          loading={progress != null}
+        >
+          <Upload strokeWidth={1.5} />
+          Upload images
+        </Button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept={ACCEPT}
+          multiple
+          className="sr-only"
+          onChange={(event) => {
+            if (event.target.files?.length) void uploadFiles(event.target.files);
+            event.target.value = "";
+          }}
+        />
+      </header>
 
-      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        {isPortfolio ? (
-          <p className="text-sm text-muted-foreground">Gallery items shown on the public portfolio.</p>
-        ) : (
-          <Tabs value={kindFilter} onValueChange={(value) => setKindFilter(value as KindFilter)}>
-            <TabsList className="flex h-auto min-w-0 flex-wrap justify-start gap-1">
-              {KINDS.map((kind) => (
-                <TabsTrigger key={kind.value} value={kind.value} className="px-2.5 sm:px-3">
-                  {kind.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
+      <ErrorBanner message={listQuery.error} onRetry={() => void listQuery.refetch()} retrying={listQuery.fetching} />
+
+      <section className="grid gap-admin-gap sm:grid-cols-2 xl:grid-cols-4" aria-label="Library metrics">
+        <StatCard label="Total assets" icon={ImageIcon} tone="primary" loading={listQuery.loading} value={stats.total} />
+        <StatCard label="Active" icon={ImageIcon} loading={listQuery.loading} value={stats.active} />
+        <StatCard label="Featured" icon={Star} tone="primary" loading={listQuery.loading} value={stats.featured} />
+        <StatCard label="Inactive" icon={ImageIcon} loading={listQuery.loading} value={stats.inactive} />
+      </section>
+
+      <section
+        className={cn(
+          "rounded-xl border border-dashed bg-card/40 p-admin-card-sm transition-colors",
+          dragOver ? "border-primary bg-primary/5" : "border-border",
         )}
-        <Select value={activeFilter} onValueChange={(value) => setActiveFilter(value as ActiveFilter)}>
-          <SelectTrigger className="w-full sm:w-40" aria-label="Active filter">
+        onDragOver={(event) => {
+          event.preventDefault();
+          setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={onDrop}
+        aria-label="Upload drop zone"
+      >
+        <div className="flex flex-col gap-admin-gap lg:flex-row lg:items-end lg:justify-between">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-foreground">Drop images here</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              JPEG, PNG, or WebP · up to {MAX_FILES} files · 15 MB each
+              {progress != null ? ` · Uploading ${progress}%` : ""}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-end gap-admin-gap">
+            <div className="space-y-1.5">
+              <Label htmlFor="upload-kind">Kind</Label>
+              <Select value={uploadKind} onValueChange={(value) => setUploadKind(value as MediaKind)}>
+                <SelectTrigger id="upload-kind" className="w-[9.5rem]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {KIND_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="upload-category">Category</Label>
+              <Input
+                id="upload-category"
+                value={uploadCategory}
+                onChange={(event) => setUploadCategory(event.target.value)}
+                className="w-[10rem]"
+                list="gallery-category-suggestions"
+                placeholder="general"
+              />
+            </div>
+          </div>
+        </div>
+        <datalist id="gallery-category-suggestions">
+          {categories.map((category) => (
+            <option key={category} value={category} />
+          ))}
+        </datalist>
+      </section>
+
+      <section className="flex flex-col gap-admin-gap sm:flex-row sm:flex-wrap sm:items-center" aria-label="Filters">
+        <Input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search alt text, filename, or category…"
+          className="sm:max-w-sm"
+          aria-label="Search media"
+        />
+        <Select value={kindFilter} onValueChange={(value) => setKindFilter(value as "ALL" | MediaKind)}>
+          <SelectTrigger className="w-[9.5rem]" aria-label="Filter by kind">
+            <SelectValue placeholder="Kind" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">All kinds</SelectItem>
+            {KIND_OPTIONS.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={statusFilter}
+          onValueChange={(value) => setStatusFilter(value as "ALL" | "active" | "inactive")}
+        >
+          <SelectTrigger className="w-[9.5rem]" aria-label="Filter by status">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
+            <SelectItem value="ALL">All status</SelectItem>
             <SelectItem value="active">Active</SelectItem>
             <SelectItem value="inactive">Inactive</SelectItem>
           </SelectContent>
         </Select>
-      </div>
+        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+          <SelectTrigger className="w-[10.5rem]" aria-label="Filter by category">
+            <SelectValue placeholder="Category" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">All categories</SelectItem>
+            {categories.map((category) => (
+              <SelectItem key={category} value={category}>
+                {category}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </section>
 
-      {manage ? (
-        <div
-          className={cn(
-            "flex min-w-0 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-card/60 px-4 py-8 text-center transition",
-            dragOver && "border-primary bg-primary/5",
-          )}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDragOver(true);
-          }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={(e) => {
-            e.preventDefault();
-            setDragOver(false);
-            void uploadFiles(e.dataTransfer.files);
-          }}
-        >
-          <Upload className="h-8 w-8 text-muted-foreground" />
-          <p className="text-sm font-medium">Drop images here or browse</p>
-          <p className="max-w-md text-xs text-muted-foreground">
-            Up to {MAX_FILES} files · 15 MB each · JPEG, PNG, or WebP. Stored in the library for later reuse.
-          </p>
-          <div className="flex w-full min-w-0 max-w-md flex-col items-center gap-2 sm:flex-row sm:justify-center">
-            {isPortfolio ? null : (
-              <Select value={uploadKind} onValueChange={(value) => setUploadKind(value as MediaKind)}>
-                <SelectTrigger className="w-full sm:w-36" aria-label="Upload kind">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="GALLERY">Gallery</SelectItem>
-                  <SelectItem value="BLOG">Blog</SelectItem>
-                  <SelectItem value="CONTENT">Content</SelectItem>
-                </SelectContent>
-              </Select>
-            )}
-            <Button asChild size="sm" variant="outline" className="w-full sm:w-auto">
-              <label className="cursor-pointer">
-                <ImagePlus />
-                Choose files
-                <input
-                  type="file"
-                  accept={ACCEPT}
-                  multiple
-                  className="sr-only"
-                  onChange={(e) => {
-                    if (e.target.files) void uploadFiles(e.target.files);
-                    e.target.value = "";
-                  }}
-                />
-              </label>
-            </Button>
-          </div>
-          {progress != null ? (
-            <div className="mt-1 w-full max-w-xs">
-              <div className="h-2 overflow-hidden rounded bg-muted">
-                <div className="h-full bg-primary transition-all" style={{ width: `${progress}%` }} />
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">Uploading {progress}%</p>
-            </div>
-          ) : null}
-          {uploadError ? <p className="text-xs text-destructive">{uploadError}</p> : null}
-        </div>
-      ) : null}
-
-      {query.loading ? (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-          {Array.from({ length: 10 }).map((_, i) => (
-            <Skeleton key={i} className="aspect-square w-full" />
+      {listQuery.loading ? (
+        <div className="grid grid-cols-2 gap-admin-gap md:grid-cols-3 xl:grid-cols-4">
+          {Array.from({ length: 8 }).map((_, index) => (
+            <Skeleton key={index} className="aspect-[4/5] w-full rounded-xl" />
           ))}
         </div>
-      ) : !query.data?.length ? (
-        <EmptyState icon={Images} title="No media yet" description={emptyHint} />
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          icon={ImageIcon}
+          title={images.length ? "No matches" : "No images yet"}
+          description={
+            images.length
+              ? "Try a different search or filter."
+              : "Upload JPEG, PNG, or WebP files to start building the library."
+          }
+          action={
+            !images.length ? (
+              <Button type="button" onClick={() => fileRef.current?.click()}>
+                <Upload strokeWidth={1.5} />
+                Upload images
+              </Button>
+            ) : undefined
+          }
+        />
       ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-          {query.data.map((img) => (
-            <button
-              key={img.id}
-              type="button"
-              className="group min-w-0 overflow-hidden rounded-lg border border-border bg-card text-left shadow-sm transition hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              onClick={() => setEdit(img)}
-            >
-              <div className="relative aspect-square overflow-hidden bg-muted">
-                <img
-                  src={isPortfolio ? previewSrc(img) : img.thumbUrl || img.url}
-                  alt={img.alt || ""}
-                  className={cn("h-full w-full object-cover", !img.isActive && "opacity-50")}
-                />
-                <div className="absolute left-1.5 top-1.5 flex max-w-[calc(100%-0.75rem)] flex-wrap gap-1">
-                  {isPortfolio ? null : (
-                    <Badge variant="secondary" className="text-[10px]">
-                      {kindLabel(img.kind)}
-                    </Badge>
-                  )}
-                  {isPortfolio && img.media ? (
-                    <Badge variant="default" className="text-[10px]">
-                      Library
-                    </Badge>
-                  ) : null}
-                  {img.featured ? (
-                    <Badge variant="default" className="text-[10px]">
+        <ul className="grid grid-cols-2 gap-admin-gap md:grid-cols-3 xl:grid-cols-4">
+          {filtered.map((image) => {
+            const src = mediaUrl(image.thumbUrl || image.url);
+            const busy = busyId === image.id;
+            const orderIndex = orderedIds.indexOf(image.id);
+            const canMoveEarlier = orderIndex > 0;
+            const canMoveLater = orderIndex >= 0 && orderIndex < orderedIds.length - 1;
+            return (
+              <li
+                key={image.id}
+                className={cn(
+                  "group relative overflow-hidden rounded-xl border border-border bg-card",
+                  !image.isActive && "opacity-70",
+                )}
+              >
+                <button
+                  type="button"
+                  className="block w-full cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => openEdit(image)}
+                  aria-label={`Edit ${image.alt || "image"}`}
+                >
+                  <div className="aspect-[4/5] bg-muted">
+                    {src ? (
+                      <img
+                        src={src}
+                        alt=""
+                        className="h-full w-full object-cover"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="flex h-full items-center justify-center text-muted-foreground">
+                        <ImageIcon className="h-8 w-8" aria-hidden />
+                      </div>
+                    )}
+                  </div>
+                </button>
+
+                <div className="absolute left-2 top-2 flex flex-wrap gap-1">
+                  {image.featured ? (
+                    <Badge variant="default" className="gap-1">
+                      <Star className="h-3 w-3" aria-hidden />
                       Featured
                     </Badge>
                   ) : null}
+                  <ActiveBadge active={image.isActive} />
                 </div>
-              </div>
-              <div className="min-w-0 space-y-1 px-2 py-1.5">
-                <p className="truncate text-xs font-medium text-foreground">{displayName(img)}</p>
-                <p className="truncate text-[11px] text-muted-foreground">{img.category || "Uncategorised"}</p>
-                <div className="flex min-w-0 flex-wrap items-center gap-1">
-                  <ActiveBadge active={img.isActive} className="text-[10px]" />
-                  {dimensions(img) ? (
-                    <span className="truncate text-[10px] text-muted-foreground">{dimensions(img)}</span>
-                  ) : null}
+
+                <div className="absolute right-2 top-2">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="secondary"
+                        className="bg-background/90 shadow-sm"
+                        aria-label={`Actions for ${image.alt || "image"}`}
+                        disabled={busy}
+                      >
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => openEdit(image)}>
+                        <Pencil className="h-4 w-4" />
+                        Edit details
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        disabled={!canMoveEarlier || busy}
+                        onClick={() => void moveImage(image, -1)}
+                      >
+                        <ArrowUp className="h-4 w-4" />
+                        Move earlier
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        disabled={!canMoveLater || busy}
+                        onClick={() => void moveImage(image, 1)}
+                      >
+                        <ArrowDown className="h-4 w-4" />
+                        Move later
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        disabled={busy}
+                        onClick={() => void toggleFlag(image, { featured: !image.featured })}
+                      >
+                        <Star className="h-4 w-4" />
+                        {image.featured ? "Unfeature" : "Feature"}
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        disabled={busy}
+                        onClick={() => void removeImage(image)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
-              </div>
-            </button>
-          ))}
-        </div>
+
+                <div className="space-y-1 border-t border-border p-admin-control">
+                  <p className="truncate text-sm text-foreground">{image.alt || "Untitled"}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {image.category} · {kindLabel(image.kind)}
+                    {image.width && image.height ? ` · ${image.width}×${image.height}` : ""}
+                  </p>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
       )}
 
-      <EditImageDialog
-        image={edit}
-        manage={manage}
-        attachMedia={isPortfolio}
-        onOpenChange={(open) => !open && setEdit(null)}
-        onSaved={async (updated) => {
-          query.setData((current) =>
-            current ? current.map((row) => (row.id === updated.id ? updated : row)) : current,
-          );
-          setEdit(updated);
-          await query.refetch();
-        }}
-        onDeleted={(id) => {
-          query.setData((current) => (current ? current.filter((row) => row.id !== id) : current));
-          setEdit(null);
-        }}
-      />
-    </div>
-  );
-}
-
-function EditImageDialog({
-  image,
-  manage,
-  attachMedia = false,
-  onOpenChange,
-  onSaved,
-  onDeleted,
-}: {
-  image: GalleryImage | null;
-  manage: boolean;
-  attachMedia?: boolean;
-  onOpenChange: (open: boolean) => void;
-  onSaved: (image: GalleryImage) => Promise<void>;
-  onDeleted: (id: string) => void;
-}) {
-  const api = useAdminApi();
-  const [alt, setAlt] = useState("");
-  const [category, setCategory] = useState("");
-  const [featured, setFeatured] = useState(false);
-  const [isActive, setIsActive] = useState(true);
-  const [sortOrder, setSortOrder] = useState("0");
-  const [media, setMedia] = useState<SelectedServiceMedia | null>(null);
-  const [pending, setPending] = useState(false);
-  const [conflict, setConflict] = useState<MediaInUseConflict | null>(null);
-
-  useEffect(() => {
-    if (!image) return;
-    setAlt(image.alt ?? "");
-    setCategory(image.category ?? "");
-    setFeatured(image.featured);
-    setIsActive(image.isActive);
-    setSortOrder(String(image.sortOrder ?? 0));
-    setMedia(
-      image.media
-        ? {
-            id: image.media.id,
-            url: image.media.url,
-            thumbUrl: image.media.thumbUrl,
-            alt: image.media.alt,
-          }
-        : null,
-    );
-    setConflict(null);
-  }, [image]);
-
-  return (
-    <Dialog open={!!image} onOpenChange={onOpenChange}>
-      <DialogContent className={attachMedia ? "max-w-2xl" : "max-w-lg"}>
-        <DialogHeader>
-          <DialogTitle>{attachMedia ? "Portfolio item" : "Media details"}</DialogTitle>
-        </DialogHeader>
-        {image ? (
-          <div className="min-w-0 space-y-3">
-            {attachMedia ? null : (
-              <img
-                src={image.thumbUrl || image.url}
-                alt=""
-                className="max-h-48 w-full rounded-md object-cover"
-              />
-            )}
-            <p className="truncate text-xs text-muted-foreground">
-              {kindLabel(image.kind)}
-              {dimensions(image) ? ` · ${dimensions(image)}` : ""}
-              {image.filename ? ` · ${image.filename}` : ""}
-            </p>
-            {conflict ? (
-              <div
-                role="alert"
-                className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm"
-              >
-                <p className="font-medium text-foreground">
-                  This asset cannot be deleted while it is attached elsewhere.
-                </p>
-                <p className="mt-1 text-muted-foreground">{conflict.message}</p>
-                {conflict.usages.length ? (
-                  <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-muted-foreground">
-                    {conflict.usages.map((usage) => (
-                      <li key={usage.id || `${usage.usageType}-${usage.entityId}`}>
-                        {usage.usageType} · {usage.entityId}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {conflict.count} attachment{conflict.count === 1 ? "" : "s"} still reference this file.
-                  </p>
-                )}
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Detach it from those places first. The library will not remove usages for you.
-                </p>
-              </div>
-            ) : null}
-            {attachMedia ? (
-              <ServiceMediaPicker enabled={!!image} value={media} onChange={setMedia} />
-            ) : null}
-            <FormField label="Alt text">
-              {(c) => <Input id={c.id} value={alt} onChange={(e) => setAlt(e.target.value)} disabled={!manage} />}
-            </FormField>
-            <FormField label="Category">
-              {(c) => (
-                <Input id={c.id} value={category} onChange={(e) => setCategory(e.target.value)} disabled={!manage} />
-              )}
-            </FormField>
-            <FormField label="Sort order">
-              {(c) => (
-                <Input
-                  id={c.id}
-                  type="number"
-                  min={0}
-                  step={1}
-                  value={sortOrder}
-                  onChange={(e) => setSortOrder(e.target.value)}
-                  disabled={!manage}
+      <Dialog open={Boolean(editing && editForm)} onOpenChange={(open) => !open && closeEdit()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit image</DialogTitle>
+            <DialogDescription>Update alt text, category, and visibility. Kind is set at upload.</DialogDescription>
+          </DialogHeader>
+          {editing && editForm ? (
+            <form className="space-y-admin-stack-sm" onSubmit={(event) => void saveEdit(event)}>
+              <div className="overflow-hidden rounded-lg border border-border bg-muted">
+                <img
+                  src={mediaUrl(editing.thumbUrl || editing.url)}
+                  alt={editing.alt}
+                  className="max-h-56 w-full object-contain"
                 />
-              )}
-            </FormField>
-            <FormField label="Featured" inline>
-              {() => <Switch checked={featured} onCheckedChange={setFeatured} disabled={!manage} />}
-            </FormField>
-            <FormField label="Active" inline>
-              {() => <Switch checked={isActive} onCheckedChange={setIsActive} disabled={!manage} />}
-            </FormField>
-          </div>
-        ) : null}
-        <DialogFooter className="gap-2 sm:justify-between">
-          {manage && image ? (
-            <ConfirmDialog
-              title="Delete this asset?"
-              description="Removes the file from disk. This is blocked if the image is still attached to CMS content."
-              confirmLabel="Delete"
-              destructive
-              successMessage="Asset deleted"
-              onConfirm={async () => {
-                try {
-                  await api.gallery.remove(image.id);
-                  onDeleted(image.id);
-                } catch (err) {
-                  const inUse = mediaInUseFromError(err);
-                  if (inUse) setConflict(inUse);
-                  throw err;
-                }
-              }}
-              trigger={
-                <Button variant="destructive" size="sm">
-                  <Trash2 />
-                  Delete
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-alt">Alt text</Label>
+                <Input
+                  id="edit-alt"
+                  value={editForm.alt}
+                  onChange={(event) => setEditForm({ ...editForm, alt: event.target.value })}
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-category">Category</Label>
+                <Input
+                  id="edit-category"
+                  value={editForm.category}
+                  onChange={(event) => setEditForm({ ...editForm, category: event.target.value })}
+                  list="gallery-category-suggestions"
+                  required
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Kind: {kindLabel(editing.kind)}
+                {editing.filename ? ` · ${editing.filename}` : ""}
+              </p>
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
+                <div>
+                  <p className="text-sm text-foreground">Featured</p>
+                  <p className="text-xs text-muted-foreground">Highlight on public surfaces that use featured media.</p>
+                </div>
+                <Switch
+                  checked={editForm.featured}
+                  onCheckedChange={(featured) => setEditForm({ ...editForm, featured })}
+                  aria-label="Featured"
+                />
+              </div>
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
+                <div>
+                  <p className="text-sm text-foreground">Active</p>
+                  <p className="text-xs text-muted-foreground">Inactive assets stay in the library but are hidden from picks.</p>
+                </div>
+                <Switch
+                  checked={editForm.isActive}
+                  onCheckedChange={(isActive) => setEditForm({ ...editForm, isActive })}
+                  aria-label="Active"
+                />
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={closeEdit} disabled={editSaving}>
+                  Cancel
                 </Button>
-              }
-            />
-          ) : (
-            <span />
-          )}
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
-              Close
-            </Button>
-            {manage ? (
-              <Button
-                loading={pending}
-                onClick={() => {
-                  if (!image) return;
-                  const order = Number(sortOrder);
-                  if (!Number.isInteger(order) || order < 0) {
-                    toast.error("Sort order must be a whole number of 0 or more");
-                    return;
-                  }
-                  setPending(true);
-                  void api.gallery
-                    .update(image.id, {
-                      alt,
-                      category,
-                      featured,
-                      isActive,
-                      sortOrder: order,
-                      ...(attachMedia ? { mediaId: media?.id ?? null } : {}),
-                    })
-                    .then((updated) => {
-                      toast.success(attachMedia ? "Portfolio item updated" : "Asset updated");
-                      return onSaved(updated);
-                    })
-                    .catch((err) => toast.error(errorMessage(err)))
-                    .finally(() => setPending(false));
-                }}
-              >
-                Save
-              </Button>
-            ) : null}
-          </div>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+                <Button type="submit" loading={editSaving}>
+                  Save changes
+                </Button>
+              </DialogFooter>
+            </form>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }

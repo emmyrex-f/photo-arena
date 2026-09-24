@@ -1,12 +1,9 @@
-import { Type } from "class-transformer";
 import {
   IsEmail,
-  IsInt,
   IsISO8601,
   IsOptional,
   IsString,
   IsUrl,
-  Min,
   MinLength,
 } from "class-validator";
 
@@ -53,12 +50,7 @@ export class UpdateBookingNotesDto {
 }
 
 export class StudioPaymentDto {
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  amountKobo?: number;
-
+  /** Optional note only — charge amount is always the booking outstanding (server-side). */
   @IsOptional()
   @IsString()
   note?: string;

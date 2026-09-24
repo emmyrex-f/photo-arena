@@ -17,8 +17,7 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RequirePermission } from "../auth/permissions.decorator";
 import { Roles } from "../auth/roles.decorator";
 import { RolesGuard } from "../auth/roles.guard";
-import { parsePage, parsePageSize, paginate } from "../common/pagination";
-import { PrismaService } from "../prisma/prisma.service";
+import { EnquiriesService } from "./enquiries.service";
 
 class UpdateEnquiryDto {
   @IsOptional()
@@ -35,25 +34,28 @@ class UpdateEnquiryDto {
 @RequirePermission("enquiries")
 export class EnquiriesController {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly enquiries: EnquiriesService,
     private readonly audit: AuditService,
   ) {}
 
+  @Get("summary")
+  summary() {
+    return this.enquiries.summary();
+  }
+
   @Get()
-  async list(@Query("status") status?: string, @Query("page") pageRaw?: string) {
-    const page = parsePage(pageRaw);
-    const pageSize = parsePageSize(undefined, 20);
-    const where = status ? { status: status as EnquiryStatus } : {};
-    const [total, items] = await Promise.all([
-      this.prisma.enquiry.count({ where }),
-      this.prisma.enquiry.findMany({
-        where,
-        orderBy: { createdAt: "desc" },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-    ]);
-    return paginate(items, total, page, pageSize);
+  list(
+    @Query("status") status?: string,
+    @Query("page") page?: string,
+    @Query("pageSize") pageSize?: string,
+    @Query("q") q?: string,
+  ) {
+    return this.enquiries.list(status, page, pageSize, q);
+  }
+
+  @Get(":id")
+  get(@Param("id") id: string) {
+    return this.enquiries.get(id);
   }
 
   @Patch(":id")
@@ -63,13 +65,7 @@ export class EnquiriesController {
     @Body() body: UpdateEnquiryDto,
     @CurrentUser() user: AuthUser,
   ) {
-    const row = await this.prisma.enquiry.update({
-      where: { id },
-      data: {
-        ...(body.status !== undefined ? { status: body.status } : {}),
-        ...(body.internalNote !== undefined ? { internalNote: body.internalNote || null } : {}),
-      },
-    });
+    const row = await this.enquiries.update(id, body);
     await this.audit.log({
       userId: user.id,
       userEmail: user.email,
@@ -84,7 +80,7 @@ export class EnquiriesController {
   @Delete(":id")
   @Roles(Role.OWNER, Role.ADMIN)
   async remove(@Param("id") id: string, @CurrentUser() user: AuthUser) {
-    await this.prisma.enquiry.delete({ where: { id } });
+    await this.enquiries.remove(id);
     await this.audit.log({
       userId: user.id,
       userEmail: user.email,

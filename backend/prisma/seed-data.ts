@@ -13,6 +13,22 @@ export type SeedTier = {
   note?: string;
 };
 
+/** Structured deliverables parsed from the old includes line — not hardcoded per package. */
+export function deliverablesFromIncludes(includes: string): {
+  outfitCount: number | null;
+  backdropCount: number | null;
+  editedPhotoCount: number | null;
+} {
+  const outfit = includes.match(/(\d+)\s+outfits?/i);
+  const backdrop = includes.match(/(\d+)\s+backdrops?/i);
+  const photos = includes.match(/(\d+)\s+photos?/i);
+  return {
+    outfitCount: outfit ? Number(outfit[1]) : null,
+    backdropCount: backdrop ? Number(backdrop[1]) : null,
+    editedPhotoCount: photos ? Number(photos[1]) : null,
+  };
+}
+
 export type SeedService = {
   slug: string;
   name: string;
@@ -418,6 +434,7 @@ export const seedGallery: Array<{ id: string; file: string; alt: string; categor
 
 const INSTAGRAM_URL = "https://www.instagram.com/photoarenang";
 const FACEBOOK_URL = "https://www.facebook.com/share/1DKYw3rfJK/";
+const TIKTOK_URL = "https://www.tiktok.com/@photoarenang";
 
 export function buildSeedSettings(env: NodeJS.ProcessEnv): Record<string, string> {
   return {
@@ -436,7 +453,7 @@ export function buildSeedSettings(env: NodeJS.ProcessEnv): Record<string, string
     // social.*
     "social.instagram": INSTAGRAM_URL,
     "social.facebook": FACEBOOK_URL,
-    "social.tiktok": "",
+    "social.tiktok": TIKTOK_URL,
 
     // hero.* (old hero: "Where Every Shot Becomes a Masterpiece")
     "hero.headline": "Where every shot becomes a masterpiece",
@@ -449,6 +466,21 @@ export function buildSeedSettings(env: NodeJS.ProcessEnv): Record<string, string
     "tour.body":
       "Before you walk in, walk through. See the backdrops, the lighting, the space — and imagine yourself in the frame. Our studio is designed to make every client feel comfortable, inspired, and ready to create something beautiful.",
     "tour.videoUrl": "/tour.mp4",
+
+    // cta.* (home booking CTA)
+    "cta.heading": "Ready to book your session?",
+    "cta.body":
+      "Reserve a studio session online and receive 5% off. Walk-ins are welcome Monday–Saturday 8:00 AM – 6:00 PM and Sunday 12:00 PM – 6:00 PM.",
+    "cta.buttonLabel": "Book a Session",
+    "cta.buttonHref": "/book",
+
+    // about.* (home About strip)
+    "about.headline": "Welcome",
+    "about.body":
+      "Photo Arena is a walk-in portrait studio in Port Harcourt. The room, the lights, and the sets are ready. You bring the occasion.",
+    "about.imageUrl": "/media/about.jpg",
+    "about.ctaLabel": "Read More",
+    "about.ctaHref": "/about",
 
     // instagram.* (static strip for now)
     "instagram.items": JSON.stringify([
@@ -473,6 +505,7 @@ export function buildSeedSettings(env: NodeJS.ProcessEnv): Record<string, string
     // policies.* (old Bookings page "Studio Policies" strip, verbatim values)
     "policies.deliveryDays": "3–4 working days",
     "policies.expressPercent": "30",
+    "policies.expressMaxPhotos": "8",
     "policies.expressNote": "Within 24hrs · +30% charge (max 8 photos)",
     "policies.extraImageKobo": String(naira(3_000)),
     "policies.vatPercent": "7.5",

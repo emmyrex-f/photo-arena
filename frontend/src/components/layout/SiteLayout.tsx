@@ -54,7 +54,7 @@ export function SiteLayout() {
   // #endregion
 
   return (
-    <div className="flex min-h-screen min-w-0 flex-col overflow-x-clip bg-bg pb-[var(--pa-page-pad,var(--pa-book-bar))] lg:pb-0">
+    <div className="flex min-h-dvh min-w-0 flex-col bg-bg">
       <AnalyticsLoader />
       <Navbar />
       <main id="main" className="min-w-0 flex-1">

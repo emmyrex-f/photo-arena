@@ -7,6 +7,7 @@ import { AppModule } from "./app.module";
 import { trustProxyEnabled } from "./common/client-ip";
 import { assertCriticalEnv } from "./common/env";
 import { assertProductionPaymentConfig } from "./common/payments-mock";
+import { corsOptions } from "./common/site-origins";
 import { ensureUploadsDir, uploadsRoot } from "./common/utils";
 
 function uploadContentType(filePath: string): string {
@@ -29,7 +30,8 @@ async function bootstrap() {
   if (trustProxyEnabled()) {
     app.set("trust proxy", 1);
   }
-  app.enableCors({ origin: true });
+  // SEC-H3 / SEC-M2: allowlist only — never reflect arbitrary Origin (no origin: true).
+  app.enableCors(corsOptions());
   app.useStaticAssets(uploadsRoot(), {
     prefix: "/uploads",
     setHeaders: (res, filePath) => {

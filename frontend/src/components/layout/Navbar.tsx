@@ -14,17 +14,14 @@ export function Navbar() {
 
   return (
     <>
-      <header
-        className="fixed inset-x-0 top-0 z-40 bg-bg"
-        style={{ backgroundColor: "var(--color-bg)" }}
-      >
+      <header className="tone-dark fixed inset-x-0 top-0 z-50 border-b border-accent/30 bg-gradient-to-r from-ink via-[#2c241c] to-ink shadow-nav">
         <div className="mx-auto flex max-w-site items-center justify-between px-gutter py-eyebrow">
           <NavLink to="/" className="flex items-center" onClick={() => setOpen(false)}>
-            <img src="/logo.png" alt="" className="h-[56px] w-auto sm:h-[68px]" />
+            <img src="/logo.png" alt="" className="h-10 w-auto sm:h-[52px]" />
             <span className="sr-only">{site.name}</span>
           </NavLink>
 
-          <nav className="hidden items-center gap-5 lg:flex xl:gap-7" aria-label="Primary">
+          <nav className="hidden items-center gap-1 lg:flex xl:gap-2" aria-label="Primary">
             {navLinks.map((link) => (
               <NavLink
                 key={link.to}
@@ -32,8 +29,10 @@ export function Navbar() {
                 end={link.to === "/"}
                 className={({ isActive }) =>
                   cn(
-                    "text-sm tracking-wide transition-colors",
-                    isActive ? "text-accent-hover" : "text-text-secondary hover:text-text",
+                    "rounded-lg px-3 py-1.5 text-sm font-subtitle tracking-wide transition-colors",
+                    isActive
+                      ? "bg-accent/15 text-accent"
+                      : "text-sage hover:bg-white/5 hover:text-accent",
                   )
                 }
               >
@@ -44,7 +43,7 @@ export function Navbar() {
 
           <button
             type="button"
-            className="inline-flex min-h-11 min-w-11 items-center justify-center text-text lg:hidden"
+            className="inline-flex min-h-11 min-w-11 items-center justify-center text-sage lg:hidden"
             aria-expanded={open}
             aria-controls="mobile-nav"
             onClick={() => setOpen((value) => !value)}
@@ -57,8 +56,7 @@ export function Navbar() {
         {open ? (
           <nav
             id="mobile-nav"
-            className="border-t border-elevated bg-bg px-gutter py-stack-sm lg:hidden"
-            style={{ backgroundColor: "var(--color-bg)" }}
+            className="border-t border-accent/20 bg-ink px-gutter py-stack-sm lg:hidden"
             aria-label="Mobile"
           >
             <ul className="flex flex-col gap-1">
@@ -70,8 +68,8 @@ export function Navbar() {
                     onClick={() => setOpen(false)}
                     className={({ isActive }) =>
                       cn(
-                        "block min-h-11 py-3 text-base",
-                        isActive ? "text-accent-hover" : "text-text",
+                        "block min-h-11 rounded-lg px-3 py-3 text-base",
+                        isActive ? "bg-accent/15 text-accent" : "text-sage",
                       )
                     }
                   >
@@ -82,7 +80,6 @@ export function Navbar() {
             </ul>
           </nav>
         ) : null}
-        <div aria-hidden="true" className="nav-edge pointer-events-none absolute inset-x-0 top-full h-8" />
       </header>
       <div className="h-[var(--pa-nav-h)] shrink-0" aria-hidden="true" />
     </>

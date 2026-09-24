@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -237,7 +238,17 @@ export class BookingsService {
     };
   }
 
-  async publicStatus(id: string) {
+  /**
+   * Public confirmation/status view. Requires the booking payment `reference`
+   * (issued at hold / returned in the confirmation URL) — booking id alone is not enough.
+   * Does not expose customer email or phone.
+   */
+  async publicStatus(id: string, reference?: string | null) {
+    const provided = typeof reference === "string" ? reference.trim() : "";
+    if (!provided) {
+      throw new BadRequestException("Booking reference is required");
+    }
+
     const booking = await this.prisma.booking.findUnique({
       where: { id },
       include: {
@@ -247,6 +258,10 @@ export class BookingsService {
       },
     });
     if (!booking) throw new NotFoundException("Booking not found");
+    if (!booking.reference || booking.reference !== provided) {
+      throw new ForbiddenException("Booking reference does not match");
+    }
+
     const payment = booking.payments[0] ?? null;
     return {
       id: booking.id,
@@ -261,7 +276,6 @@ export class BookingsService {
       },
       customer: {
         name: booking.customer.name,
-        email: booking.customer.email,
       },
       amountKobo: booking.amountKobo,
       payment: payment
@@ -342,7 +356,14 @@ export class BookingsService {
     return booking;
   }
 
-  async recordStudioPayment(id: string, opts?: { amountKobo?: number; note?: string }) {
+  /**
+   * Studio Mark Paid — ignores any client amount. Charges the full outstanding
+   * (frozen booking.amountKobo, else PricingService by source) and confirms only when paid in full.
+   */
+  async recordStudioPayment(
+    id: string,
+    opts?: { note?: string },
+  ): Promise<{ booking: Prisma.BookingGetPayload<{ include: typeof bookingInclude }>; amountKobo: number }> {
     await this.pricing.refresh();
     return this.prisma.$transaction(async (tx) => {
       const booking = await tx.booking.findUnique({
@@ -354,10 +375,23 @@ export class BookingsService {
         throw new BadRequestException("Only pending reservations can take a studio payment");
       }
 
-      const amountKobo =
-        opts?.amountKobo ??
-        booking.amountKobo ??
-        this.pricing.calculatePayableKobo(booking.package.priceKobo, booking.source);
+      const dueKobo =
+        booking.amountKobo != null && booking.amountKobo > 0
+          ? booking.amountKobo
+          : this.pricing.calculatePayableKobo(booking.package.priceKobo, booking.source);
+      if (dueKobo <= 0) {
+        throw new BadRequestException("Booking has no payable amount");
+      }
+
+      const paidKobo = booking.payments
+        .filter((p) => p.status === "SUCCESS")
+        .reduce((sum, p) => sum + p.amountKobo, 0);
+      const outstanding = dueKobo - paidKobo;
+      if (outstanding <= 0) {
+        throw new BadRequestException("Nothing outstanding on this booking");
+      }
+
+      const amountKobo = outstanding;
 
       await tx.payment.create({
         data: {
@@ -407,7 +441,7 @@ export class BookingsService {
         [booking.customer.email ?? ""].filter(Boolean),
       );
 
-      return updated;
+      return { booking: updated, amountKobo };
     });
   }
 
@@ -557,5 +591,103 @@ export class BookingsService {
 
   todayYmd() {
     return toLagosYmd(new Date());
+  }
+
+  /** Desk KPI strip for Bookings page — Lagos day boundaries. */
+  async deskStats() {
+    await this.pricing.refresh();
+    const todayYmd = toLagosYmd(new Date());
+    const todayStart = startOfLagosDay(todayYmd);
+    const tomorrowStart = startOfLagosDay(addLagosDays(todayYmd, 1));
+    const yesterdayStart = startOfLagosDay(addLagosDays(todayYmd, -1));
+    const d30Start = startOfLagosDay(addLagosDays(todayYmd, -29));
+    const prev30Start = startOfLagosDay(addLagosDays(todayYmd, -59));
+
+    const floor: BookingStatus[] = [
+      BookingStatus.PENDING,
+      BookingStatus.CONFIRMED,
+      BookingStatus.COMPLETED,
+    ];
+
+    const [
+      totalLast30,
+      totalPrev30,
+      todayCount,
+      yesterdayCount,
+      todayRevenue,
+      yesterdayRevenue,
+      unpaidPool,
+    ] = await Promise.all([
+      this.prisma.booking.count({
+        where: { startTime: { gte: d30Start, lt: tomorrowStart }, status: { in: floor } },
+      }),
+      this.prisma.booking.count({
+        where: { startTime: { gte: prev30Start, lt: d30Start }, status: { in: floor } },
+      }),
+      this.prisma.booking.count({
+        where: { startTime: { gte: todayStart, lt: tomorrowStart }, status: { in: floor } },
+      }),
+      this.prisma.booking.count({
+        where: { startTime: { gte: yesterdayStart, lt: todayStart }, status: { in: floor } },
+      }),
+      this.prisma.payment.aggregate({
+        where: {
+          status: "SUCCESS",
+          paidAt: { gte: todayStart, lt: tomorrowStart },
+        },
+        _sum: { amountKobo: true },
+      }),
+      this.prisma.payment.aggregate({
+        where: {
+          status: "SUCCESS",
+          paidAt: { gte: yesterdayStart, lt: todayStart },
+        },
+        _sum: { amountKobo: true },
+      }),
+      this.prisma.booking.findMany({
+        where: { status: { in: [BookingStatus.PENDING, BookingStatus.CONFIRMED] } },
+        include: { payments: true, package: true },
+      }),
+    ]);
+
+    const todayRevenueKobo = todayRevenue._sum.amountKobo ?? 0;
+    const yesterdayRevenueKobo = yesterdayRevenue._sum.amountKobo ?? 0;
+
+    const unpaidCount = unpaidPool.filter((b) => {
+      const due =
+        b.amountKobo != null && b.amountKobo > 0
+          ? b.amountKobo
+          : this.pricing.calculatePayableKobo(b.package.priceKobo, b.source);
+      const paid = b.payments
+        .filter((p) => p.status === "SUCCESS")
+        .reduce((s, p) => s + p.amountKobo, 0);
+      return paid < due;
+    }).length;
+
+    const totalDeltaPct =
+      totalPrev30 === 0 ? null : Math.round(((totalLast30 - totalPrev30) / totalPrev30) * 1000) / 10;
+    const revenueDeltaPct =
+      yesterdayRevenueKobo === 0
+        ? null
+        : Math.round(((todayRevenueKobo - yesterdayRevenueKobo) / yesterdayRevenueKobo) * 1000) / 10;
+
+    return {
+      totalLast30: {
+        count: totalLast30,
+        deltaPct: totalDeltaPct,
+      },
+      today: {
+        count: todayCount,
+        delta: todayCount - yesterdayCount,
+      },
+      todayRevenue: {
+        totalKobo: todayRevenueKobo,
+        deltaPct: revenueDeltaPct,
+        deltaKobo: todayRevenueKobo - yesterdayRevenueKobo,
+      },
+      unpaid: {
+        count: unpaidCount,
+      },
+    };
   }
 }

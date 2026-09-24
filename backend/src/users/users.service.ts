@@ -5,7 +5,8 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { Role } from "@prisma/client";
-import { hash } from "bcryptjs";
+import { compare, hash } from "bcryptjs";
+import { resolveDeskPermissions } from "../auth/permissions";
 import { PrismaService } from "../prisma/prisma.service";
 
 const userSelect = {
@@ -13,6 +14,7 @@ const userSelect = {
   email: true,
   name: true,
   role: true,
+  permissions: true,
   isActive: true,
   lastLoginAt: true,
   createdAt: true,
@@ -29,9 +31,27 @@ export class UsersService {
     });
   }
 
-  async create(input: { email?: string; name: string; role: Role; password: string }) {
+  async create(input: {
+    email?: string;
+    name: string;
+    role: Role;
+    password: string;
+    fullAccess?: boolean;
+    permissions?: string[];
+  }) {
     const email = input.email?.trim().toLowerCase();
     if (!email) throw new BadRequestException("Email is required");
+    if (input.password.length < 8) {
+      throw new BadRequestException("Password must be at least 8 characters");
+    }
+    await this.assertPasswordUnique(input.password);
+
+    const permissions = resolveDeskPermissions({
+      role: input.role,
+      fullAccess: input.fullAccess,
+      permissions: input.permissions,
+    });
+
     return this.prisma.user.create({
       data: {
         email,
@@ -39,6 +59,7 @@ export class UsersService {
         role: input.role,
         passwordHash: await hash(input.password, 10),
         isActive: true,
+        permissions,
       },
       select: userSelect,
     });
@@ -47,7 +68,13 @@ export class UsersService {
   async update(
     id: string,
     actorId: string,
-    input: { name?: string; role?: Role; isActive?: boolean },
+    input: {
+      name?: string;
+      role?: Role;
+      isActive?: boolean;
+      fullAccess?: boolean;
+      permissions?: string[];
+    },
   ) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException("User not found");
@@ -66,15 +93,36 @@ export class UsersService {
       }
     }
 
+    const nextRole = input.role ?? user.role;
+    const permissionsTouched = input.fullAccess !== undefined || input.permissions !== undefined;
+    const nextPermissions = permissionsTouched
+      ? resolveDeskPermissions({
+          role: nextRole,
+          fullAccess: input.fullAccess,
+          permissions: input.permissions,
+          previous: user.permissions,
+        })
+      : input.role !== undefined && input.role !== user.role
+        ? resolveDeskPermissions({
+            role: nextRole,
+            previous: user.permissions,
+          })
+        : undefined;
+
+    const bumpToken =
+      (input.role !== undefined && input.role !== user.role) ||
+      input.isActive === false ||
+      (nextPermissions !== undefined &&
+        JSON.stringify([...nextPermissions].sort()) !== JSON.stringify([...user.permissions].sort()));
+
     return this.prisma.user.update({
       where: { id },
       data: {
         ...(input.name !== undefined ? { name: input.name.trim() } : {}),
         ...(input.role !== undefined ? { role: input.role } : {}),
         ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
-        ...((input.role !== undefined && input.role !== user.role) || input.isActive === false
-          ? { tokenVersion: { increment: 1 } }
-          : {}),
+        ...(nextPermissions !== undefined ? { permissions: nextPermissions } : {}),
+        ...(bumpToken ? { tokenVersion: { increment: 1 } } : {}),
       },
       select: userSelect,
     });
@@ -83,6 +131,10 @@ export class UsersService {
   async resetPassword(id: string, password: string) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException("User not found");
+    if (password.length < 8) {
+      throw new BadRequestException("Password must be at least 8 characters");
+    }
+    await this.assertPasswordUnique(password, id);
     await this.prisma.user.update({
       where: { id },
       data: { passwordHash: await hash(password, 10), tokenVersion: { increment: 1 } },
@@ -96,5 +148,18 @@ export class UsersService {
 
   async remove(id: string, actorId: string) {
     return this.softDelete(id, actorId);
+  }
+
+  private async assertPasswordUnique(password: string, exceptUserId?: string) {
+    const users = await this.prisma.user.findMany({
+      where: { isActive: true },
+      select: { id: true, passwordHash: true },
+    });
+    for (const row of users) {
+      if (exceptUserId && row.id === exceptUserId) continue;
+      if (await compare(password, row.passwordHash)) {
+        throw new BadRequestException("Password must be unique across active desk users");
+      }
+    }
   }
 }

@@ -27,6 +27,7 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     try {
+      // Authorize from DB only. Ignore role/email/name/permission claims in the JWT.
       const payload = await this.jwt.verifyAsync<JwtPayload>(token);
       const user = await this.prisma.user.findUnique({
         where: { id: payload.sub },
@@ -35,6 +36,7 @@ export class JwtAuthGuard implements CanActivate {
           email: true,
           name: true,
           role: true,
+          permissions: true,
           isActive: true,
           tokenVersion: true,
         },

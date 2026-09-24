@@ -36,24 +36,37 @@ export function sanitizePermissionList(raw: unknown): DeskPermission[] {
   return out;
 }
 
+/**
+ * Persist desk area lists for ADMIN / STAFF. OWNER always stores ["*"].
+ * Empty list = no desk areas (do not fall back to schema default "*").
+ */
+export function resolveDeskPermissions(input: {
+  role: Role;
+  fullAccess?: boolean;
+  permissions?: string[];
+  previous?: string[];
+}): string[] {
+  if (input.role === Role.OWNER) return [FULL_ACCESS];
+  if (input.role !== Role.ADMIN && input.role !== Role.STAFF) return [];
+
+  if (input.fullAccess === true) return [FULL_ACCESS];
+  if (input.fullAccess === false) return sanitizePermissionList(input.permissions);
+  if (input.permissions?.includes(FULL_ACCESS)) return [FULL_ACCESS];
+  if (input.permissions !== undefined) return sanitizePermissionList(input.permissions);
+  if (input.previous?.includes(FULL_ACCESS)) return [FULL_ACCESS];
+  if (input.previous !== undefined) return sanitizePermissionList(input.previous);
+  return [];
+}
+
+/** @deprecated Prefer resolveDeskPermissions — same rules for ADMIN and STAFF. */
 export function resolveAdminPermissions(input: {
   role: Role;
   fullAccess?: boolean;
   permissions?: string[];
   previous?: string[];
-  isCreate: boolean;
+  isCreate?: boolean;
 }): string[] {
-  if (input.role !== Role.ADMIN) return [];
-  if (input.fullAccess === true) return [FULL_ACCESS];
-  if (input.fullAccess === false) return sanitizePermissionList(input.permissions);
-  if (input.permissions?.includes(FULL_ACCESS)) return [FULL_ACCESS];
-  if (input.permissions && input.permissions.length > 0) {
-    return sanitizePermissionList(input.permissions);
-  }
-  if (input.isCreate) return [FULL_ACCESS];
-  if (input.previous?.includes(FULL_ACCESS)) return [FULL_ACCESS];
-  if (input.previous) return sanitizePermissionList(input.previous);
-  return [FULL_ACCESS];
+  return resolveDeskPermissions(input);
 }
 
 export function hasDeskPermission(
@@ -62,7 +75,8 @@ export function hasDeskPermission(
 ): boolean {
   if (!user) return false;
   if (user.role === Role.OWNER) return true;
-  if (user.role === Role.STAFF) return true;
+  // STAFF uses stored permissions only (same as ADMIN). Empty list = no desk areas.
+  if (user.role !== Role.ADMIN && user.role !== Role.STAFF) return false;
   const perms = user.permissions ?? [];
   if (perms.includes(FULL_ACCESS)) return true;
   return perms.includes(permission);

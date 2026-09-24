@@ -1,50 +1,198 @@
-import { useState } from "react";
-import { Download } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  CreditCard,
+  Download,
+  Mail,
+  MoreHorizontal,
+  Phone,
+  X,
+  XCircle,
+} from "lucide-react";
+import { addDays, format } from "date-fns";
+import { Avatar, AvatarFallback } from "../../admin/components/ui/avatar";
 import { Button } from "../../admin/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../admin/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "../../admin/components/ui/card";
 import { EmptyState } from "../../admin/components/ui/empty-state";
 import { ErrorBanner } from "../../admin/components/ui/error-banner";
 import { Input } from "../../admin/components/ui/input";
-import { PageHeader } from "../../admin/components/ui/page-header";
-import { Pagination } from "../../admin/components/ui/pagination";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../admin/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../admin/components/ui/select";
 import { Skeleton } from "../../admin/components/ui/skeleton";
 import { StatCard } from "../../admin/components/ui/stat-card";
 import { PaymentStatusBadge } from "../../admin/components/ui/status-badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../../admin/components/ui/table";
 import { toast } from "../../admin/components/ui/toaster";
 import { useAdminApi } from "../../admin/lib/adminApi";
-import { formatLagosDateTime, formatNairaFromKobo, humanize, lagosToday } from "../../admin/lib/format";
-import type { PaymentMethod, PaymentStatus } from "../../admin/lib/types";
-import { PAYMENT_METHODS, PAYMENT_STATUSES } from "../../admin/lib/types";
-import { useQuery } from "../../admin/lib/useQuery";
-import { downloadBlob, errorMessage } from "../../lib/api";
+import {
+  formatLagosDate,
+  formatLagosDateTime,
+  formatLagosTime,
+  formatNairaFromKobo,
+  initials,
+  lagosToday,
+  parseYmd,
+  toYmd,
+} from "../../admin/lib/format";
+import type {
+  Payment,
+  PaymentMethod,
+  PaymentStatus,
+  PaymentsSummary,
+} from "../../admin/lib/types";
+import { ApiError, errorMessage } from "../../lib/api";
+import { cn } from "../../lib/cn";
+
+const PAGE_SIZE = 8;
+
+function pctHint(deltaPct: number | null, fallback: string): string {
+  if (deltaPct == null) return fallback;
+  const sign = deltaPct > 0 ? "↑" : deltaPct < 0 ? "↓" : "";
+  return `${sign} ${Math.abs(deltaPct)}% vs prior period`;
+}
+
+function methodLabel(method: PaymentMethod): string {
+  if (method === "ONLINE_BACHS") return "Bachs";
+  if (method === "STUDIO") return "Studio";
+  const _exhaustive: never = method;
+  return _exhaustive;
+}
+
+function statusUiLabel(status: PaymentStatus): string {
+  switch (status) {
+    case "SUCCESS":
+      return "Paid";
+    case "PENDING":
+      return "Pending";
+    case "PROCESSING":
+      return "Processing";
+    case "FAILED":
+      return "Failed";
+    default: {
+      const _exhaustive: never = status;
+      return _exhaustive;
+    }
+  }
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 export function AdminPaymentsPage() {
   const api = useAdminApi();
-  const [from, setFrom] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 30);
-    return d.toISOString().slice(0, 10);
-  });
-  const [to, setTo] = useState(lagosToday);
-  const [status, setStatus] = useState<PaymentStatus | "">("");
-  const [method, setMethod] = useState<PaymentMethod | "">("");
-  const [page, setPage] = useState(1);
+  const [params, setParams] = useSearchParams();
+  const today = lagosToday();
+
+  const to = params.get("to") && /^\d{4}-\d{2}-\d{2}$/.test(params.get("to")!) ? params.get("to")! : today;
+  const from =
+    params.get("from") && /^\d{4}-\d{2}-\d{2}$/.test(params.get("from")!)
+      ? params.get("from")!
+      : toYmd(addDays(parseYmd(to), -6));
+  const statusFilter = (params.get("status") as PaymentStatus | "ALL" | null) || "ALL";
+  const methodFilter = (params.get("method") as PaymentMethod | "ALL" | null) || "ALL";
+  const q = (params.get("q") ?? "").trim();
+  const page = Math.max(1, Number(params.get("page") || "1") || 1);
+  const selectedId = params.get("id");
+
+  const [summary, setSummary] = useState<PaymentsSummary | null>(null);
+  const [items, setItems] = useState<Payment[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [searchDraft, setSearchDraft] = useState(q);
   const [exporting, setExporting] = useState(false);
 
-  const listQuery = useQuery(
-    () => api.payments.list({ from, to, status, method, page, pageSize: 20 }),
-    [from, to, status, method, page],
+  const setParam = useCallback(
+    (patch: Record<string, string | null>) => {
+      setParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          for (const [key, value] of Object.entries(patch)) {
+            if (value == null || value === "") next.delete(key);
+            else next.set(key, value);
+          }
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setParams],
   );
-  const summaryQuery = useQuery(() => api.payments.summary({ from, to }), [from, to]);
-  const integrationQuery = useQuery(() => api.payments.integration(), []);
 
-  async function exportCsv() {
+  useEffect(() => {
+    setSearchDraft(q);
+  }, [q]);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [sum, list] = await Promise.all([
+        api.payments.summary({ from, to }),
+        api.payments.list({
+          from,
+          to,
+          status: statusFilter === "ALL" ? "" : statusFilter,
+          method: methodFilter === "ALL" ? "" : methodFilter,
+          q: q || undefined,
+          page,
+          pageSize: PAGE_SIZE,
+        }),
+      ]);
+      setSummary(sum);
+      setItems(list.items);
+      setTotal(list.total);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) return;
+      setError(errorMessage(err));
+      setItems([]);
+      setSummary(null);
+      setTotal(0);
+    } finally {
+      setLoading(false);
+    }
+  }, [api, from, to, statusFilter, methodFilter, q, page]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const selected = useMemo(
+    () => items.find((p) => p.id === selectedId) ?? null,
+    [items, selectedId],
+  );
+
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const rangeLabel = `${format(parseYmd(from), "MMM d, yyyy")} – ${format(parseYmd(to), "MMM d, yyyy")}`;
+
+  async function onExport() {
     setExporting(true);
     try {
       const blob = await api.payments.exportCsv({ from, to });
       downloadBlob(blob, `payments-${from}-to-${to}.csv`);
-      toast.success("CSV downloaded");
+      toast.success("Export downloaded");
     } catch (err) {
       toast.error(errorMessage(err));
     } finally {
@@ -52,154 +200,369 @@ export function AdminPaymentsPage() {
     }
   }
 
-  const integration = integrationQuery.data;
+  function submitSearch(e: FormEvent) {
+    e.preventDefault();
+    setParam({ q: searchDraft.trim() || null, page: "1", id: null });
+  }
+
+  const revenueTone =
+    (summary?.revenue?.deltaPct ?? 0) >= 0 ? ("success" as const) : ("destructive" as const);
 
   return (
-    <div className="space-y-admin">
-      <PageHeader
-        title="Payments"
-        description="Studio and online settlement history."
-        actions={
-          <Button variant="outline" onClick={() => void exportCsv()} loading={exporting}>
-            <Download />
-            Export CSV
-          </Button>
-        }
-      />
-      <ErrorBanner
-        message={listQuery.error || summaryQuery.error || integrationQuery.error}
-        onRetry={() => {
-          void listQuery.refetch();
-          void summaryQuery.refetch();
-          void integrationQuery.refetch();
-        }}
-        retrying={listQuery.fetching || summaryQuery.fetching || integrationQuery.fetching}
-      />
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Bachs connection</CardTitle>
-          <CardDescription>
-            Booking → checkout → webhook → CONFIRMED. Register the webhook URL in the Bachs Developer
-            Portal (sandbox and live are separate destinations).
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3 text-sm">
-          {integrationQuery.loading && !integration ? <Skeleton className="h-20 w-full" /> : null}
-          {integration ? (
-            <>
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                <p>
-                  <span className="text-muted-foreground">Checkout:</span>{" "}
-                  {integration.mockCheckout ? "Mock (dev)" : "Bachs hosted"}
-                </p>
-                <p>
-                  <span className="text-muted-foreground">Environment:</span> {integration.environment}
-                </p>
-                <p>
-                  <span className="text-muted-foreground">API key:</span>{" "}
-                  {integration.apiKeyConfigured ? "Configured" : "Not set"}
-                </p>
-                <p>
-                  <span className="text-muted-foreground">Webhook secret:</span>{" "}
-                  {integration.webhookSecretConfigured ? "Configured" : "Not set"}
-                </p>
-              </div>
-              <p className="break-all font-mono text-xs">
-                <span className="text-muted-foreground">Webhook URL:</span> {integration.webhookUrl}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Events: {integration.events.join(", ")}. Live ready:{" "}
-                {integration.readyForLive ? "yes" : "no — sandbox/mock until sk_live_ + live secret"}.
-              </p>
-            </>
-          ) : null}
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-3 sm:grid-cols-3">
-        <StatCard
-          label="Total"
-          loading={summaryQuery.loading}
-          value={formatNairaFromKobo(summaryQuery.data?.totalKobo ?? 0)}
-          hint={`${summaryQuery.data?.count ?? 0} payments`}
-          tone="success"
-        />
-        <StatCard
-          label="Studio"
-          loading={summaryQuery.loading}
-          value={formatNairaFromKobo(summaryQuery.data?.byMethod.STUDIO ?? 0)}
-        />
-        <StatCard
-          label="Online"
-          loading={summaryQuery.loading}
-          value={formatNairaFromKobo(summaryQuery.data?.byMethod.ONLINE_BACHS ?? 0)}
-        />
-      </div>
-
-      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-        <Input type="date" value={from} onChange={(e) => { setPage(1); setFrom(e.target.value); }} className="sm:w-40" />
-        <Input type="date" value={to} onChange={(e) => { setPage(1); setTo(e.target.value); }} className="sm:w-40" />
-        <Select value={status || "all"} onValueChange={(v) => { setPage(1); setStatus(v === "all" ? "" : (v as PaymentStatus)); }}>
-          <SelectTrigger className="sm:w-40"><SelectValue placeholder="Status" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
-            {PAYMENT_STATUSES.map((s) => (
-              <SelectItem key={s} value={s}>{humanize(s)}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={method || "all"} onValueChange={(v) => { setPage(1); setMethod(v === "all" ? "" : (v as PaymentMethod)); }}>
-          <SelectTrigger className="sm:w-44"><SelectValue placeholder="Method" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All methods</SelectItem>
-            {PAYMENT_METHODS.map((m) => (
-              <SelectItem key={m} value={m}>{m === "STUDIO" ? "Studio" : "Online Bachs"}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {listQuery.loading ? (
-        Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)
-      ) : !listQuery.data?.items.length ? (
-        <EmptyState title="No payments" description="Adjust the date range or filters." />
-      ) : (
-        <>
-          <div className="overflow-x-auto rounded-lg border border-border">
-            <table className="w-full min-w-[700px] text-sm">
-              <thead className="bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-3">When</th>
-                  <th className="px-3 py-3">Customer</th>
-                  <th className="px-3 py-3">Package</th>
-                  <th className="px-3 py-3">Method</th>
-                  <th className="px-3 py-3">Amount</th>
-                  <th className="px-3 py-3">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {listQuery.data.items.map((p) => (
-                  <tr key={p.id} className="border-t border-border">
-                    <td className="px-3 py-3 whitespace-nowrap">{formatLagosDateTime(p.paidAt ?? p.createdAt)}</td>
-                    <td className="px-3 py-3">{p.booking?.customer?.name ?? "—"}</td>
-                    <td className="px-3 py-3">{p.booking?.package?.name ?? "—"}</td>
-                    <td className="px-3 py-3">{p.method === "STUDIO" ? "Studio" : "Online"}</td>
-                    <td className="px-3 py-3 tabular-nums">{formatNairaFromKobo(p.amountKobo)}</td>
-                    <td className="px-3 py-3"><PaymentStatusBadge status={p.status} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+    <div className="pa-payments space-y-admin-stack">
+      <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <h1 className="font-display text-3xl font-normal tracking-tight text-foreground sm:text-[2rem]">
+            Payments
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Track and manage all payment transactions, refunds and reconciliations.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm text-muted-foreground">
+            <span className="tabular-nums text-foreground">{rangeLabel}</span>
           </div>
-          <Pagination
-            page={listQuery.data.page}
-            pageSize={listQuery.data.pageSize}
-            total={listQuery.data.total}
-            onPageChange={setPage}
+          <Input
+            type="date"
+            value={from}
+            aria-label="From date"
+            className="w-[9.5rem]"
+            onChange={(e) => setParam({ from: e.target.value || null, page: "1", id: null })}
           />
-        </>
-      )}
+          <Input
+            type="date"
+            value={to}
+            aria-label="To date"
+            className="w-[9.5rem]"
+            onChange={(e) => setParam({ to: e.target.value || null, page: "1", id: null })}
+          />
+          <Button type="button" onClick={() => void onExport()} loading={exporting}>
+            <Download strokeWidth={1.5} />
+            Export
+          </Button>
+        </div>
+      </header>
+
+      <ErrorBanner message={error} onRetry={() => void load()} retrying={loading} />
+
+      <section className="grid gap-admin-gap sm:grid-cols-2 xl:grid-cols-4" aria-label="Payment metrics">
+        <StatCard
+          label="Total Revenue"
+          icon={CreditCard}
+          tone={revenueTone}
+          loading={loading}
+          value={
+            summary ? formatNairaFromKobo(summary.revenue?.totalKobo ?? summary.totalKobo) : "—"
+          }
+          hint={
+            summary
+              ? pctHint(
+                  summary.revenue?.deltaPct ?? null,
+                  formatNairaFromKobo(summary.revenue?.deltaKobo ?? 0),
+                )
+              : undefined
+          }
+        />
+        <StatCard
+          label="Successful Payments"
+          icon={CheckCircle2}
+          tone="success"
+          loading={loading}
+          value={summary?.successful?.count ?? summary?.count ?? "—"}
+          hint={
+            summary ? pctHint(summary.successful?.deltaPct ?? null, "vs prior period") : undefined
+          }
+        />
+        <StatCard
+          label="Pending Payments"
+          icon={AlertTriangle}
+          tone="warning"
+          loading={loading}
+          value={summary?.pending?.count ?? "—"}
+          hint={summary ? pctHint(summary.pending?.deltaPct ?? null, "vs prior period") : undefined}
+        />
+        <StatCard
+          label="Failed / Refunded"
+          icon={XCircle}
+          tone="destructive"
+          loading={loading}
+          value={summary?.failed?.count ?? "—"}
+          hint={summary ? pctHint(summary.failed?.deltaPct ?? null, "Failed only — no refunds") : undefined}
+        />
+      </section>
+
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+        <Select
+          value={statusFilter}
+          onValueChange={(v) => setParam({ status: v === "ALL" ? null : v, page: "1", id: null })}
+        >
+          <SelectTrigger className="w-full lg:w-44" aria-label="Filter by status">
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">All statuses</SelectItem>
+            <SelectItem value="SUCCESS">Paid</SelectItem>
+            <SelectItem value="PENDING">Pending</SelectItem>
+            <SelectItem value="PROCESSING">Processing</SelectItem>
+            <SelectItem value="FAILED">Failed</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select
+          value={methodFilter}
+          onValueChange={(v) => setParam({ method: v === "ALL" ? null : v, page: "1", id: null })}
+        >
+          <SelectTrigger className="w-full lg:w-44" aria-label="Filter by method">
+            <SelectValue placeholder="Payment method" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">All methods</SelectItem>
+            <SelectItem value="ONLINE_BACHS">Bachs (online)</SelectItem>
+            <SelectItem value="STUDIO">Studio</SelectItem>
+          </SelectContent>
+        </Select>
+        <form onSubmit={submitSearch} className="min-w-0 flex-1">
+          <Input
+            value={searchDraft}
+            onChange={(e) => setSearchDraft(e.target.value)}
+            placeholder="Search reference or customer…"
+            aria-label="Search payments"
+          />
+        </form>
+      </div>
+
+      <div
+        className={cn(
+          "grid gap-admin-stack",
+          selected ? "xl:grid-cols-[minmax(0,1fr)_20rem]" : "grid-cols-1",
+        )}
+      >
+        <Card className="min-w-0 overflow-hidden">
+          <CardContent className="p-0">
+            {loading ? (
+              <div className="space-y-3 p-admin-card-sm" aria-busy>
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Skeleton key={i} className="h-12 w-full" />
+                ))}
+              </div>
+            ) : items.length === 0 ? (
+              <EmptyState
+                compact
+                className="m-admin-card-sm border-0 bg-transparent"
+                title="No payments"
+                description={
+                  q
+                    ? `No matches for “${q}” in this range.`
+                    : "Successful, pending, and failed payments will appear here."
+                }
+              />
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Reference</TableHead>
+                      <TableHead>Customer</TableHead>
+                      <TableHead className="hidden md:table-cell">Booking</TableHead>
+                      <TableHead>Amount</TableHead>
+                      <TableHead className="hidden sm:table-cell">Method</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="hidden lg:table-cell">Date</TableHead>
+                      <TableHead className="w-10" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {items.map((row) => {
+                      const active = row.id === selectedId;
+                      const customer = row.booking?.customer;
+                      const pkg = row.booking?.package;
+                      return (
+                        <TableRow
+                          key={row.id}
+                          className={cn("cursor-pointer", active && "bg-muted/40")}
+                          onClick={() => setParam({ id: row.id })}
+                        >
+                          <TableCell className="max-w-[8rem] truncate font-medium tabular-nums">
+                            {row.reference}
+                          </TableCell>
+                          <TableCell>
+                            <div className="min-w-0">
+                              <p className="truncate text-sm">{customer?.name ?? "—"}</p>
+                              <p className="truncate text-xs text-muted-foreground">
+                                {customer?.phone ?? "—"}
+                              </p>
+                            </div>
+                          </TableCell>
+                          <TableCell className="hidden max-w-[9rem] md:table-cell">
+                            <p className="truncate text-sm">
+                              {pkg?.service?.name ?? pkg?.name ?? "—"}
+                            </p>
+                            <p className="truncate text-xs text-muted-foreground">
+                              {row.booking?.startTime
+                                ? formatLagosDate(row.booking.startTime)
+                                : "—"}
+                            </p>
+                          </TableCell>
+                          <TableCell className="font-semibold tabular-nums">
+                            {formatNairaFromKobo(row.amountKobo)}
+                          </TableCell>
+                          <TableCell className="hidden text-muted-foreground sm:table-cell">
+                            {methodLabel(row.method)}
+                          </TableCell>
+                          <TableCell>
+                            <PaymentStatusBadge status={row.status} />
+                          </TableCell>
+                          <TableCell className="hidden text-xs text-muted-foreground lg:table-cell">
+                            {formatLagosDate(row.paidAt ?? row.createdAt)}
+                          </TableCell>
+                          <TableCell>
+                            <MoreHorizontal className="h-4 w-4 text-muted-foreground" aria-hidden />
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+
+            {total > 0 ? (
+              <div className="flex items-center justify-between border-t border-border px-admin-card-sm py-3">
+                <p className="text-xs text-muted-foreground">
+                  Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}{" "}
+                  payments
+                </p>
+                <div className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    disabled={page <= 1}
+                    aria-label="Previous page"
+                    onClick={() => setParam({ page: String(page - 1), id: null })}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <span className="rounded-md bg-primary px-2 py-1 text-xs font-medium text-primary-foreground tabular-nums">
+                    {page}
+                  </span>
+                  <span className="px-1 text-xs text-muted-foreground">/ {pageCount}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    disabled={page >= pageCount}
+                    aria-label="Next page"
+                    onClick={() => setParam({ page: String(page + 1), id: null })}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+
+        {selected ? (
+          <PaymentDetailPanel payment={selected} onClose={() => setParam({ id: null })} />
+        ) : null}
+      </div>
     </div>
+  );
+}
+
+function PaymentDetailPanel({
+  payment,
+  onClose,
+}: {
+  payment: Payment;
+  onClose: () => void;
+}) {
+  const customer = payment.booking?.customer;
+  const pkg = payment.booking?.package;
+  const source = payment.booking?.source;
+
+  return (
+    <Card className="h-fit">
+      <CardHeader className="flex flex-row items-start justify-between space-y-0 p-admin-card-sm">
+        <div className="space-y-2">
+          <CardTitle className="font-display text-lg font-normal">Payment Details</CardTitle>
+          <p className="text-xs font-medium tabular-nums text-muted-foreground">{payment.reference}</p>
+          <div className="flex items-center gap-2">
+            <PaymentStatusBadge status={payment.status} />
+            <span className="text-[11px] text-muted-foreground">
+              {statusUiLabel(payment.status)}
+            </span>
+          </div>
+        </div>
+        <Button type="button" variant="ghost" size="icon-sm" aria-label="Close details" onClick={onClose}>
+          <X className="h-4 w-4" />
+        </Button>
+      </CardHeader>
+      <CardContent className="space-y-5 p-admin-card-sm pt-0">
+        <div className="flex items-start gap-3">
+          <Avatar className="h-11 w-11">
+            <AvatarFallback>{initials(customer?.name)}</AvatarFallback>
+          </Avatar>
+          <div className="min-w-0">
+            <p className="font-medium">{customer?.name ?? "—"}</p>
+            {customer?.phone ? (
+              <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Phone className="h-3.5 w-3.5" aria-hidden />
+                {customer.phone}
+              </p>
+            ) : null}
+            {customer?.email ? (
+              <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Mail className="h-3.5 w-3.5" aria-hidden />
+                {customer.email}
+              </p>
+            ) : null}
+          </div>
+        </div>
+
+        <div>
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Booking</p>
+          <p className="mt-1 text-sm font-medium">
+            {pkg?.service?.name ?? pkg?.name ?? "—"}
+          </p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {payment.booking?.startTime
+              ? `${formatLagosDate(payment.booking.startTime)}${
+                  payment.booking.startTime && payment.booking.endTime
+                    ? ` · ${formatLagosTime(payment.booking.startTime)}–${formatLagosTime(payment.booking.endTime)}`
+                    : ""
+                }`
+              : "—"}
+            {pkg?.durationMinutes ? ` · ${pkg.durationMinutes} min` : ""}
+          </p>
+        </div>
+
+        <div className="space-y-1.5 rounded-xl border border-border bg-muted/20 p-3 text-sm">
+          <div className="flex justify-between gap-2">
+            <span className="text-muted-foreground">Amount</span>
+            <span className="tabular-nums">{formatNairaFromKobo(payment.amountKobo)}</span>
+          </div>
+          <div className="flex items-center justify-between gap-2 border-t border-border pt-2">
+            <span className="font-medium">
+              {payment.status === "SUCCESS" ? "Total paid" : "Amount"}
+            </span>
+            <span className="font-semibold tabular-nums text-primary">
+              {formatNairaFromKobo(payment.amountKobo)}
+            </span>
+          </div>
+        </div>
+
+        <div className="space-y-1 text-xs text-muted-foreground">
+          <p>
+            Method · {methodLabel(payment.method)}
+            {payment.provider ? ` · ${payment.provider}` : ""}
+          </p>
+          {source ? <p>Source · {source === "ONLINE" ? "Website" : source.replace("_", " ")}</p> : null}
+          <p>Created · {formatLagosDateTime(payment.createdAt)}</p>
+          {payment.paidAt ? <p>Paid · {formatLagosDateTime(payment.paidAt)}</p> : null}
+        </div>
+      </CardContent>
+    </Card>
   );
 }

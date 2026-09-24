@@ -11,7 +11,7 @@ import { PrismaClient } from "@prisma/client";
 import sharp from "sharp";
 import { assertProductionPaymentConfig, isPaymentsMockEnabled } from "../src/common/payments-mock";
 import { HOLD_IP_LIMIT, LOGIN_FAIL_LIMIT, MemoryRateLimiter, RATE_WINDOW_MS } from "../src/common/rate-limit";
-import { assertCheckoutRedirectUrl, bachsHostedRedirectUrl } from "../src/common/site-origins";
+import { assertCheckoutRedirectUrl, bachsHostedRedirectUrl, corsOptions, originAllowed } from "../src/common/site-origins";
 import { parseMediaKind } from "../src/common/upload-path";
 import { signBachsWebhookForTest } from "../src/payments/bachs-webhook";
 
@@ -146,6 +146,11 @@ function unitTests() {
       () => assertCheckoutRedirectUrl("http://localhost:5173/book/confirmation", "return"),
       /https|not allowed/,
     );
+    assert.equal(originAllowed("https://photoarenang.com"), true);
+    assert.equal(originAllowed("https://evil.example"), false);
+    const cors = corsOptions();
+    assert.equal(cors.credentials, false);
+    assert.notEqual(cors.origin, true);
     process.env.NODE_ENV = "development";
     process.env.PUBLIC_SITE_ORIGINS = "http://localhost:5173";
   assert.doesNotThrow(() =>
@@ -294,7 +299,7 @@ async function main() {
     assert.ok(created.status < 300, `create user ${created.status} ${JSON.stringify(created.data)}`);
 
     const staffLogin = await api<{ token: string; user: { id: string } }>("POST", "/auth/login", {
-      body: { email: staffEmail, password: staffPass },
+      body: { email: ownerEmail, password: staffPass },
       ip: "10.255.1.43",
     });
     assert.ok(staffLogin.status < 300, `staff login ${staffLogin.status} ${JSON.stringify(staffLogin.data)}`);
@@ -315,19 +320,33 @@ async function main() {
     const adminUser = await api<{ id: string }>("POST", "/admin/users", {
       token: ownerToken,
       ip: "10.255.1.42",
-      body: { email: adminEmail, name: "Sec Admin", role: "ADMIN", password: adminPass },
+      body: {
+        email: adminEmail,
+        name: "Sec Admin",
+        role: "ADMIN",
+        password: adminPass,
+        fullAccess: true,
+      },
     });
     assert.ok(adminUser.status < 300, `admin user ${adminUser.status}`);
-    const adminLogin = await api<{ token: string; user: { id: string } }>("POST", "/auth/login", {
-      body: { email: adminEmail, password: adminPass },
-      ip: "10.255.1.44",
-    });
+    const adminLogin = await api<{ token: string; user: { id: string; permissions?: string[] } }>(
+      "POST",
+      "/auth/login",
+      {
+        body: { email: ownerEmail, password: adminPass },
+        ip: "10.255.1.44",
+      },
+    );
     assert.ok(adminLogin.status < 300, `admin login ${adminLogin.status}`);
+    assert.ok(
+      adminLogin.data.user.permissions?.includes("*"),
+      `admin permissions persisted ${JSON.stringify(adminLogin.data.user)}`,
+    );
     const adminToken = adminLogin.data.token;
     await api("PATCH", `/admin/users/${adminUser.data.id}`, {
       token: ownerToken,
       ip: "10.255.1.42",
-      body: { role: "STAFF" },
+      body: { role: "STAFF", fullAccess: false, permissions: [] },
     });
     const demoted = await api("POST", "/admin/users", {
       token: adminToken,
@@ -341,10 +360,10 @@ async function main() {
     const pwUser = await api<{ id: string }>("POST", "/admin/users", {
       token: ownerToken,
       ip: "10.255.1.42",
-      body: { email: pwUserEmail, name: "Pw User", role: "ADMIN", password: "oldpass12" },
+      body: { email: pwUserEmail, name: "Pw User", role: "ADMIN", password: "oldpass12", fullAccess: true },
     });
     const pwLogin = await api<{ token: string }>("POST", "/auth/login", {
-      body: { email: pwUserEmail, password: "oldpass12" },
+      body: { email: ownerEmail, password: "oldpass12" },
       ip: "10.255.1.45",
     });
     assert.ok(pwLogin.status < 300, `pw login ${pwLogin.status}`);
@@ -358,6 +377,60 @@ async function main() {
     const stale = await api("GET", "/auth/me", { token: oldTok, ip: "10.255.1.45" });
     assert.equal(stale.status, 401);
     console.log("13. Password change invalidates old token ✓");
+
+    // AUTH: non-owner email must not authenticate even with a valid desk password
+    const wrongEmailLogin = await api("POST", "/auth/login", {
+      body: { email: adminEmail, password: adminPass },
+      ip: "10.255.1.46",
+    });
+    assert.equal(wrongEmailLogin.status, 401, "non-desk email must fail");
+    console.log("13b. Non-desk email rejected (Sanctum) ✓");
+
+    // AUTH: limited ADMIN permissions reload from DB on /auth/me and guarded routes
+    const limitedEmail = `limited-sec-${Date.now()}@example.com`;
+    const limitedPass = "limitedpass1";
+    const limitedUser = await api<{ id: string; permissions: string[] }>("POST", "/admin/users", {
+      token: ownerToken,
+      ip: "10.255.1.42",
+      body: {
+        email: limitedEmail,
+        name: "Limited Admin",
+        role: "ADMIN",
+        password: limitedPass,
+        fullAccess: false,
+        permissions: ["bookings"],
+      },
+    });
+    assert.ok(limitedUser.status < 300, `limited user ${limitedUser.status}`);
+    assert.deepEqual(limitedUser.data.permissions, ["bookings"]);
+    const limitedLogin = await api<{ token: string; user: { role: string; permissions: string[] } }>(
+      "POST",
+      "/auth/login",
+      {
+        body: { email: ownerEmail, password: limitedPass },
+        ip: "10.255.1.47",
+      },
+    );
+    assert.ok(limitedLogin.status < 300, `limited login ${limitedLogin.status}`);
+    assert.equal(limitedLogin.data.user.role, "ADMIN");
+    assert.deepEqual(limitedLogin.data.user.permissions, ["bookings"]);
+    const limitedMe = await api<{ permissions: string[] }>("GET", "/auth/me", {
+      token: limitedLogin.data.token,
+      ip: "10.255.1.47",
+    });
+    assert.equal(limitedMe.status, 200);
+    assert.deepEqual(limitedMe.data.permissions, ["bookings"]);
+    const limitedBookings = await api("GET", "/admin/bookings?page=1&pageSize=1", {
+      token: limitedLogin.data.token,
+      ip: "10.255.1.47",
+    });
+    assert.ok(limitedBookings.status < 300, `bookings allowed ${limitedBookings.status}`);
+    const limitedPayments = await api("GET", "/admin/payments?page=1&pageSize=1", {
+      token: limitedLogin.data.token,
+      ip: "10.255.1.47",
+    });
+    assert.equal(limitedPayments.status, 403, `payments denied ${limitedPayments.status}`);
+    console.log("13c. ADMIN limited permissions persist + reload ✓");
 
     const svg = new Blob([`<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`], {
       type: "image/svg+xml",
@@ -476,7 +549,16 @@ async function main() {
     );
     assert.equal(stA.data.status, "CONFIRMED");
     assert.equal(stA.data.payment.status, "SUCCESS");
+    const idOnly = await api("GET", `/bookings/${h6a.data.bookingId}/status`, { ip: "10.255.1.70" });
+    assert.equal(idOnly.status, 400, "SEC-M1: status without reference rejected");
+    const stAFull = await api<{ customer?: { email?: string } }>(
+      "GET",
+      `/bookings/${h6a.data.bookingId}/status?reference=${encodeURIComponent(h6a.data.reference)}`,
+      { ip: "10.255.1.70" },
+    );
+    assert.equal(stAFull.data.customer?.email, undefined, "SEC-M1: public status omits email");
     console.log("20. Expired hold + free slot + payment → CONFIRMED ✓");
+    console.log("20b. SEC-M1 status requires reference and omits email ✓");
 
     const h6bSlot = (await firstPackageAndSlots(3, "10.255.1.71")).slots;
     const victim = await api<{ bookingId: string; reference: string }>("POST", "/bookings/hold", {

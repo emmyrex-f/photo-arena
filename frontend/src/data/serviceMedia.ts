@@ -127,3 +127,4 @@ export function serviceHeroSrc(service: {
 }
 
 export const aboutStudioImage = "/media/about.jpg";
+export const servicesHeroImage = "/media/services-header-banner.jpg";

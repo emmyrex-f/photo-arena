@@ -55,14 +55,20 @@ export class CustomersController {
     return this.customers.exportCsv();
   }
 
+  @Get("summary")
+  summary() {
+    return this.customers.summary();
+  }
+
   @Get()
   list(
     @Query("q") q?: string,
     @Query("page") page?: string,
     @Query("pageSize") pageSize?: string,
     @Query("tag") tag?: string,
+    @Query("status") status?: string,
   ) {
-    return this.customers.list(q, page, pageSize, tag);
+    return this.customers.list(q, page, pageSize, tag, status);
   }
 
   @Get(":id")

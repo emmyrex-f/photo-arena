@@ -28,10 +28,18 @@ const styles: Record<Variant, string> = {
 
 function classNames(variant: Variant, className?: string) {
   return [
-    "inline-flex items-center justify-center gap-2 min-h-11 rounded-full px-6 py-3 text-sm font-medium tracking-wide transition-colors duration-200",
+    "inline-flex items-center justify-center gap-2 min-h-11 rounded-xl px-6 py-3 text-sm font-button font-normal tracking-wide transition-colors duration-200",
     styles[variant],
     className ?? "",
   ].join(" ");
+}
+
+/** Absolute / scheme URLs must use <a>, not React Router <Link>. */
+export function isExternalHref(href: string): boolean {
+  const value = href.trim();
+  if (!value) return false;
+  if (value.startsWith("//")) return true;
+  return /^(https?:|mailto:|tel:|sms:)/i.test(value);
 }
 
 export function Button({
@@ -43,8 +51,21 @@ export function Button({
   const classes = classNames(variant, className);
 
   if ("to" in props && props.to) {
+    const href = props.to.trim();
+    if (isExternalHref(href)) {
+      const external = /^(https?:|\/\/)/i.test(href);
+      return (
+        <a
+          href={href}
+          className={classes}
+          {...(external ? { target: "_blank", rel: "noreferrer" } : {})}
+        >
+          {children}
+        </a>
+      );
+    }
     return (
-      <Link to={props.to} className={classes}>
+      <Link to={href} className={classes}>
         {children}
       </Link>
     );

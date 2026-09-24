@@ -1,13 +1,16 @@
 import { Link } from "react-router-dom";
 import { PageHeader } from "../components/layout/PageHeader";
 import { Container } from "../components/ui/Container";
+import { CameraSpinner } from "../components/ui/CameraSpinner";
 import { Section } from "../components/ui/Section";
 import { formatPublishDate } from "../lib/datetime";
 import { fetchBlogList, mediaUrl } from "../lib/publicApi";
 import { Seo } from "../lib/seo";
+import { useSiteInfo } from "../lib/settings";
 import { usePublicData } from "../lib/usePublicData";
 
 export function BlogPage() {
+  const info = useSiteInfo();
   const { data, loading } = usePublicData(() => fetchBlogList(1, 12), []);
   const posts = data?.items ?? [];
 
@@ -25,12 +28,27 @@ export function BlogPage() {
       />
       <Section>
         <Container>
-          {loading ? <p className="text-text-secondary">Loading…</p> : null}
+          {loading ? <CameraSpinner label="Loading journal" caption="Loading…" /> : null}
           {!loading && posts.length === 0 ? (
             <div className="mx-auto max-w-lg text-center">
               <p className="font-display text-3xl text-text">Nothing published yet.</p>
               <p className="mt-stack text-text-secondary">
-                Check back soon, or follow along on Instagram while we write the first notes.
+                Check back soon
+                {info.instagram ? (
+                  <>
+                    , or{" "}
+                    <a
+                      href={info.instagram}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-accent underline-offset-2 hover:underline"
+                    >
+                      follow along on Instagram
+                    </a>{" "}
+                    while we write the first notes
+                  </>
+                ) : null}
+                .
               </p>
               <Link to="/portfolio" className="mt-stack-lg inline-block text-sm text-accent hover:text-accent-hover">
                 Browse the portfolio

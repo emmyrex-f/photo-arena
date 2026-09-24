@@ -10,6 +10,7 @@
     "prisma:seed": "tsx prisma/seed.ts",
     "prisma:constraints": "prisma db execute --schema prisma/schema.prisma --file prisma/sql/user-token-version.sql && prisma db execute --schema prisma/schema.prisma --file prisma/sql/booking-overlap-exclude.sql",
     "verify:rules": "tsx scripts/verify-rules.ts",
+    "verify:calendar": "tsx scripts/verify-calendar.ts",
     "verify:bachs-webhook": "tsx scripts/verify-bachs-webhook.ts",
     "verify:payment-flow": "tsx scripts/verify-payment-flow.ts",
     "verify:security": "tsx scripts/verify-security.ts"

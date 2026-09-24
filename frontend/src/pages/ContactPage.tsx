@@ -44,19 +44,21 @@ export function ContactPage() {
               </ul>
             </div>
             <div className="space-y-3">
-              <iframe
-                title="Photo Arena location map"
-                src={info.mapEmbed}
-                className="h-64 w-full border border-elevated"
-                loading="lazy"
-              />
+              <div className="relative h-64 overflow-hidden border border-elevated">
+                <iframe
+                  title="Photo Arena location map"
+                  src={info.mapEmbed}
+                  className="absolute inset-x-0 top-0 h-[calc(100%+3rem)] w-full border-0"
+                  loading="lazy"
+                />
+              </div>
               <a
                 href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
                   [info.name, info.address].filter(Boolean).join(", "),
                 )}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex min-h-11 items-center justify-center rounded-full border border-accent bg-accent px-6 text-sm font-medium text-text-on-accent hover:bg-accent-hover"
+                className="inline-flex min-h-11 items-center justify-center rounded-xl border border-accent bg-accent px-6 font-button text-sm font-normal text-text-on-accent hover:bg-accent-hover"
               >
                 Open in Google Maps
               </a>

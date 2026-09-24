@@ -63,7 +63,7 @@ export function AdminLoginPage() {
         <div className="relative z-10 flex h-full flex-col justify-between p-card-lg text-[hsl(var(--sidebar-foreground))]">
           <div>
             <AdminLogo onDark className="h-14" />
-            <p className="mt-2 text-xs uppercase tracking-[0.2em] opacity-70">Port Harcourt</p>
+            <p className="font-subtitle mt-2 text-xs uppercase tracking-[0.2em] opacity-70">Port Harcourt</p>
           </div>
           <div className="max-w-md space-y-3">
             <h1 className="font-display text-4xl leading-tight">Studio desk</h1>
@@ -88,10 +88,9 @@ export function AdminLoginPage() {
                   id="email"
                   type="email"
                   value={email}
-                  readOnly
+                  onChange={(e) => setEmail(e.target.value)}
                   autoComplete="username"
                   required
-                  className="bg-muted/40"
                 />
               </div>
               <div className="space-y-2">

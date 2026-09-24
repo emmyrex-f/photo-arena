@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { Link, useParams } from "react-router-dom";
+import { PageHeader } from "../components/layout/PageHeader";
 import { Container } from "../components/ui/Container";
-import { Eyebrow } from "../components/ui/Heading";
+import { CameraSpinner } from "../components/ui/CameraSpinner";
 import { Section } from "../components/ui/Section";
 import { formatPublishDate } from "../lib/datetime";
 import { fetchBlogPost, mediaUrl, type BlogPost } from "../lib/publicApi";
@@ -36,7 +37,7 @@ export function BlogPostPage() {
     return (
       <Section>
         <Container>
-          <p className="text-text-secondary">Loading…</p>
+          <CameraSpinner label="Loading article" caption="Loading…" />
         </Container>
       </Section>
     );
@@ -74,15 +75,11 @@ export function BlogPostPage() {
         publishedTime={post.publishedAt ?? undefined}
       />
       <article>
-        <header className="border-b border-elevated bg-surface/40 py-header-y">
-          <Container className="max-w-3xl">
-            <Eyebrow>Journal</Eyebrow>
-            <h1 className="font-display text-4xl text-text md:text-5xl">{post.title}</h1>
-            {post.publishedAt ? (
-              <p className="mt-stack text-sm text-text-muted">{formatPublishDate(post.publishedAt)}</p>
-            ) : null}
-          </Container>
-        </header>
+        <PageHeader
+          eyebrow="Journal"
+          title={post.title}
+          description={post.publishedAt ? formatPublishDate(post.publishedAt) : undefined}
+        />
         {post.coverImageUrl ? (
           <Container className="max-w-4xl pt-stack-xl">
             <img src={mediaUrl(post.coverImageUrl)} alt="" className="w-full object-cover" />

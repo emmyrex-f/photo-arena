@@ -2,6 +2,7 @@ import { PrismaClient, Role } from "@prisma/client";
 import { hash } from "bcryptjs";
 import {
   buildSeedSettings,
+  deliverablesFromIncludes,
   legacySettingKeys,
   seedFaqs,
   seedGallery,
@@ -20,7 +21,14 @@ async function main() {
   if (!existingOwner) {
     const passwordHash = await hash(password, 10);
     await prisma.user.create({
-      data: { email, passwordHash, name, role: Role.OWNER, isActive: true },
+      data: {
+        email,
+        passwordHash,
+        name,
+        role: Role.OWNER,
+        isActive: true,
+        permissions: ["*"],
+      },
     });
   } else {
     await prisma.user.update({ where: { email }, data: { name } });
@@ -83,33 +91,38 @@ async function main() {
     let packageOrder = 0;
     for (const tier of service.tiers) {
       const includes = tier.note ? `${tier.includes} · ${tier.note}` : tier.includes;
-      const name = `${service.name} ${tier.durationMinutes} min`;
+      const parsed = deliverablesFromIncludes(includes);
+      const name =
+        parsed.outfitCount != null
+          ? parsed.outfitCount === 1
+            ? "1 outfit"
+            : `${parsed.outfitCount} outfits`
+          : `${tier.durationMinutes} min`;
       const existing = await prisma.package.findFirst({
         where: { serviceId: saved.id, durationMinutes: tier.durationMinutes },
       });
+      const packageFields = {
+        name,
+        includes,
+        durationMinutes: tier.durationMinutes,
+        outfitCount: parsed.outfitCount,
+        backdropCount: parsed.backdropCount,
+        editedPhotoCount: parsed.editedPhotoCount,
+        priceKobo: tier.priceKobo,
+        isActive: true,
+        isProvisional: true,
+        sortOrder: packageOrder,
+      };
       if (existing) {
         await prisma.package.update({
           where: { id: existing.id },
-          data: {
-            name,
-            includes,
-            priceKobo: tier.priceKobo,
-            isActive: true,
-            isProvisional: true,
-            sortOrder: packageOrder,
-          },
+          data: packageFields,
         });
       } else {
         await prisma.package.create({
           data: {
             serviceId: saved.id,
-            name,
-            durationMinutes: tier.durationMinutes,
-            includes,
-            priceKobo: tier.priceKobo,
-            isActive: true,
-            isProvisional: true,
-            sortOrder: packageOrder,
+            ...packageFields,
           },
         });
       }

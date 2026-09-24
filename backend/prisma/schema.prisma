@@ -17,9 +17,10 @@ model User {
   isActive     Boolean   @default(true)
   lastLoginAt  DateTime?
   updatedAt    DateTime  @default(now()) @updatedAt
+  /// ADMIN/STAFF desk areas. `"*"` = full desk access. OWNER ignores (always full). Default empty — never grant "*" by omission.
+  permissions  String[]  @default([])
   /// Incremented on deactivate, role change, password change/reset. JWT `ver` must match.
   tokenVersion Int       @default(0)
-  permissions  String[]  @default(["*"])
 }
 
 model StudioResource {
@@ -59,12 +60,16 @@ model Service {
 }
 
 model Package {
-  id              String    @id @default(cuid())
-  serviceId       String
-  name            String
-  durationMinutes Int
-  includes        String
-  priceKobo       Int
+  id               String    @id @default(cuid())
+  serviceId        String
+  name             String
+  durationMinutes  Int
+  /// Null when the option is duration/hire-based rather than outfit-based.
+  outfitCount      Int?
+  backdropCount    Int?
+  editedPhotoCount Int?
+  includes         String
+  priceKobo        Int
   isActive        Boolean   @default(true)
   isProvisional   Boolean   @default(true)
   createdAt       DateTime  @default(now())
@@ -166,22 +171,22 @@ model BusinessSettings {
 }
 
 model GalleryImage {
-  id         String       @id @default(cuid())
+  id        String       @id @default(cuid())
   /// Original file name (uploads) or static file name (seeded).
-  filename   String?
-  category   String
-  alt        String
-  sortOrder  Int          @default(0)
-  featured   Boolean      @default(false)
-  isActive   Boolean      @default(true)
-  createdAt  DateTime     @default(now())
-  height     Int?
-  kind       MediaKind    @default(GALLERY)
-  thumbUrl   String?
+  filename  String?
+  category  String
+  alt       String
+  sortOrder Int          @default(0)
+  featured  Boolean      @default(false)
+  isActive  Boolean      @default(true)
+  createdAt DateTime     @default(now())
+  height    Int?
+  kind      MediaKind    @default(GALLERY)
+  thumbUrl  String?
   /// Public path, e.g. /uploads/gallery/abc.jpg or /gallery/01-birthdays.jpg
-  url        String
-  width      Int?
-  MediaUsage MediaUsage[]
+  url       String
+  width     Int?
+  usages    MediaUsage[]
 
   @@index([kind, isActive, sortOrder])
 }
@@ -262,14 +267,19 @@ model AuditLog {
   @@index([entity, entityId])
 }
 
+/// Reusable attachment of a media asset to any CMS/content entity.
+/// Deleting a usage unlinks the asset; the GalleryImage remains until deleted separately.
 model MediaUsage {
-  id           String       @id
-  mediaId      String
-  usageType    String
-  entityId     String
-  sortOrder    Int          @default(0)
-  createdAt    DateTime     @default(now())
-  GalleryImage GalleryImage @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  id        String       @id @default(cuid())
+  mediaId   String
+  media     GalleryImage @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  /// Identifies what CMS/content entity is using this media (e.g. service, gallery, blog).
+  usageType String
+  /// ID/identifier of the entity/content record using the media.
+  entityId  String
+  /// Optional ordering when multiple media assets are used by the same entity.
+  sortOrder Int          @default(0)
+  createdAt DateTime     @default(now())
 
   @@unique([mediaId, usageType, entityId])
   @@index([mediaId])

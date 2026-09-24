@@ -24,16 +24,16 @@ export function MobileBookBar() {
   if (pathname.startsWith("/book")) return null;
   return (
     <div
-      className="fixed inset-x-0 bottom-0 z-40 bg-bg px-gutter pt-eyebrow lg:hidden"
+      className="fixed inset-x-0 bottom-0 z-40 bg-ink px-gutter pt-eyebrow lg:hidden"
       style={{
-        backgroundColor: "var(--color-bg)",
+        backgroundColor: "var(--pa-ink)",
         paddingBottom: "max(0.75rem, env(safe-area-inset-bottom, 0px))",
       }}
     >
       <div aria-hidden="true" className="nav-edge-up pointer-events-none absolute inset-x-0 bottom-full h-8" />
       <Link
         to="/book"
-        className="flex min-h-11 w-full items-center justify-center rounded-full bg-accent text-sm font-medium text-text-on-accent hover:bg-accent-hover"
+        className="flex min-h-11 w-full items-center justify-center rounded-xl bg-accent font-button text-sm font-normal text-text-on-accent hover:bg-accent-hover"
       >
         Book Now
       </Link>

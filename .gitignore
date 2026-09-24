@@ -1,10 +1,41 @@
-node_modules
-dist
+# dependencies & builds
+node_modules/
+dist/
+*.tsbuildinfo
+
+# secrets & local env (keep templates)
 .env
+.env.*
+!.env.example
+!**/.env.example
 .env.local
+
+# logs & OS
 *.log
 .DS_Store
-.pgdata
-*.tsbuildinfo
-backend/uploads
-tmp-audit-imgs
+Thumbs.db
+
+# local database & scratch
+.pgdata/
+tmp-audit-imgs/
+backend/uploads/
+
+# tooling / audit dumps
+backend/audit-raw.json
+**/audit-raw.json
+
+# optional: point-in-time snapshots (omit from future commits)
+docs/snapshots/
+
+# optional: design-only refs (not used by app)
+frontend/public/admin-sidebar-*-ref.png
+frontend/public/admin-sidebar-wordmark.png
+
+# optional: stop re-adding root duplicates
+/video_mp4.mp4
+/photo-arena-logo.svg
+/PROJECT-SNAPSHOT.txt
+
+# optional IDE
+.idea/
+.vscode/

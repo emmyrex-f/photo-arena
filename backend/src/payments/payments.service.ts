@@ -20,6 +20,7 @@ import { slotFits } from "../bookings/availability";
 import { PAYMENT_PROVIDER } from "./payment.constants";
 import type { PaymentProvider, WebhookParseInput } from "./payment-provider";
 import { MockPaymentProvider } from "./mock-payment.provider";
+import { providerAmountMatches } from "./payment-amount";
 
 const HOLD_MINUTES = 15;
 
@@ -167,8 +168,8 @@ export class PaymentsService {
     };
   }
 
-  async statusByBookingId(bookingId: string) {
-    return this.bookings.publicStatus(bookingId);
+  async statusByBookingId(bookingId: string, reference: string) {
+    return this.bookings.publicStatus(bookingId, reference);
   }
 
   private async resolvePaymentByWebhook(reference: string, providerSessionId?: string) {
@@ -188,7 +189,41 @@ export class PaymentsService {
     return null;
   }
 
-  private async confirmPayment(reference: string, transactionId?: string, providerSessionId?: string) {
+  /**
+   * Desk note when Bachs reports a different amount/currency than the frozen Payment.
+   * Does not change payment or booking status — confirmation must not proceed.
+   */
+  private async flagAmountMismatch(bookingId: string, reason?: string) {
+    const booking = await this.prisma.booking.findUnique({
+      where: { id: bookingId },
+      select: { notes: true },
+    });
+    if (!booking) return;
+    const marker = "AMOUNT_MISMATCH";
+    if (booking.notes?.includes(marker)) return;
+    const notes = [booking.notes, marker, reason].filter(Boolean).join("\n");
+    await this.prisma.booking.update({
+      where: { id: bookingId },
+      data: { notes },
+    });
+  }
+
+  /**
+   * Online Bachs confirmation only. Studio Mark Paid uses BookingsService.recordStudioPayment.
+   * Provider amount/currency (when present) must match the frozen Payment row before SUCCESS.
+   */
+  private async confirmPayment(
+    reference: string,
+    opts?: {
+      transactionId?: string;
+      providerSessionId?: string;
+      amount?: string;
+      currency?: string;
+    },
+  ) {
+    const transactionId = opts?.transactionId;
+    const providerSessionId = opts?.providerSessionId;
+
     const payment =
       (await this.prisma.payment.findUnique({
         where: { reference },
@@ -203,7 +238,17 @@ export class PaymentsService {
 
     if (!payment) throw new NotFoundException("Payment not found");
     if (payment.status === PaymentStatus.SUCCESS) {
-      return this.bookings.publicStatus(payment.bookingId);
+      return this.bookings.publicStatus(payment.bookingId, payment.reference);
+    }
+
+    const amountCheck = providerAmountMatches(
+      { amountKobo: payment.amountKobo, currency: payment.currency },
+      opts?.amount,
+      opts?.currency,
+    );
+    if (!amountCheck.ok) {
+      await this.flagAmountMismatch(payment.bookingId, amountCheck.reason);
+      throw new BadRequestException(`Payment amount mismatch: ${amountCheck.reason}`);
     }
 
     type ConfirmResult = "already" | "confirmed" | "unplaced";
@@ -284,7 +329,7 @@ export class PaymentsService {
     }
 
     if (outcome === "already") {
-      return this.bookings.publicStatus(payment.bookingId);
+      return this.bookings.publicStatus(payment.bookingId, payment.reference);
     }
 
     const b = payment.booking;
@@ -315,7 +360,7 @@ export class PaymentsService {
       );
     }
 
-    return this.bookings.publicStatus(payment.bookingId);
+    return this.bookings.publicStatus(payment.bookingId, payment.reference);
   }
 
   async mockComplete(reference: string) {
@@ -334,7 +379,7 @@ export class PaymentsService {
     const payment = await this.prisma.payment.findUnique({ where: { reference } });
     if (!payment) throw new NotFoundException("Payment not found");
     if (payment.status === PaymentStatus.SUCCESS) {
-      return this.bookings.publicStatus(payment.bookingId);
+      return this.bookings.publicStatus(payment.bookingId, payment.reference);
     }
 
     const result = await this.provider.verifyTransaction({
@@ -342,9 +387,23 @@ export class PaymentsService {
       providerSessionId: payment.providerSessionId,
     });
     if (result.success) {
-      return this.confirmPayment(reference, result.transactionId, result.providerSessionId);
+      const amountCheck = providerAmountMatches(
+        { amountKobo: payment.amountKobo, currency: payment.currency },
+        result.amount,
+        result.currency,
+      );
+      if (!amountCheck.ok) {
+        await this.flagAmountMismatch(payment.bookingId, amountCheck.reason);
+        return this.bookings.publicStatus(payment.bookingId, payment.reference);
+      }
+      return this.confirmPayment(reference, {
+        transactionId: result.transactionId,
+        providerSessionId: result.providerSessionId,
+        amount: result.amount,
+        currency: result.currency,
+      });
     }
-    return this.bookings.publicStatus(payment.bookingId);
+    return this.bookings.publicStatus(payment.bookingId, payment.reference);
   }
 
   async handleBachsWebhook(input: WebhookParseInput) {
@@ -370,11 +429,41 @@ export class PaymentsService {
 
     const payment = await this.resolvePaymentByWebhook(event.reference, event.providerSessionId);
 
+    let ignored: "amount_mismatch" | undefined;
+
     if (event.success) {
       if (!payment) {
         throw new NotFoundException("Payment not found for webhook reference");
       }
-      await this.confirmPayment(payment.reference, event.transactionId, event.providerSessionId);
+      const amountCheck = providerAmountMatches(
+        { amountKobo: payment.amountKobo, currency: payment.currency },
+        event.amount,
+        event.currency,
+      );
+      if (!amountCheck.ok) {
+        await this.flagAmountMismatch(payment.bookingId, amountCheck.reason);
+        ignored = "amount_mismatch";
+      } else {
+        try {
+          await this.confirmPayment(payment.reference, {
+            transactionId: event.transactionId,
+            providerSessionId: event.providerSessionId,
+            amount: event.amount,
+            currency: event.currency,
+          });
+        } catch (error) {
+          if (error instanceof BadRequestException) {
+            const msg = error.message ?? "";
+            if (msg.includes("Payment amount mismatch")) {
+              ignored = "amount_mismatch";
+            } else {
+              throw error;
+            }
+          } else {
+            throw error;
+          }
+        }
+      }
     } else if (event.failed && payment && payment.status !== PaymentStatus.SUCCESS) {
       await this.prisma.payment.update({
         where: { id: payment.id },
@@ -407,12 +496,12 @@ export class PaymentsService {
             ? String((error as { code?: string }).code)
             : "";
         if (code === "P2002") {
-          return { received: true as const, duplicate: true as const };
+          return { received: true as const, duplicate: true as const, ...(ignored ? { ignored } : {}) };
         }
         throw error;
       }
     }
 
-    return { received: true as const };
+    return { received: true as const, ...(ignored ? { ignored } : {}) };
   }
 }

@@ -1,53 +1,96 @@
-import { useEffect, useState } from "react";
-import { Send } from "lucide-react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { Bell, ChevronLeft, ChevronRight, Mail, Send } from "lucide-react";
 import { Badge } from "../../admin/components/ui/badge";
 import { Button } from "../../admin/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../admin/components/ui/card";
 import { EmptyState } from "../../admin/components/ui/empty-state";
 import { ErrorBanner } from "../../admin/components/ui/error-banner";
-import { FormField } from "../../admin/components/ui/form-field";
-import { PageHeader } from "../../admin/components/ui/page-header";
-import { Pagination } from "../../admin/components/ui/pagination";
+import { Label } from "../../admin/components/ui/label";
 import { Skeleton } from "../../admin/components/ui/skeleton";
 import { Switch } from "../../admin/components/ui/switch";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../../admin/components/ui/table";
 import { TagsInput } from "../../admin/components/ui/tags-input";
 import { toast } from "../../admin/components/ui/toaster";
 import { useAdminApi } from "../../admin/lib/adminApi";
-import { formatLagosDateTime, humanize } from "../../admin/lib/format";
-import { useQuery } from "../../admin/lib/useQuery";
+import { formatLagosDateTime } from "../../admin/lib/format";
+import type { NotificationLog, NotificationSettings, NotificationTemplate } from "../../admin/lib/types";
 import { errorMessage } from "../../lib/api";
-import { canManageBookings, useAuth } from "../../lib/auth";
+
+const PAGE_SIZE = 20;
+
+function isEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
 
 export function AdminNotificationsPage() {
   const api = useAdminApi();
-  const { user } = useAuth();
-  const manage = canManageBookings(user?.role);
-  const settingsQuery = useQuery(() => api.notifications.settings(), []);
-  const templatesQuery = useQuery(() => api.notifications.templates(), []);
-  const [page, setPage] = useState(1);
-  const logsQuery = useQuery(() => api.notifications.logs({ page, pageSize: 20 }), [page]);
 
+  const [settings, setSettings] = useState<NotificationSettings | null>(null);
   const [recipients, setRecipients] = useState<string[]>([]);
   const [reminder24h, setReminder24h] = useState(true);
   const [reminder2h, setReminder2h] = useState(true);
+  const [templates, setTemplates] = useState<NotificationTemplate[]>([]);
+  const [logs, setLogs] = useState<NotificationLog[]>([]);
+  const [logTotal, setLogTotal] = useState(0);
+  const [logPage, setLogPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
 
-  useEffect(() => {
-    if (!settingsQuery.data) return;
-    setRecipients(settingsQuery.data.recipients ?? []);
-    setReminder24h(settingsQuery.data.reminder24h);
-    setReminder2h(settingsQuery.data.reminder2h);
-  }, [settingsQuery.data]);
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [nextSettings, nextTemplates, nextLogs] = await Promise.all([
+        api.notifications.settings(),
+        api.notifications.templates(),
+        api.notifications.logs({ page: logPage, pageSize: PAGE_SIZE }),
+      ]);
+      setSettings(nextSettings);
+      setRecipients(nextSettings.recipients ?? []);
+      setReminder24h(nextSettings.reminder24h);
+      setReminder2h(nextSettings.reminder2h);
+      setTemplates(nextTemplates);
+      setLogs(nextLogs.items);
+      setLogTotal(nextLogs.total);
+    } catch (err) {
+      setError(errorMessage(err, "Could not load notifications"));
+    } finally {
+      setLoading(false);
+    }
+  }, [api, logPage]);
 
-  async function save() {
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function saveSettings(event: FormEvent) {
+    event.preventDefault();
+    const cleaned = recipients.map((r) => r.trim().toLowerCase()).filter(Boolean);
+    if (cleaned.some((email) => !isEmail(email))) {
+      toast.error("Every recipient must be a valid email");
+      return;
+    }
     setSaving(true);
     try {
-      await api.notifications.putSettings({ recipients, reminder24h, reminder2h });
+      const next = await api.notifications.putSettings({
+        recipients: cleaned,
+        reminder24h,
+        reminder2h,
+      });
+      setSettings(next);
+      setRecipients(next.recipients);
       toast.success("Notification settings saved");
-      await settingsQuery.refetch();
     } catch (err) {
-      toast.error(errorMessage(err));
+      toast.error(errorMessage(err, "Could not save settings"));
     } finally {
       setSaving(false);
     }
@@ -56,131 +99,181 @@ export function AdminNotificationsPage() {
   async function sendTest() {
     setTesting(true);
     try {
-      const result = await api.notifications.test();
-      toast.success(result.dryRun ? "Test logged (SMTP not configured)" : "Test email sent");
-      await logsQuery.refetch();
+      await api.notifications.test();
+      toast.success("Test notification sent");
+      const nextLogs = await api.notifications.logs({ page: 1, pageSize: PAGE_SIZE });
+      setLogPage(1);
+      setLogs(nextLogs.items);
+      setLogTotal(nextLogs.total);
     } catch (err) {
-      toast.error(errorMessage(err));
+      toast.error(errorMessage(err, "Test send failed"));
     } finally {
       setTesting(false);
     }
   }
 
-  return (
-    <div className="space-y-admin">
-      <PageHeader
-        title="Notifications"
-        description="Recipients, reminders, templates and delivery logs."
-        actions={
-          manage ? (
-            <Button variant="outline" onClick={() => void sendTest()} loading={testing}>
-              <Send />
-              Send test
-            </Button>
-          ) : null
-        }
-      />
-      <ErrorBanner
-        message={settingsQuery.error || templatesQuery.error || logsQuery.error}
-        onRetry={() => {
-          void settingsQuery.refetch();
-          void templatesQuery.refetch();
-          void logsQuery.refetch();
-        }}
-        retrying={settingsQuery.fetching}
-      />
+  const logPageCount = Math.max(1, Math.ceil(logTotal / PAGE_SIZE));
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-base">Settings</CardTitle>
-            {settingsQuery.data ? (
-              <Badge variant={settingsQuery.data.smtpConfigured ? "success" : "warning"}>
-                {settingsQuery.data.smtpConfigured ? "SMTP ready" : "Dry-run"}
+  return (
+    <div className="pa-notifications space-y-admin-stack">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="font-display text-3xl font-normal tracking-tight text-foreground sm:text-[2rem]">
+            Notifications
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Desk email recipients, booking reminders, and delivery log.
+          </p>
+        </div>
+        <Button type="button" variant="outline" onClick={() => void sendTest()} loading={testing}>
+          <Send strokeWidth={1.5} />
+          Send test
+        </Button>
+      </header>
+
+      <ErrorBanner message={error} onRetry={() => void load()} retrying={loading} />
+
+      {loading && !settings ? (
+        <div className="space-y-3">
+          <Skeleton className="h-40 w-full rounded-xl" />
+          <Skeleton className="h-56 w-full rounded-xl" />
+        </div>
+      ) : (
+        <>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between gap-3">
+              <CardTitle className="font-display text-lg font-normal">Email settings</CardTitle>
+              <Badge variant={settings?.smtpConfigured ? "success" : "warning"}>
+                {settings?.smtpConfigured ? "SMTP ready" : "SMTP not configured"}
               </Badge>
-            ) : null}
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {settingsQuery.loading ? (
-              <Skeleton className="h-32 w-full" />
-            ) : (
-              <>
-                <FormField label="Recipients" hint="Email addresses that receive studio alerts.">
-                  {() => <TagsInput value={recipients} onChange={setRecipients} disabled={!manage} placeholder="Add email…" />}
-                </FormField>
-                {settingsQuery.data?.fromAddress ? (
-                  <p className="text-xs text-muted-foreground">From: {settingsQuery.data.fromAddress}</p>
+            </CardHeader>
+            <CardContent>
+              <form className="space-y-admin-stack-sm" onSubmit={(event) => void saveSettings(event)}>
+                {settings?.fromAddress ? (
+                  <p className="text-xs text-muted-foreground">From: {settings.fromAddress}</p>
                 ) : null}
-                <FormField label="24h reminder" inline>
-                  {() => <Switch checked={reminder24h} onCheckedChange={setReminder24h} disabled={!manage} />}
-                </FormField>
-                <FormField label="2h reminder" inline>
-                  {() => <Switch checked={reminder2h} onCheckedChange={setReminder2h} disabled={!manage} />}
-                </FormField>
-                {manage ? (
-                  <Button onClick={() => void save()} loading={saving}>
+                <div className="space-y-1.5">
+                  <Label>Desk recipients</Label>
+                  <TagsInput
+                    value={recipients}
+                    onChange={setRecipients}
+                    placeholder="Add email and press Enter"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Booking alerts go to these addresses. Use full emails only.
+                  </p>
+                </div>
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
+                  <div>
+                    <p className="text-sm text-foreground">24-hour reminder</p>
+                    <p className="text-xs text-muted-foreground">Remind before sessions starting in about a day.</p>
+                  </div>
+                  <Switch checked={reminder24h} onCheckedChange={setReminder24h} aria-label="24-hour reminder" />
+                </div>
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
+                  <div>
+                    <p className="text-sm text-foreground">2-hour reminder</p>
+                    <p className="text-xs text-muted-foreground">Remind before sessions starting in about two hours.</p>
+                  </div>
+                  <Switch checked={reminder2h} onCheckedChange={setReminder2h} aria-label="2-hour reminder" />
+                </div>
+                <div className="flex justify-end">
+                  <Button type="submit" loading={saving}>
                     Save settings
                   </Button>
-                ) : null}
-              </>
-            )}
-          </CardContent>
-        </Card>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Templates</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {templatesQuery.loading ? (
-              <Skeleton className="h-32 w-full" />
-            ) : !templatesQuery.data?.length ? (
-              <EmptyState compact title="No templates" />
+          <Card>
+            <CardHeader>
+              <CardTitle className="font-display text-lg font-normal">Templates</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {templates.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No templates registered.</p>
+              ) : (
+                <ul className="space-y-3">
+                  {templates.map((template) => (
+                    <li key={template.event} className="rounded-lg border border-border p-3">
+                      <div className="flex items-start gap-2">
+                        <Mail className="mt-0.5 h-4 w-4 text-muted-foreground" aria-hidden />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-foreground">{template.subject}</p>
+                          <p className="text-xs text-muted-foreground">{template.event}</p>
+                          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{template.bodyPreview}</p>
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+
+          <section className="space-y-admin-stack-sm">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="font-display text-lg font-normal">Delivery log</h2>
+              <p className="text-xs text-muted-foreground">
+                Page {logPage} of {logPageCount}
+              </p>
+            </div>
+            {logs.length === 0 ? (
+              <EmptyState icon={Bell} title="No notification logs yet" description="Sends will appear here." compact />
             ) : (
-              templatesQuery.data.map((t) => (
-                <div key={t.event} className="rounded-md border border-border px-3 py-2">
-                  <p className="text-sm font-medium">{humanize(t.event)}</p>
-                  <p className="text-xs text-muted-foreground">{t.subject}</p>
-                  <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{t.bodyPreview}</p>
-                </div>
-              ))
+              <div className="overflow-hidden rounded-xl border border-border bg-card">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>When</TableHead>
+                      <TableHead>Event</TableHead>
+                      <TableHead>To</TableHead>
+                      <TableHead>Channel</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {logs.map((row) => (
+                      <TableRow key={row.id}>
+                        <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                          {formatLagosDateTime(row.createdAt)}
+                        </TableCell>
+                        <TableCell className="text-sm">{row.event}</TableCell>
+                        <TableCell className="text-sm">{row.to}</TableCell>
+                        <TableCell>
+                          <Badge variant="muted">{row.channel}</Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             )}
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Delivery logs</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {logsQuery.loading ? (
-            Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)
-          ) : !logsQuery.data?.items.length ? (
-            <EmptyState compact title="No logs yet" />
-          ) : (
-            <>
-              {logsQuery.data.items.map((log) => (
-                <div key={log.id} className="flex flex-col gap-1 rounded-md border border-border px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0">
-                    <p className="font-medium">{humanize(log.event)}</p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {log.channel} → {log.to}
-                    </p>
-                  </div>
-                  <p className="shrink-0 text-xs text-muted-foreground">{formatLagosDateTime(log.createdAt)}</p>
-                </div>
-              ))}
-              <Pagination
-                page={logsQuery.data.page}
-                pageSize={logsQuery.data.pageSize}
-                total={logsQuery.data.total}
-                onPageChange={setPage}
-              />
-            </>
-          )}
-        </CardContent>
-      </Card>
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={logPage <= 1}
+                onClick={() => setLogPage((p) => Math.max(1, p - 1))}
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Prev
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={logPage >= logPageCount}
+                onClick={() => setLogPage((p) => p + 1)}
+              >
+                Next
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </section>
+        </>
+      )}
     </div>
   );
 }

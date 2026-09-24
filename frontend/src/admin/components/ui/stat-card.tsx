@@ -33,7 +33,7 @@ function StatCard({ label, value, hint, icon: Icon, loading, tone = "default", c
       onKeyDown={onClick ? (e) => (e.key === "Enter" || e.key === " ") && onClick() : undefined}
     >
       <CardHeader className="flex flex-row items-center justify-between space-y-0 p-admin-card-sm pb-admin-control">
-        <CardTitle className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</CardTitle>
+        <CardTitle className="pa-ui-label text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</CardTitle>
         {Icon ? (
           <span className={cn("flex h-8 w-8 items-center justify-center rounded-md", toneClass[tone])}>
             <Icon className="h-4 w-4" />

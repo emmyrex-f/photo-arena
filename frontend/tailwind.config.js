@@ -27,6 +27,10 @@ export default {
           foreground: "var(--color-on-accent)",
         },
         champagne: "var(--color-champagne)",
+        sage: "var(--color-sage)",
+        brown: "var(--color-brown)",
+        olive: "var(--color-olive)",
+        ink: "var(--color-ink)",
         "dark-deep": "var(--color-dark-deep)",
         border: {
           DEFAULT: "var(--color-border)",
@@ -85,9 +89,11 @@ export default {
         sm: "calc(var(--radius) - 4px)",
       },
       fontFamily: {
-        display: ["Manrope", "Inter", "system-ui", "sans-serif"],
-        hero: ["Playfair Display", "Georgia", "serif"],
-        body: ["Inter", "system-ui", "sans-serif"],
+        display: ["EB Garamond", "Georgia", "serif"],
+        hero: ["EB Garamond", "Georgia", "serif"],
+        subtitle: ["Overpass Mono", "ui-monospace", "monospace"],
+        body: ["Libre Baskerville", "Georgia", "serif"],
+        button: ["Overpass Mono", "ui-monospace", "monospace"],
       },
       spacing: {
         gutter: "var(--pa-gutter)",

@@ -1,13 +1,10 @@
-import { useEffect, useState } from "react";
-import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
-import ReactMarkdown from "react-markdown";
-import { ArrowLeft, ImagePlus, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { ArrowLeft, Save, Trash2 } from "lucide-react";
 import { Button } from "../../admin/components/ui/button";
-import { ConfirmDialog } from "../../admin/components/ui/confirm-dialog";
 import { ErrorBanner } from "../../admin/components/ui/error-banner";
-import { FormField } from "../../admin/components/ui/form-field";
 import { Input } from "../../admin/components/ui/input";
-import { PageHeader } from "../../admin/components/ui/page-header";
+import { Label } from "../../admin/components/ui/label";
 import { Skeleton } from "../../admin/components/ui/skeleton";
 import { Switch } from "../../admin/components/ui/switch";
 import { TagsInput } from "../../admin/components/ui/tags-input";
@@ -15,226 +12,243 @@ import { Textarea } from "../../admin/components/ui/textarea";
 import { toast } from "../../admin/components/ui/toaster";
 import { useAdminApi } from "../../admin/lib/adminApi";
 import { slugify } from "../../admin/lib/format";
-import { useQuery } from "../../admin/lib/useQuery";
 import { errorMessage } from "../../lib/api";
-import { canManageBookings, useAuth } from "../../lib/auth";
+
+type FormState = {
+  title: string;
+  slug: string;
+  excerpt: string;
+  content: string;
+  coverImageUrl: string;
+  tags: string[];
+  isPublished: boolean;
+};
+
+const EMPTY: FormState = {
+  title: "",
+  slug: "",
+  excerpt: "",
+  content: "",
+  coverImageUrl: "",
+  tags: [],
+  isPublished: false,
+};
 
 export function AdminBlogEditorPage() {
+  const api = useAdminApi();
+  const navigate = useNavigate();
   const { id } = useParams();
   const isNew = !id || id === "new";
-  const navigate = useNavigate();
-  const api = useAdminApi();
-  const { user } = useAuth();
-  const manage = canManageBookings(user?.role);
 
-  const query = useQuery(() => api.blog.get(id!), [id], { enabled: !isNew && !!id });
-
-  const [title, setTitle] = useState("");
-  const [slug, setSlug] = useState("");
-  const [excerpt, setExcerpt] = useState("");
-  const [content, setContent] = useState("");
-  const [coverImageUrl, setCoverImageUrl] = useState("");
-  const [tags, setTags] = useState<string[]>([]);
-  const [isPublished, setIsPublished] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [form, setForm] = useState<FormState>(EMPTY);
   const [slugTouched, setSlugTouched] = useState(false);
+  const [loading, setLoading] = useState(!isNew);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    if (isNew || !id) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const post = await api.blog.get(id);
+      setForm({
+        title: post.title,
+        slug: post.slug,
+        excerpt: post.excerpt,
+        content: post.content,
+        coverImageUrl: post.coverImageUrl ?? "",
+        tags: post.tags ?? [],
+        isPublished: post.isPublished,
+      });
+      setSlugTouched(true);
+    } catch (err) {
+      setError(errorMessage(err, "Could not load post"));
+    } finally {
+      setLoading(false);
+    }
+  }, [api, id, isNew]);
 
   useEffect(() => {
-    if (!query.data) return;
-    setTitle(query.data.title);
-    setSlug(query.data.slug);
-    setExcerpt(query.data.excerpt);
-    setContent(query.data.content);
-    setCoverImageUrl(query.data.coverImageUrl ?? "");
-    setTags(query.data.tags ?? []);
-    setIsPublished(query.data.isPublished);
-    setSlugTouched(true);
-  }, [query.data]);
+    void load();
+  }, [load]);
 
-  if (!manage) {
-    return <Navigate to="/admin/content" replace />;
-  }
-
-  async function uploadCover(file: File) {
-    setUploading(true);
-    try {
-      const form = new FormData();
-      form.append("kind", "BLOG");
-      form.append("files", file);
-      const images = await api.gallery.upload(form);
-      const url = images[0]?.url;
-      if (url) {
-        setCoverImageUrl(url);
-        toast.success("Cover uploaded");
-      }
-    } catch (err) {
-      toast.error(errorMessage(err));
-    } finally {
-      setUploading(false);
+  async function onSubmit(event: FormEvent) {
+    event.preventDefault();
+    const title = form.title.trim();
+    const excerpt = form.excerpt.trim();
+    const content = form.content.trim();
+    if (!title || !excerpt || !content) {
+      toast.error("Title, excerpt, and content are required");
+      return;
     }
-  }
 
-  async function save() {
     setSaving(true);
     try {
-      const body = {
-        title,
-        slug: slug || slugify(title),
-        excerpt,
-        content,
-        coverImageUrl: coverImageUrl || null,
-        tags,
-        isPublished,
-      };
       if (isNew) {
-        const created = await api.blog.create(body);
-        toast.success("Post created");
+        const created = await api.blog.create({
+          title,
+          slug: form.slug.trim() || undefined,
+          excerpt,
+          content,
+          coverImageUrl: form.coverImageUrl.trim() || null,
+          tags: form.tags,
+          isPublished: form.isPublished,
+        });
+        toast.success(form.isPublished ? "Post published" : "Draft saved");
         navigate(`/admin/blog/${created.id}`, { replace: true });
       } else if (id) {
-        await api.blog.update(id, body);
-        toast.success("Post saved");
-        await query.refetch();
+        await api.blog.update(id, {
+          title,
+          slug: form.slug.trim() || slugify(title),
+          excerpt,
+          content,
+          coverImageUrl: form.coverImageUrl.trim() || null,
+          tags: form.tags,
+          isPublished: form.isPublished,
+        });
+        toast.success("Post updated");
+        await load();
       }
     } catch (err) {
-      toast.error(errorMessage(err));
+      toast.error(errorMessage(err, "Could not save post"));
     } finally {
       setSaving(false);
     }
   }
 
+  async function onDelete() {
+    if (!id || isNew) return;
+    if (!window.confirm(`Delete “${form.title || "this post"}”?`)) return;
+    setSaving(true);
+    try {
+      await api.blog.remove(id);
+      toast.success("Post deleted");
+      navigate("/admin/blog");
+    } catch (err) {
+      toast.error(errorMessage(err, "Could not delete post"));
+      setSaving(false);
+    }
+  }
+
   return (
-    <div className="space-y-admin">
-      <Button asChild variant="ghost" size="sm" className="-ml-2 w-fit">
-        <Link to="/admin/content">
-          <ArrowLeft />
-          Back to content
-        </Link>
-      </Button>
-      <PageHeader
-        title={isNew ? "New blog post" : "Edit blog post"}
-        actions={
-          <div className="flex flex-wrap gap-2">
-            {!isNew && id ? (
-              <ConfirmDialog
-                title="Delete post?"
-                description="This cannot be undone."
-                confirmLabel="Delete"
-                destructive
-                successMessage="Post deleted"
-                onConfirm={async () => {
-                  await api.blog.remove(id);
-                  navigate("/admin/content");
-                }}
-                trigger={
-                  <Button variant="destructive" size="sm">
-                    <Trash2 />
-                    Delete
-                  </Button>
-                }
-              />
-            ) : null}
-            <Button onClick={() => void save()} loading={saving}>
+    <div className="pa-blog-editor space-y-admin-stack">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <Button type="button" variant="ghost" size="sm" className="mb-2 -ml-2" asChild>
+            <Link to="/admin/blog">
+              <ArrowLeft className="h-4 w-4" />
+              Back to blog
+            </Link>
+          </Button>
+          <h1 className="font-display text-3xl font-normal tracking-tight text-foreground sm:text-[2rem]">
+            {isNew ? "New post" : "Edit post"}
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Drafts stay off the public blog until you publish.
+          </p>
+        </div>
+        {!isNew ? (
+          <Button type="button" variant="destructive" onClick={() => void onDelete()} disabled={saving}>
+            <Trash2 strokeWidth={1.5} />
+            Delete
+          </Button>
+        ) : null}
+      </header>
+
+      <ErrorBanner message={error} onRetry={() => void load()} retrying={loading} />
+
+      {loading ? (
+        <div className="space-y-3">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-2/3" />
+          <Skeleton className="h-40 w-full" />
+        </div>
+      ) : (
+        <form className="mx-auto max-w-3xl space-y-admin-stack-sm" onSubmit={(event) => void onSubmit(event)}>
+          <div className="space-y-1.5">
+            <Label htmlFor="blog-title">Title</Label>
+            <Input
+              id="blog-title"
+              value={form.title}
+              onChange={(event) => {
+                const title = event.target.value;
+                setForm((prev) => ({
+                  ...prev,
+                  title,
+                  slug: slugTouched ? prev.slug : slugify(title),
+                }));
+              }}
+              required
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="blog-slug">Slug</Label>
+            <Input
+              id="blog-slug"
+              value={form.slug}
+              onChange={(event) => {
+                setSlugTouched(true);
+                setForm((prev) => ({ ...prev, slug: event.target.value }));
+              }}
+              placeholder="auto-from-title"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="blog-excerpt">Excerpt</Label>
+            <Textarea
+              id="blog-excerpt"
+              value={form.excerpt}
+              onChange={(event) => setForm((prev) => ({ ...prev, excerpt: event.target.value }))}
+              rows={3}
+              required
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="blog-content">Content</Label>
+            <Textarea
+              id="blog-content"
+              value={form.content}
+              onChange={(event) => setForm((prev) => ({ ...prev, content: event.target.value }))}
+              rows={14}
+              required
+              className="min-h-[20rem] font-mono text-sm"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="blog-cover">Cover image URL</Label>
+            <Input
+              id="blog-cover"
+              value={form.coverImageUrl}
+              onChange={(event) => setForm((prev) => ({ ...prev, coverImageUrl: event.target.value }))}
+              placeholder="/gallery/01-birthdays.jpg or /uploads/…"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Tags</Label>
+            <TagsInput value={form.tags} onChange={(tags) => setForm((prev) => ({ ...prev, tags }))} />
+          </div>
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
+            <div>
+              <p className="text-sm text-foreground">Published</p>
+              <p className="text-xs text-muted-foreground">Visible on the public blog when on.</p>
+            </div>
+            <Switch
+              checked={form.isPublished}
+              onCheckedChange={(isPublished) => setForm((prev) => ({ ...prev, isPublished }))}
+              aria-label="Published"
+            />
+          </div>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button type="button" variant="outline" asChild>
+              <Link to="/admin/blog">Cancel</Link>
+            </Button>
+            <Button type="submit" loading={saving}>
+              <Save strokeWidth={1.5} />
               Save
             </Button>
           </div>
-        }
-      />
-
-      {!isNew ? <ErrorBanner message={query.error} onRetry={() => void query.refetch()} /> : null}
-      {!isNew && query.loading ? (
-        <Skeleton className="h-96 w-full" />
-      ) : (
-        <div className="grid gap-4 xl:grid-cols-2">
-          <div className="space-y-3">
-            <FormField label="Title" required>
-              {(c) => (
-                <Input
-                  id={c.id}
-                  value={title}
-                  onChange={(e) => {
-                    setTitle(e.target.value);
-                    if (!slugTouched) setSlug(slugify(e.target.value));
-                  }}
-                />
-              )}
-            </FormField>
-            <FormField label="Slug">
-              {(c) => (
-                <Input
-                  id={c.id}
-                  value={slug}
-                  onChange={(e) => {
-                    setSlugTouched(true);
-                    setSlug(e.target.value);
-                  }}
-                />
-              )}
-            </FormField>
-            <FormField label="Excerpt" required>
-              {(c) => <Textarea id={c.id} rows={2} value={excerpt} onChange={(e) => setExcerpt(e.target.value)} />}
-            </FormField>
-            <FormField label="Cover image">
-              {(c) => (
-                <div className="space-y-2">
-                  <Input
-                    id={c.id}
-                    value={coverImageUrl}
-                    onChange={(e) => setCoverImageUrl(e.target.value)}
-                    placeholder="/uploads/blog/…"
-                  />
-                  <div className="flex gap-2">
-                    <Button asChild size="sm" variant="outline">
-                      <label className="cursor-pointer">
-                        <ImagePlus />
-                        Upload cover
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="sr-only"
-                          disabled={uploading}
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) void uploadCover(file);
-                          }}
-                        />
-                      </label>
-                    </Button>
-                    {uploading ? <span className="text-xs text-muted-foreground self-center">Uploading…</span> : null}
-                  </div>
-                  {coverImageUrl ? (
-                    <img src={coverImageUrl} alt="" className="max-h-40 rounded-md object-cover" />
-                  ) : null}
-                </div>
-              )}
-            </FormField>
-            <FormField label="Tags">
-              {() => <TagsInput value={tags} onChange={setTags} />}
-            </FormField>
-            <FormField label="Published" inline>
-              {() => <Switch checked={isPublished} onCheckedChange={setIsPublished} />}
-            </FormField>
-            <FormField label="Markdown content" required>
-              {(c) => (
-                <Textarea
-                  id={c.id}
-                  rows={18}
-                  className="font-mono text-sm"
-                  value={content}
-                  onChange={(e) => setContent(e.target.value)}
-                />
-              )}
-            </FormField>
-          </div>
-          <div className="rounded-lg border border-border bg-card p-4">
-            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Live preview</p>
-            <article className="prose prose-sm dark:prose-invert max-w-none">
-              <h1>{title || "Untitled"}</h1>
-              {excerpt ? <p className="lead text-muted-foreground">{excerpt}</p> : null}
-              <ReactMarkdown>{content || "*Nothing to preview yet.*"}</ReactMarkdown>
-            </article>
-          </div>
-        </div>
+        </form>
       )}
     </div>
   );

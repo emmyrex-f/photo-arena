@@ -43,7 +43,7 @@ export function HeroSection() {
   const parts = headline.split("masterpiece");
 
   return (
-    <section className="relative isolate -mt-[var(--pa-nav-h)] min-h-dvh overflow-hidden bg-bg pt-[var(--pa-nav-h)]">
+    <section className="relative isolate -mt-[var(--pa-nav-h)] min-h-dvh overflow-hidden bg-ink pt-[var(--pa-nav-h)]">
       {videoUrl ? (
         <video
           key={videoUrl}
@@ -51,6 +51,7 @@ export function HeroSection() {
           className={`absolute inset-0 h-full w-full object-cover object-center hero-video-fade ${
             frameReady ? "opacity-100" : "opacity-0"
           }`}
+          poster="/media/hero-landscape.jpg"
           muted
           loop
           playsInline
@@ -64,63 +65,51 @@ export function HeroSection() {
         </video>
       ) : null}
 
-      <div aria-hidden="true" className="hero-edge-bottom pointer-events-none absolute inset-x-0 bottom-0 z-[1] h-16 sm:h-20" />
-
-      <Container className="relative flex min-h-[calc(100dvh-var(--pa-nav-h))] flex-col justify-center pt-4 pb-[calc(var(--pa-book-bar)+1rem)] lg:py-0">
-        <Stagger immediate className="w-full max-w-3xl">
-          <div className="relative">
-            <div
-              aria-hidden="true"
-              className="hero-copy-glow pointer-events-none absolute -inset-y-4 -left-6 -right-10 -z-10 sm:-inset-y-8 sm:-left-10 sm:-right-16"
-            />
-            <StaggerItem>
-              <h1 className="hero-copy font-hero max-w-3xl text-[1.75rem] leading-[1.15] text-white sm:text-6xl sm:leading-[1.12] md:text-7xl">
+      <Container className="relative z-[2] flex min-h-[calc(100dvh-var(--pa-nav-h))] flex-col justify-center pt-4 pb-[calc(var(--pa-book-bar)+1rem)] lg:py-0">
+        <Stagger immediate>
+          <StaggerItem className="w-fit max-w-full">
+            <div className="pa-banner-copy">
+              <h1 className="font-hero text-[2rem] leading-[1.1] text-white sm:text-6xl sm:leading-[1.08] md:text-7xl lg:text-8xl">
                 {parts.length > 1 ? (
                   <>
                     {parts[0]}
-                    <em className="italic font-light text-white">masterpiece</em>
+                    <span className="text-accent">masterpiece</span>
                     {parts[1]}
                   </>
                 ) : (
                   headline
                 )}
               </h1>
-            </StaggerItem>
-            <StaggerItem>
-              <p className="hero-copy mt-3 max-w-xl text-base leading-relaxed text-white sm:mt-6 sm:text-lg">
+              <p className="font-body mt-4 text-base leading-relaxed text-white/90 sm:mt-6 sm:text-lg">
                 {subheadline}
               </p>
-            </StaggerItem>
-          </div>
-          <StaggerItem>
-            <div className="mt-5 flex flex-row flex-nowrap items-center gap-1.5 min-[380px]:gap-2 sm:mt-10 sm:gap-4">
-              <Button
-                to="/book"
-                className="shrink-0 !px-3 text-xs tracking-normal min-[380px]:!px-4 min-[380px]:text-[13px] sm:!px-6 sm:text-sm sm:tracking-wide"
-              >
-                Book Your Session
-                <ArrowRight className="hidden h-4 w-4 min-[380px]:inline" aria-hidden="true" />
-              </Button>
-              <Button
-                to="/portfolio"
-                variant="secondary"
-                className="shrink-0 border-white/70 bg-black/45 !px-3 text-xs tracking-normal text-white hover:border-accent hover:text-accent min-[380px]:!px-4 min-[380px]:text-[13px] sm:!px-6 sm:text-sm sm:tracking-wide"
-              >
-                Explore Portfolio
-              </Button>
+              <div className="mt-6 flex flex-row flex-wrap items-center gap-3 sm:mt-10">
+                <Button
+                  to="/book"
+                  className="shrink-0 !px-5 text-sm sm:!px-7 sm:text-base"
+                >
+                  Book a Session
+                  <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                </Button>
+                <Button
+                  to="/portfolio"
+                  variant="secondary"
+                  className="shrink-0 border-white/35 bg-white/10 !px-5 text-sm text-white hover:border-accent hover:bg-white/15 hover:text-accent sm:!px-7 sm:text-base"
+                >
+                  View Gallery
+                </Button>
+              </div>
+              <p className="font-subtitle mt-5 text-sm text-white/80 sm:mt-8">
+                <span className="sm:hidden">
+                  Mon–Sat {hoursWeekday}
+                  <br />
+                  Sunday {hoursSunday}
+                </span>
+                <span className="hidden sm:inline">
+                  Open daily · Mon–Sat {hoursWeekday} · Sunday {hoursSunday}
+                </span>
+              </p>
             </div>
-          </StaggerItem>
-          <StaggerItem>
-            <p className="hero-copy mt-4 pr-[calc(var(--pa-fab-size)+var(--pa-gutter)+0.5rem)] text-sm text-white sm:mt-8 sm:max-w-none sm:pr-0">
-              <span className="sm:hidden">
-                Mon–Sat {hoursWeekday}
-                <br />
-                Sunday {hoursSunday}
-              </span>
-              <span className="hidden sm:inline">
-                Open daily · Mon–Sat {hoursWeekday} · Sunday {hoursSunday}
-              </span>
-            </p>
           </StaggerItem>
         </Stagger>
       </Container>

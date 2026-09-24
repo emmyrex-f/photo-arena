@@ -19,10 +19,9 @@ export const DURATION = {
 export const VIEWPORT = { once: true, amount: 0.18, margin: "0px 0px -8% 0px" } as const;
 
 export const fadeUp: Variants = {
-  hidden: { opacity: 0, y: 28 },
+  hidden: { opacity: 0 },
   visible: {
     opacity: 1,
-    y: 0,
     transition: { duration: DURATION.base, ease: EASE_OUT },
   },
 };
@@ -147,9 +146,9 @@ export function PageTransition({ children }: { children: ReactNode }) {
     <AnimatePresence mode="wait" initial={false}>
       <motion.div
         key={pathname}
-        initial={reduce ? false : { opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={reduce ? undefined : { opacity: 0, y: -6, transition: { duration: 0.22, ease: EASE_IN_OUT } }}
+        initial={reduce ? false : { opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={reduce ? undefined : { opacity: 0, transition: { duration: 0.22, ease: EASE_IN_OUT } }}
         transition={{ duration: 0.45, ease: EASE_OUT }}
         className="flex-1"
       >

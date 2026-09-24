@@ -1,321 +1,724 @@
-import type { ReactNode } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  Area,
-  AreaChart,
+  AlertTriangle,
+  Calendar,
+  CalendarPlus,
+  ChevronLeft,
+  ChevronRight,
+  Clock3,
+  Eye,
+  FileText,
+  ImageIcon,
+  ImagePlus,
+  Inbox,
+  LayoutGrid,
+  MessageSquareQuote,
+  Plus,
+  ShieldAlert,
+  UserRound,
+  type LucideIcon,
+} from "lucide-react";
+import {
+  Bar,
+  BarChart,
   CartesianGrid,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
-import { CalendarDays } from "lucide-react";
+import { Avatar, AvatarFallback } from "../../admin/components/ui/avatar";
+import { Badge } from "../../admin/components/ui/badge";
+import { Button } from "../../admin/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../admin/components/ui/card";
 import { EmptyState } from "../../admin/components/ui/empty-state";
 import { ErrorBanner } from "../../admin/components/ui/error-banner";
-import { PageHeader } from "../../admin/components/ui/page-header";
 import { Skeleton } from "../../admin/components/ui/skeleton";
-import { BookingStatusBadge, EnquiryStatusBadge, PaymentStatusBadge } from "../../admin/components/ui/status-badge";
+import { StatCard } from "../../admin/components/ui/stat-card";
+import { BookingStatusBadge } from "../../admin/components/ui/status-badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../../admin/components/ui/table";
 import { useAdminApi } from "../../admin/lib/adminApi";
 import {
-  formatLagosDateTime,
-  formatLagosTime,
   formatNairaFromKobo,
-  formatRelative,
-  formatYmd,
+  initials,
+  lagosYmd,
 } from "../../admin/lib/format";
-import { useQuery } from "../../admin/lib/useQuery";
+import type {
+  DashboardData,
+  DashboardPaymentStatus,
+  DashboardUpcomingBooking,
+  DashboardWeeklyRevenue,
+} from "../../admin/lib/types";
+import { ApiError, errorMessage } from "../../lib/api";
+import { addDaysToKey, formatDateKey, lagosDateKey, LAGOS } from "../../lib/datetime";
+import { useSetting } from "../../lib/settings";
 import { cn } from "../../lib/cn";
 
-function formatAxisNaira(value: number) {
-  if (value >= 1_000_000) return `₦${(value / 1_000_000).toFixed(1)}m`;
-  if (value >= 1_000) return `₦${Math.round(value / 1_000)}k`;
-  return `₦${value}`;
+type AttentionTone = "danger" | "info" | "warning" | "muted";
+
+type AttentionRowDef = {
+  key: "unpaidBookings" | "newEnquiries" | "noShowFollowUp" | "failedPayments";
+  label: (count: number) => string;
+  to: string;
+  Icon: LucideIcon;
+  tone: AttentionTone;
+};
+
+const ATTENTION_ROWS: AttentionRowDef[] = [
+  {
+    key: "unpaidBookings",
+    label: (n) => (n === 1 ? "Unpaid booking" : "Unpaid bookings"),
+    to: "/admin/payments",
+    Icon: FileText,
+    tone: "danger",
+  },
+  {
+    key: "newEnquiries",
+    label: (n) => (n === 1 ? "New enquiry" : "New enquiries"),
+    to: "/admin/enquiries",
+    Icon: Inbox,
+    tone: "info",
+  },
+  {
+    key: "noShowFollowUp",
+    label: (n) =>
+      n === 1 ? "Upcoming no-show follow-up" : "Upcoming no-show follow-ups",
+    to: "/admin/bookings",
+    Icon: Eye,
+    tone: "warning",
+  },
+  {
+    key: "failedPayments",
+    label: (n) => (n === 1 ? "Failed payment" : "Failed payments"),
+    to: "/admin/payments",
+    Icon: ShieldAlert,
+    tone: "muted",
+  },
+];
+
+const QUICK_ACTIONS: Array<{ label: string; to: string; icon: LucideIcon }> = [
+  { label: "View Bookings", to: "/admin/bookings", icon: CalendarPlus },
+  { label: "Add Service", to: "/admin/services", icon: Plus },
+  { label: "Upload Media", to: "/admin/gallery", icon: ImagePlus },
+  { label: "New Testimonial", to: "/admin/testimonials", icon: MessageSquareQuote },
+];
+
+function formatLongLagosDate(date = new Date()): string {
+  return new Intl.DateTimeFormat("en-NG", {
+    timeZone: LAGOS,
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(date);
 }
 
-function compactNairaFromKobo(kobo: number) {
+function formatCompactTime(iso: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: LAGOS,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(new Date(iso));
+}
+
+function formatUpcomingDayLabel(ymd: string, todayYmd: string): string {
+  if (ymd === addDaysToKey(todayYmd, 1)) return "Tomorrow";
+  return formatDateKey(ymd, { weekday: "short", month: "short", day: "numeric" });
+}
+
+function formatWeekRangeLabel(weekStart: string, weekEnd: string, isCurrentWeek: boolean): string {
+  if (isCurrentWeek) return "This week";
+  const fmt = (ymd: string, withYear: boolean) => {
+    const [y, m, d] = ymd.split("-").map(Number);
+    const utc = new Date(Date.UTC(y, m - 1, d, 12));
+    return new Intl.DateTimeFormat("en-NG", {
+      timeZone: "UTC",
+      month: "short",
+      day: "numeric",
+      ...(withYear ? { year: "numeric" as const } : {}),
+    }).format(utc);
+  };
+  return `${fmt(weekStart, false)} – ${fmt(weekEnd, true)}`;
+}
+
+function groupUpcomingBookings(
+  bookings: DashboardUpcomingBooking[],
+  todayYmd: string,
+): Array<{ key: string; label: string; rows: DashboardUpcomingBooking[] }> {
+  const groups: Array<{ key: string; label: string; rows: DashboardUpcomingBooking[] }> = [];
+  for (const booking of bookings) {
+    const key = lagosDateKey(booking.startTime);
+    const last = groups[groups.length - 1];
+    if (last && last.key === key) {
+      last.rows.push(booking);
+      continue;
+    }
+    groups.push({
+      key,
+      label: formatUpcomingDayLabel(key, todayYmd),
+      rows: [booking],
+    });
+  }
+  return groups;
+}
+
+function signedDelta(n: number): string {
+  if (n > 0) return `+${n}`;
+  return String(n);
+}
+
+function revenueDeltaHint(deltaPct: number | null, deltaKobo: number): string {
+  if (deltaPct != null) {
+    const sign = deltaPct > 0 ? "+" : "";
+    return `${sign}${deltaPct}% from yesterday`;
+  }
+  const sign = deltaKobo > 0 ? "+" : deltaKobo < 0 ? "−" : "";
+  return `${sign}${formatNairaFromKobo(Math.abs(deltaKobo))} from yesterday`;
+}
+
+function weeklyDeltaHint(deltaPct: number | null, totalKobo: number, isCurrentWeek: boolean): string {
+  if (deltaPct != null) {
+    const sign = deltaPct > 0 ? "+" : "";
+    return `${sign}${deltaPct}% vs prior week`;
+  }
+  return isCurrentWeek
+    ? `${formatNairaFromKobo(totalKobo)} this week`
+    : `${formatNairaFromKobo(totalKobo)} that week`;
+}
+
+function PaymentPill({ status }: { status: DashboardPaymentStatus }) {
+  if (status === "PAID") {
+    return <Badge variant="success">Paid</Badge>;
+  }
+  if (status === "PARTIAL") {
+    return <Badge variant="warning">Partial</Badge>;
+  }
+  return <Badge variant="destructive">Unpaid</Badge>;
+}
+
+function chartTickNaira(kobo: number): string {
   const naira = kobo / 100;
-  if (naira >= 1_000_000) return `₦${(naira / 1_000_000).toFixed(2)}m`;
-  if (naira >= 10_000) return `₦${Math.round(naira / 1_000)}k`;
-  return formatNairaFromKobo(kobo);
+  if (naira >= 1_000_000) return `${Math.round(naira / 1_000_000)}m`;
+  if (naira >= 1_000) return `${Math.round(naira / 1_000)}k`;
+  return String(Math.round(naira));
+}
+
+/** Render site name with favicon mark as the first “o”/“O” when present. */
+function SiteBrandTitle({ name }: { name: string }) {
+  const match = /^(.*?)([Oo])(.*)$/.exec(name);
+  if (!match) {
+    return <span>{name}</span>;
+  }
+  const [, before, , after] = match;
+  return (
+    <>
+      <span aria-hidden>{before}</span>
+      <img
+        src="/favicon-mark.png"
+        alt=""
+        className="pa-dash-hero-o mx-[0.06em] inline-block h-[0.82em] w-[0.82em] shrink-0 object-contain"
+        aria-hidden
+      />
+      <span aria-hidden>{after}</span>
+    </>
+  );
 }
 
 export function AdminDashboardPage() {
   const api = useAdminApi();
-  const { data, error, loading, fetching, refetch } = useQuery(() => api.dashboard.get(), []);
+  const siteName = useSetting("site.name");
+  const siteTagline = useSetting("site.tagline");
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [weeklyRevenue, setWeeklyRevenue] = useState<DashboardWeeklyRevenue | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [chartLoading, setChartLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(
+    async (weekStart?: string) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const next = await api.dashboard.get(weekStart ? { weekStart } : undefined);
+        setData(next);
+        setWeeklyRevenue(next.weeklyRevenue);
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) return;
+        setError(errorMessage(err));
+        setData(null);
+        setWeeklyRevenue(null);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [api],
+  );
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function shiftWeek(direction: -1 | 1) {
+    if (!weeklyRevenue) return;
+    const nextStart =
+      direction < 0
+        ? addDaysToKey(weeklyRevenue.weekStart, -7)
+        : addDaysToKey(weeklyRevenue.weekStart, 7);
+    if (direction < 0 && !weeklyRevenue.canGoBack) return;
+    if (direction > 0 && !weeklyRevenue.canGoForward) return;
+
+    setChartLoading(true);
+    try {
+      const next = await api.dashboard.revenue({ weekStart: nextStart });
+      setWeeklyRevenue(next);
+      setData((prev) => (prev ? { ...prev, weeklyRevenue: next } : prev));
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) return;
+      setError(errorMessage(err));
+    } finally {
+      setChartLoading(false);
+    }
+  }
 
   const chartData =
-    data?.series.map((row) => ({
-      ...row,
-      label: formatYmd(row.date, "d MMM"),
-      revenueNaira: Math.round(row.revenueKobo / 100),
+    weeklyRevenue?.daily.map((d) => ({
+      label: d.label,
+      revenueKobo: d.revenueKobo,
+      naira: d.revenueKobo / 100,
     })) ?? [];
 
+  const todos = data?.today.todos;
+  const upcomingSource = data?.upcomingBookings ?? data?.tomorrowsBookings ?? [];
+  const upcomingGroups = data
+    ? groupUpcomingBookings(upcomingSource, data.today.date)
+    : [];
+
   return (
-    <div className="min-w-0 space-y-admin">
-      <PageHeader title="Dashboard" description="Studio pulse for today — floor, cash, and inbox." />
+    <div className="pa-dash space-y-admin-stack">
+      <div className="pa-dash-hero relative isolate">
+        <img
+          src="/media/about.jpg"
+          alt=""
+          className="pa-dash-hero-bg absolute inset-0 h-full w-full object-cover object-[78%_center]"
+          aria-hidden
+        />
+        <div className="pa-dash-hero-veil" aria-hidden />
+        <div className="pa-dash-hero-front relative z-[1] flex flex-col gap-admin-stack px-[var(--admin-gutter)] pb-admin-stack pt-5 sm:pt-6">
+          <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <h1
+              className="pa-dash-hero-title flex items-center text-[30px] font-bold leading-none tracking-tight text-white"
+              aria-label={siteName}
+            >
+              <SiteBrandTitle name={siteName} />
+            </h1>
+            <p className="pa-dash-hero-date flex shrink-0 items-center gap-2 text-sm text-white">
+              <Calendar className="h-4 w-4" strokeWidth={1.5} aria-hidden />
+              <time dateTime={lagosYmd(new Date())}>{formatLongLagosDate()}</time>
+            </p>
+          </header>
 
-      <ErrorBanner message={error} onRetry={() => void refetch()} retrying={fetching} />
+          <ErrorBanner
+            message={error}
+            onRetry={() => void load(weeklyRevenue?.weekStart)}
+            retrying={loading}
+          />
 
-      <div className="overflow-hidden rounded-xl border border-border/70 bg-card">
-        <div className="grid grid-cols-2 divide-x divide-y divide-border/60 lg:grid-cols-5 lg:divide-y-0">
-          <Kpi
-            label="On the floor"
-            loading={loading}
-            value={data?.today.count ?? 0}
-            hint="Live sessions today"
-          />
-          <Kpi label="Pending pay" loading={loading} value={data?.counts.pendingPayments ?? 0} />
-          <Kpi label="Active holds" loading={loading} value={data?.counts.activeHolds ?? 0} />
-          <Kpi label="New enquiries" loading={loading} value={data?.counts.newEnquiries ?? 0} />
-          <Kpi
-            label="Customers"
-            loading={loading}
-            value={data?.counts.customers ?? 0}
-            hint={`${data?.counts.upcoming7d ?? 0} upcoming (7d)`}
-            className="col-span-2 lg:col-span-1"
-          />
+          <section className="grid gap-admin-gap sm:grid-cols-2 xl:grid-cols-4" aria-label="Key metrics">
+            <StatCard
+              label="Today's Bookings"
+              icon={CalendarPlus}
+              tone="primary"
+              loading={loading}
+              value={data?.today.bookingsCount ?? "—"}
+              hint={
+                data
+                  ? `${signedDelta(data.today.bookingsDelta)} from yesterday`
+                  : undefined
+              }
+            />
+            <StatCard
+              label="Today's Revenue"
+              icon={LayoutGrid}
+              tone="success"
+              loading={loading}
+              value={data ? formatNairaFromKobo(data.today.revenueTotalKobo) : "—"}
+              hint={
+                data
+                  ? revenueDeltaHint(data.today.revenueDeltaPct, data.today.revenueDeltaKobo)
+                  : undefined
+              }
+            />
+            <StatCard
+              label="Pending Actions"
+              icon={AlertTriangle}
+              tone="warning"
+              loading={loading}
+              value={todos?.total ?? "—"}
+              hint={
+                todos
+                  ? `${todos.unpaidBookings} unpaid · ${todos.newEnquiries} enquir${
+                      todos.newEnquiries === 1 ? "y" : "ies"
+                    }`
+                  : undefined
+              }
+            />
+            <StatCard
+              label="Upcoming"
+              icon={Clock3}
+              loading={loading}
+              value={data?.today.upcomingTomorrowCount ?? "—"}
+              hint="Tomorrow"
+            />
+          </section>
         </div>
-        <div className="grid grid-cols-3 divide-x divide-border/60 border-t border-border/60">
-          <Kpi
-            label="Received today"
-            loading={loading}
-            value={
-              <>
-                <span className="sm:hidden">{compactNairaFromKobo(data?.revenue.todayKobo ?? 0)}</span>
-                <span className="hidden sm:inline">{formatNairaFromKobo(data?.revenue.todayKobo ?? 0)}</span>
-              </>
-            }
-            hint="Successful payments today"
-            title={formatNairaFromKobo(data?.revenue.todayKobo ?? 0)}
-          />
-          <Kpi
-            label="This week"
-            loading={loading}
-            value={
-              <>
-                <span className="sm:hidden">{compactNairaFromKobo(data?.revenue.weekKobo ?? 0)}</span>
-                <span className="hidden sm:inline">{formatNairaFromKobo(data?.revenue.weekKobo ?? 0)}</span>
-              </>
-            }
-            title={formatNairaFromKobo(data?.revenue.weekKobo ?? 0)}
-          />
-          <Kpi
-            label="This month"
-            loading={loading}
-            value={
-              <>
-                <span className="sm:hidden">{compactNairaFromKobo(data?.revenue.monthKobo ?? 0)}</span>
-                <span className="hidden sm:inline">{formatNairaFromKobo(data?.revenue.monthKobo ?? 0)}</span>
-              </>
-            }
-            title={formatNairaFromKobo(data?.revenue.monthKobo ?? 0)}
-          />
+      </div>
+
+      <div className="pa-dash-body space-y-admin-stack">
+      <div className="pa-dash-grid grid items-stretch gap-admin-stack xl:grid-cols-[minmax(0,1fr)_20rem]">
+        <div className="flex min-w-0 flex-col gap-admin-stack">
+          <Card className="pa-dash-card overflow-hidden">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 p-admin-card-sm">
+              <CardTitle className="font-display text-lg font-normal">Today&apos;s Bookings</CardTitle>
+              <Button variant="ghost" size="sm" className="text-muted-foreground" asChild>
+                <Link to="/admin/bookings">View all</Link>
+              </Button>
+            </CardHeader>
+            <CardContent className="p-0">
+              {loading ? (
+                <div className="space-y-3 p-admin-card-sm" aria-busy>
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <Skeleton key={i} className="h-10 w-full" />
+                  ))}
+                </div>
+              ) : !data?.todaysBookings.length ? (
+                <EmptyState
+                  compact
+                  className="m-admin-card-sm border-0 bg-transparent"
+                  title="No bookings today"
+                  description="When sessions are on the floor, they’ll show up here."
+                />
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Time</TableHead>
+                      <TableHead>Customer</TableHead>
+                      <TableHead className="hidden md:table-cell">Service</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Payment</TableHead>
+                      <TableHead className="w-8" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {data.todaysBookings.map((row) => (
+                      <TableRow key={row.id} className="cursor-default">
+                        <TableCell className="tabular-nums font-medium">
+                          {formatCompactTime(row.startTime)}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Avatar className="h-7 w-7">
+                              <AvatarFallback className="text-[10px]">
+                                {initials(row.customerName)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <span className="truncate">{row.customerName}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="hidden max-w-[10rem] truncate md:table-cell">
+                          {row.serviceName}
+                        </TableCell>
+                        <TableCell>
+                          <BookingStatusBadge status={row.status} />
+                        </TableCell>
+                        <TableCell>
+                          <PaymentPill status={row.paymentStatus} />
+                        </TableCell>
+                        <TableCell>
+                          <ChevronRight className="h-4 w-4 text-muted-foreground" aria-hidden />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="pa-dash-card">
+            <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0 p-admin-card-sm">
+              <div className="min-w-0">
+                <CardTitle className="font-display text-lg font-normal">Revenue</CardTitle>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {weeklyRevenue
+                    ? formatWeekRangeLabel(
+                        weeklyRevenue.weekStart,
+                        weeklyRevenue.weekEnd,
+                        weeklyRevenue.isCurrentWeek,
+                      )
+                    : "This week"}
+                </p>
+              </div>
+              <div className="flex items-start gap-2">
+                <div className="flex items-center gap-0.5 pt-0.5">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Previous week"
+                    disabled={loading || chartLoading || !weeklyRevenue?.canGoBack}
+                    onClick={() => void shiftWeek(-1)}
+                  >
+                    <ChevronLeft className="h-4 w-4" strokeWidth={1.75} />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Next week"
+                    disabled={loading || chartLoading || !weeklyRevenue?.canGoForward}
+                    onClick={() => void shiftWeek(1)}
+                  >
+                    <ChevronRight className="h-4 w-4" strokeWidth={1.75} />
+                  </Button>
+                </div>
+                <div className="text-right">
+                  {loading || (chartLoading && !weeklyRevenue) ? (
+                    <Skeleton className="ml-auto h-7 w-28" />
+                  ) : (
+                    <>
+                      <p className="text-xl font-semibold tabular-nums">
+                        {formatNairaFromKobo(weeklyRevenue?.totalKobo ?? 0)}
+                      </p>
+                      <p
+                        className={cn(
+                          "text-xs",
+                          (weeklyRevenue?.deltaPct ?? 0) >= 0
+                            ? "text-[var(--color-success)]"
+                            : "text-destructive",
+                        )}
+                      >
+                        {weeklyRevenue
+                          ? weeklyDeltaHint(
+                              weeklyRevenue.deltaPct,
+                              weeklyRevenue.totalKobo,
+                              weeklyRevenue.isCurrentWeek,
+                            )
+                          : null}
+                      </p>
+                    </>
+                  )}
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="px-admin-card-sm pb-admin-card-sm pt-0">
+              {loading && !weeklyRevenue ? (
+                <Skeleton className="h-48 w-full" />
+              ) : chartData.every((d) => d.revenueKobo === 0) ? (
+                <EmptyState
+                  compact
+                  className="border-0 bg-transparent"
+                  title={
+                    weeklyRevenue?.isCurrentWeek
+                      ? "No revenue this week yet"
+                      : "No revenue that week"
+                  }
+                  description="Successful payments will appear as daily bars."
+                />
+              ) : (
+                <div
+                  className={cn("h-48 w-full", chartLoading && "opacity-60")}
+                  role="img"
+                  aria-label="Weekly revenue bar chart"
+                  aria-busy={chartLoading}
+                >
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={chartData} margin={{ top: 8, right: 4, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
+                      <XAxis
+                        dataKey="label"
+                        tickLine={false}
+                        axisLine={false}
+                        tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
+                      />
+                      <YAxis
+                        tickLine={false}
+                        axisLine={false}
+                        width={36}
+                        tickFormatter={(v: number) => chartTickNaira(v * 100)}
+                        tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
+                      />
+                      <Tooltip
+                        cursor={{ fill: "hsl(var(--muted) / 0.4)" }}
+                        contentStyle={{
+                          background: "hsl(var(--card))",
+                          border: "1px solid hsl(var(--border))",
+                          borderRadius: 8,
+                          fontSize: 12,
+                        }}
+                        formatter={(value) => [
+                          formatNairaFromKobo(Number(value ?? 0) * 100),
+                          "Revenue",
+                        ]}
+                      />
+                      <Bar
+                        dataKey="naira"
+                        fill="hsl(var(--primary))"
+                        radius={[6, 6, 0, 0]}
+                        maxBarSize={36}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="pa-dash-card">
+            <CardHeader className="p-admin-card-sm pb-admin-control">
+              <CardTitle className="font-display text-lg font-normal">Quick Actions</CardTitle>
+            </CardHeader>
+            <CardContent className="grid grid-cols-2 gap-admin-gap p-admin-card-sm pt-0 sm:grid-cols-4">
+              {QUICK_ACTIONS.map((action) => (
+                <Link
+                  key={action.label}
+                  to={action.to}
+                  className="pa-dash-action flex min-h-[5.5rem] flex-col items-center justify-center gap-2 rounded-xl border border-border bg-card/60 px-3 py-4 text-center transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <action.icon className="h-5 w-5 text-primary" strokeWidth={1.5} aria-hidden />
+                  <span className="text-xs font-medium text-foreground">{action.label}</span>
+                </Link>
+              ))}
+            </CardContent>
+          </Card>
         </div>
-      </div>
 
-      <div className="grid min-w-0 gap-admin-stack-sm xl:grid-cols-[minmax(0,1.4fr)_minmax(18rem,1fr)]">
-        <Card className="flex min-h-0 min-w-0 flex-col">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 p-3 pb-2 sm:p-4 sm:pb-2">
-            <CardTitle className="text-sm font-medium">Last 30 days</CardTitle>
-            <span className="hidden text-[11px] text-muted-foreground sm:inline">Revenue</span>
-          </CardHeader>
-          <CardContent className="h-[200px] p-3 pt-0 sm:h-[280px] sm:p-4 sm:pt-0">
-            {loading ? (
-              <Skeleton className="h-full w-full rounded-lg" />
-            ) : chartData.length === 0 ? (
-              <EmptyState compact title="No chart data yet" description="Revenue series will appear once bookings settle." />
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData} margin={{ top: 8, right: 4, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="revFill" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="hsl(var(--chart-1))" stopOpacity={0.35} />
-                      <stop offset="100%" stopColor="hsl(var(--chart-1))" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
-                  <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" minTickGap={16} axisLine={false} tickLine={false} />
-                  <YAxis
-                    yAxisId="rev"
-                    tick={{ fontSize: 10 }}
-                    tickFormatter={formatAxisNaira}
-                    width={44}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      background: "hsl(var(--card))",
-                      border: "1px solid hsl(var(--border))",
-                      borderRadius: 8,
-                      fontSize: 12,
-                    }}
-                    formatter={(value, name) => {
-                      if (name === "revenueNaira") return [`₦${Number(value).toLocaleString("en-NG")}`, "Revenue"];
-                      return [value, "Bookings"];
-                    }}
-                  />
-                  <Area
-                    yAxisId="rev"
-                    type="monotone"
-                    dataKey="revenueNaira"
-                    stroke="hsl(var(--chart-1))"
-                    fill="url(#revFill)"
-                    strokeWidth={2}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            )}
-          </CardContent>
-        </Card>
+        <aside className="flex min-h-0 min-w-0 flex-col gap-admin-stack xl:h-full">
+          <Card className="pa-dash-card pa-dash-aside-card">
+            <CardHeader className="p-admin-card-sm pb-admin-control">
+              <div className="pa-dash-aside-head">
+                <h2 className="pa-dash-aside-title">
+                  <Inbox strokeWidth={1.75} aria-hidden />
+                  Needs Attention
+                </h2>
+                <Link to="/admin/bookings" className="pa-dash-view-all">
+                  View all
+                </Link>
+              </div>
+            </CardHeader>
+            <CardContent className="p-admin-card-sm pt-0">
+              {loading || !todos ? (
+                <div className="space-y-2" aria-busy>
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <Skeleton key={i} className="h-10 w-full" />
+                  ))}
+                </div>
+              ) : (
+                <ul className="pa-dash-attention-list">
+                  {ATTENTION_ROWS.map((row) => {
+                    const count = todos[row.key] ?? 0;
+                    return (
+                      <li key={row.key}>
+                        <Link
+                          to={row.to}
+                          className={cn("pa-dash-attention-row", `pa-dash-tone-${row.tone}`)}
+                        >
+                          <span className="pa-dash-attention-icon" aria-hidden>
+                            <row.Icon strokeWidth={2} />
+                          </span>
+                          <span className="pa-dash-attention-count">{count}</span>
+                          <span className="pa-dash-attention-label">{row.label(count)}</span>
+                          <ChevronRight className="pa-dash-attention-chevron" aria-hidden />
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
 
-        <Card className="flex min-h-0 min-w-0 flex-col">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 p-3 pb-2 sm:p-4 sm:pb-2">
-            <CardTitle className="text-sm font-medium">Today’s floor</CardTitle>
-            <Link to="/admin/bookings" className="text-[11px] font-medium text-primary hover:underline">
-              Open bookings
-            </Link>
-          </CardHeader>
-          <CardContent className="max-h-[min(50vh,22rem)] overflow-y-auto p-0 sm:max-h-[280px]">
-            {loading ? (
-              <div className="space-y-2 p-4">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Skeleton key={i} className="h-10 w-full" />
-                ))}
+          <Card className="pa-dash-card pa-dash-aside-card">
+            <CardHeader className="p-admin-card-sm pb-admin-control">
+              <div className="pa-dash-aside-head">
+                <h2 className="pa-dash-aside-title">
+                  <ImageIcon strokeWidth={1.75} aria-hidden />
+                  Upcoming Bookings
+                </h2>
+                <Link to="/admin/bookings" className="pa-dash-view-all">
+                  View all
+                </Link>
               </div>
-            ) : !data?.today.bookings.length ? (
-              <div className="p-4">
-                <EmptyState compact icon={CalendarDays} title="No live sessions today" />
-              </div>
-            ) : (
-              <ul className="divide-y divide-border/60">
-                {data.today.bookings.map((b) => (
-                  <li key={b.id}>
-                    <Link
-                      to={`/admin/bookings?id=${b.id}`}
-                      className="flex min-h-12 items-center gap-2 px-3 py-2.5 transition-colors hover:bg-muted/40 sm:gap-3 sm:px-4"
-                    >
-                      <span className="w-[4.5rem] shrink-0 text-xs font-medium tabular-nums text-muted-foreground">
-                        {formatLagosTime(b.startTime)}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium">{b.customer.name}</span>
-                        <span className="block truncate text-[11px] text-muted-foreground">{b.package.name}</span>
-                      </span>
-                      <BookingStatusBadge status={b.status} className="shrink-0" />
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-admin-stack-sm lg:grid-cols-2">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 p-3 pb-2 sm:p-4 sm:pb-2">
-            <CardTitle className="text-sm font-medium">Recent enquiries</CardTitle>
-            <Link to="/admin/enquiries" className="text-[11px] font-medium text-primary hover:underline">
-              View all
-            </Link>
-          </CardHeader>
-          <CardContent className="p-0">
-            {loading ? (
-              <div className="space-y-2 p-4">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <Skeleton key={i} className="h-10 w-full" />
-                ))}
-              </div>
-            ) : !data?.recentEnquiries.length ? (
-              <div className="p-4">
-                <EmptyState compact title="Inbox is clear" />
-              </div>
-            ) : (
-              <ul className="divide-y divide-border/60">
-                {data.recentEnquiries.map((e) => (
-                  <li key={e.id} className="flex min-h-12 items-center gap-3 px-3 py-2.5 sm:px-4">
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{e.name}</p>
-                      <p className="truncate text-[11px] text-muted-foreground">
-                        {e.sessionType || e.message} · {formatRelative(e.createdAt)}
-                      </p>
+            </CardHeader>
+            <CardContent className="p-admin-card-sm pt-0">
+              {loading ? (
+                <div className="space-y-2" aria-busy>
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <Skeleton key={i} className="h-10 w-full" />
+                  ))}
+                </div>
+              ) : !upcomingGroups.length ? (
+                <EmptyState
+                  compact
+                  className="border-0 bg-transparent"
+                  title="Nothing upcoming"
+                  description="Confirmed and pending sessions for the next week will list here."
+                />
+              ) : (
+                <div className="pa-dash-upcoming-list">
+                  {upcomingGroups.map((group) => (
+                    <div key={group.key} className="pa-dash-upcoming-group">
+                      <p className="pa-dash-day-label">{group.label}</p>
+                      <ul className="pa-dash-attention-list">
+                        {group.rows.map((row) => (
+                          <li key={row.id}>
+                            <Link to={`/admin/bookings?id=${encodeURIComponent(row.id)}`} className="pa-dash-upcoming-row">
+                              <span className="pa-dash-upcoming-time">
+                                {formatCompactTime(row.startTime)}
+                              </span>
+                              <span className="pa-dash-upcoming-meta">
+                                <UserRound strokeWidth={1.75} aria-hidden />
+                                <span className="pa-dash-upcoming-service">{row.serviceName}</span>
+                              </span>
+                              <ChevronRight className="pa-dash-upcoming-chevron" aria-hidden />
+                            </Link>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
-                    <EnquiryStatusBadge status={e.status} />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 p-3 pb-2 sm:p-4 sm:pb-2">
-            <CardTitle className="text-sm font-medium">Recent payments</CardTitle>
-            <Link to="/admin/payments" className="text-[11px] font-medium text-primary hover:underline">
-              View all
-            </Link>
-          </CardHeader>
-          <CardContent className="p-0">
-            {loading ? (
-              <div className="space-y-2 p-4">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <Skeleton key={i} className="h-10 w-full" />
-                ))}
-              </div>
-            ) : !data?.recentPayments.length ? (
-              <div className="p-4">
-                <EmptyState compact title="No payments yet" />
-              </div>
-            ) : (
-              <ul className="divide-y divide-border/60">
-                {data.recentPayments.map((p) => (
-                  <li key={p.id} className="flex min-h-12 items-center gap-3 px-3 py-2.5 sm:px-4">
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">
-                        {p.booking?.customer?.name ?? "Customer"} · {formatNairaFromKobo(p.amountKobo)}
-                      </p>
-                      <p className="truncate text-[11px] text-muted-foreground">
-                        {p.method === "STUDIO" ? "Studio" : "Online"} · {formatLagosDateTime(p.paidAt ?? p.createdAt)}
-                      </p>
-                    </div>
-                    <PaymentStatusBadge status={p.status} />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
+          <div className="pa-dash-brand relative mt-auto overflow-hidden rounded-xl border border-border">
+            <img
+              src="/admin-sidebar-promo.jpg"
+              alt=""
+              className="pa-dash-brand-bg absolute inset-0 h-full w-full object-cover object-center"
+            />
+            <div className="relative z-[1] flex min-h-[9.5rem] flex-col items-center justify-center px-5 py-6 text-center">
+              <p className="pa-dash-brand-quote font-display text-lg leading-snug text-white">
+                {siteTagline}
+              </p>
+              <p className="mt-2 text-[10px] font-medium uppercase tracking-[0.18em] text-primary">
+                {siteName}
+              </p>
+            </div>
+          </div>
+        </aside>
       </div>
-    </div>
-  );
-}
-
-function Kpi({
-  label,
-  value,
-  hint,
-  loading,
-  className,
-  title,
-}: {
-  label: string;
-  value: ReactNode;
-  hint?: string;
-  loading?: boolean;
-  className?: string;
-  title?: string;
-}) {
-  return (
-    <div className={cn("min-w-0 px-admin-gap py-admin-gap sm:px-admin-card-sm", className)} title={title}>
-      <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground sm:text-[11px]">{label}</p>
-      {loading ? (
-        <Skeleton className="mt-2 h-7 w-20" />
-      ) : (
-        <p className="mt-1 text-lg font-semibold tabular-nums tracking-tight sm:text-xl">{value}</p>
-      )}
-      {hint ? <p className="mt-0.5 hidden text-[11px] text-muted-foreground sm:block">{hint}</p> : null}
+      </div>
     </div>
   );
 }

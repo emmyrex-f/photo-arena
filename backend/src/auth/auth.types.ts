@@ -20,7 +20,7 @@ export function toAuthUser(user: {
   const permissions =
     user.role === Role.OWNER
       ? [FULL_ACCESS]
-      : user.role === Role.ADMIN
+      : user.role === Role.ADMIN || user.role === Role.STAFF
         ? (user.permissions ?? [])
         : [];
   return {

@@ -2,8 +2,10 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { PageHeader } from "../components/layout/PageHeader";
 import { Button } from "../components/ui/Button";
+import { CameraSpinner } from "../components/ui/CameraSpinner";
 import { Container } from "../components/ui/Container";
 import { Section } from "../components/ui/Section";
+import { BOOK_PAGE_HEADER } from "../data/headerStills";
 import { serviceHeroSrc } from "../data/serviceMedia";
 import {
   addDaysToKey,
@@ -19,16 +21,20 @@ import {
   fetchAvailability,
   fetchServices,
   formatNairaFromKobo,
+  formatOutfitCount,
+  formatPackageDeliverables,
   groupServicesByKind,
   PublicApiError,
   SERVICE_KIND_LABELS,
+  sortPublicPackages,
   startCheckout,
   type HoldResponse,
   type PublicPackage,
   type PublicService,
 } from "../lib/publicApi";
 import { Seo } from "../lib/seo";
-import { site } from "../lib/site";
+import { usePolicyValues } from "../lib/policies";
+import { useSiteInfo } from "../lib/settings";
 import { usePublicData } from "../lib/usePublicData";
 
 type Step = "package" | "schedule" | "details" | "hold";
@@ -48,12 +54,25 @@ function flattenPackages(services: PublicService[]): FlatPackage[] {
 export function BookPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
+  const info = useSiteInfo();
+  const policies = usePolicyValues();
   const { data: services, loading } = usePublicData(() => fetchServices(), []);
   const packages = useMemo(() => flattenPackages(services ?? []), [services]);
 
-  const initialPackageId = params.get("package") ?? "";
+  const packageParam = params.get("package")?.trim() ?? "";
+  const serviceParam = params.get("service")?.trim() ?? "";
   const [step, setStep] = useState<Step>("package");
-  const [packageId, setPackageId] = useState(initialPackageId);
+  const [packageId, setPackageId] = useState(packageParam);
+
+  useEffect(() => {
+    if (packageParam) {
+      setPackageId(packageParam);
+      return;
+    }
+    if (!serviceParam || packages.length === 0) return;
+    const fromService = packages.find((pkg) => pkg.serviceSlug === serviceParam);
+    if (fromService) setPackageId(fromService.id);
+  }, [packageParam, serviceParam, packages]);
   const [date, setDate] = useState(lagosToday());
   const [slotIso, setSlotIso] = useState<string>("");
   const [slots, setSlots] = useState<string[]>([]);
@@ -73,6 +92,7 @@ export function BookPage() {
     (services ?? []).find((service) => service.slug === selected?.serviceSlug) ?? null;
   const selectedHeroSrc = selectedService ? serviceHeroSrc(selectedService) : undefined;
   const onlinePriceKobo = selected?.onlinePriceKobo ?? null;
+  const selectedDeliverables = selected ? formatPackageDeliverables(selected) : null;
   const showSummary = step === "details" || step === "hold";
 
   useEffect(() => {
@@ -172,14 +192,14 @@ export function BookPage() {
     <>
       <Seo
         title="Book"
-        description="Reserve a Photo Arena session online and receive 5% off. Port Harcourt studio."
+        description={`Reserve a Photo Arena session online and receive ${policies.onlineDiscountPercent}% off. Port Harcourt studio.`}
         path="/book"
       />
       <PageHeader
-        bordered={false}
-        className="bg-transparent"
         eyebrow="Book Now"
         title="Reserve a session"
+        image={BOOK_PAGE_HEADER.src}
+        objectPosition={BOOK_PAGE_HEADER.objectPosition}
       />
       <Section className="pt-0">
         <Container className={showSummary ? "grid min-w-0 gap-grid-lg lg:grid-cols-[1.2fr_0.8fr]" : "min-w-0"}>
@@ -203,7 +223,7 @@ export function BookPage() {
               ))}
             </ol>
 
-            {loading ? <p className="text-text-secondary">Loading packages…</p> : null}
+            {loading ? <CameraSpinner label="Loading packages" caption="Loading packages…" /> : null}
 
             {step === "package" ? (
               <div className="min-w-0 space-y-stack-xl overflow-x-hidden">
@@ -225,11 +245,8 @@ export function BookPage() {
                     <div className="w-full overflow-x-hidden">
                       <div className="pa-package-rail">
                         {group.services.map((service) => {
-                          const durations = [...service.packages].sort(
-                            (a, b) =>
-                              a.durationMinutes - b.durationMinutes || a.sortOrder - b.sortOrder,
-                          );
-                          const selectedPkg = durations.find((pkg) => pkg.id === packageId) ?? null;
+                          const options = sortPublicPackages(service.packages);
+                          const selectedPkg = options.find((pkg) => pkg.id === packageId) ?? null;
                           const active = Boolean(selectedPkg);
                           const media = serviceHeroSrc(service);
                           const online = selectedPkg?.onlinePriceKobo;
@@ -239,6 +256,10 @@ export function BookPage() {
                             selectedPkg.discountPercent > 0
                               ? selectedPkg.discountPercent
                               : null;
+                          const usesOutfits = options.some((pkg) => pkg.outfitCount != null);
+                          const selectedDeliverables = selectedPkg
+                            ? formatPackageDeliverables(selectedPkg)
+                            : null;
                           return (
                             <article
                               key={service.id}
@@ -255,7 +276,7 @@ export function BookPage() {
                               ) : null}
                               <h3 className="font-display text-xl text-text">{service.name}</h3>
                               <div className="mt-3 flex flex-wrap gap-2">
-                                {durations.map((pkg) => {
+                                {options.map((pkg) => {
                                   const pressed = pkg.id === packageId;
                                   return (
                                     <button
@@ -269,7 +290,7 @@ export function BookPage() {
                                           : "border border-elevated text-text-secondary hover:border-accent hover:text-text"
                                       }`}
                                     >
-                                      {formatDuration(pkg.durationMinutes)}
+                                      {packageChipLabel(pkg)}
                                       <span className="sr-only">, {service.name}</span>
                                     </button>
                                   );
@@ -277,8 +298,12 @@ export function BookPage() {
                               </div>
                               {selectedPkg ? (
                                 <>
+                                  <p className="mt-3 text-sm leading-relaxed text-text-secondary">
+                                    {formatDuration(selectedPkg.durationMinutes)}
+                                    {selectedDeliverables ? ` → ${selectedDeliverables}` : ""}
+                                  </p>
                                   {selectedPkg.includes ? (
-                                    <p className="mt-3 text-sm leading-relaxed text-text-secondary">
+                                    <p className="mt-2 text-sm leading-relaxed text-text-secondary">
                                       {selectedPkg.includes}
                                     </p>
                                   ) : null}
@@ -306,14 +331,14 @@ export function BookPage() {
                                     Continue
                                     <span className="sr-only">
                                       {" "}
-                                      with {service.name}, {formatDuration(selectedPkg.durationMinutes)}
+                                      with {service.name}, {packageChipLabel(selectedPkg)}
                                     </span>
                                   </Button>
                                 </>
                               ) : (
                                 <p className="mt-3 text-sm text-text-muted">
-                                  From {formatNairaFromKobo(service.startingPriceKobo)} · choose a
-                                  duration
+                                  From {formatNairaFromKobo(service.startingPriceKobo)}
+                                  {usesOutfits ? " · choose an outfit" : ""}
                                 </p>
                               )}
                             </article>
@@ -338,8 +363,14 @@ export function BookPage() {
                   ) : null}
                   <h2 className="font-display text-xl text-text">{selected.serviceName}</h2>
                   <p className="mt-1 text-sm text-text-secondary">
+                    {selected.outfitCount != null ? `${formatOutfitCount(selected.outfitCount)} · ` : ""}
                     {formatDuration(selected.durationMinutes)}
                   </p>
+                  {selectedDeliverables ? (
+                    <p className="mt-2 text-sm leading-relaxed text-text-secondary">
+                      {selectedDeliverables}
+                    </p>
+                  ) : null}
                   {selected.includes ? (
                     <p className="mt-2 text-sm leading-relaxed text-text-secondary">
                       {selected.includes}
@@ -381,7 +412,9 @@ export function BookPage() {
                 </div>
                 <div>
                   <p className="pa-label">Available times</p>
-                  {slotsLoading ? <p className="text-sm text-text-muted">Checking availability…</p> : null}
+                  {slotsLoading ? (
+                    <CameraSpinner size="sm" label="Checking availability" caption="Checking availability…" />
+                  ) : null}
                   {slotsError ? <p className="text-sm text-error">{slotsError}</p> : null}
                   {!slotsLoading && !slotsError && slots.length === 0 ? (
                     <p className="text-sm text-text-muted">No open slots on this date. Try another day.</p>
@@ -510,10 +543,22 @@ export function BookPage() {
                     <dt className="text-text-muted">Package</dt>
                     <dd className="text-right">{selected.serviceName}</dd>
                   </div>
+                  {selected.outfitCount != null ? (
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-text-muted">Outfits</dt>
+                      <dd>{formatOutfitCount(selected.outfitCount)}</dd>
+                    </div>
+                  ) : null}
                   <div className="flex justify-between gap-4">
                     <dt className="text-text-muted">Duration</dt>
                     <dd>{formatDuration(selected.durationMinutes)}</dd>
                   </div>
+                  {selectedDeliverables ? (
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-text-muted">Includes</dt>
+                      <dd className="text-right">{selectedDeliverables}</dd>
+                    </div>
+                  ) : null}
                   {slotIso ? (
                     <div className="flex justify-between gap-4">
                       <dt className="text-text-muted">When</dt>
@@ -542,12 +587,12 @@ export function BookPage() {
               ) : null}
               <p className="mt-6 text-xs leading-relaxed text-text-muted">
                 Display estimates are not final. The backend sets the charged amount at hold. Bookings are
-                non-refundable; rescheduling attracts 15%. Times are Africa/Lagos.
+                non-refundable; rescheduling attracts {policies.reschedulePercent}%. Times are Africa/Lagos.
               </p>
               <p className="mt-3 text-xs text-text-muted">
                 Prefer to talk? Call{" "}
-                <a href={site.phoneHref} className="text-accent">
-                  {site.phone}
+                <a href={info.phoneHref} className="text-accent">
+                  {info.phone}
                 </a>
                 .
               </p>
@@ -557,4 +602,8 @@ export function BookPage() {
       </Section>
     </>
   );
+}
+
+function packageChipLabel(pkg: PublicPackage): string {
+  return pkg.outfitCount != null ? formatOutfitCount(pkg.outfitCount) : formatDuration(pkg.durationMinutes);
 }

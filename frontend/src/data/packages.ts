@@ -255,16 +255,42 @@ const seeds: Seed[] = [
   },
 ];
 
+function deliverablesFromIncludes(includes: string): {
+  outfitCount: number | null;
+  backdropCount: number | null;
+  editedPhotoCount: number | null;
+} {
+  const outfit = includes.match(/(\d+)\s+outfits?/i);
+  const backdrop = includes.match(/(\d+)\s+backdrops?/i);
+  const photos = includes.match(/(\d+)\s+photos?/i);
+  return {
+    outfitCount: outfit ? Number(outfit[1]) : null,
+    backdropCount: backdrop ? Number(backdrop[1]) : null,
+    editedPhotoCount: photos ? Number(photos[1]) : null,
+  };
+}
+
 function toService(seed: Seed, index: number): PublicService {
-  const packages: PublicPackage[] = seed.tiers.map((tier, tierIndex) => ({
-    id: `${seed.slug}-${tier.minutes}`,
-    name: `${seed.name} · ${tier.minutes} min`,
-    durationMinutes: tier.minutes,
-    includes: tier.includes,
-    priceKobo: tier.naira * 100,
-    isProvisional: true,
-    sortOrder: tierIndex,
-  }));
+  const packages: PublicPackage[] = seed.tiers.map((tier, tierIndex) => {
+    const parsed = deliverablesFromIncludes(tier.includes);
+    return {
+      id: `${seed.slug}-${tier.minutes}`,
+      name:
+        parsed.outfitCount != null
+          ? parsed.outfitCount === 1
+            ? "1 outfit"
+            : `${parsed.outfitCount} outfits`
+          : `${seed.name} · ${tier.minutes} min`,
+      durationMinutes: tier.minutes,
+      outfitCount: parsed.outfitCount,
+      backdropCount: parsed.backdropCount,
+      editedPhotoCount: parsed.editedPhotoCount,
+      includes: tier.includes,
+      priceKobo: tier.naira * 100,
+      isProvisional: true,
+      sortOrder: tierIndex,
+    };
+  });
   const startingPriceKobo = Math.min(...packages.map((pkg) => pkg.priceKobo));
   return {
     id: seed.slug,

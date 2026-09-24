@@ -40,6 +40,32 @@ export function originAllowed(origin: string, env: NodeJS.ProcessEnv = process.e
   return allowed.includes(origin);
 }
 
+/**
+ * Nest/cors origin callback. Allowlisted browser origins only — never reflect arbitrary Origin.
+ * Requests with no Origin (webhooks, curl, same-origin reverse-proxy) are allowed; they are not
+ * a CORS reflection case. Credentials stay false (JWT is Bearer, not cookies).
+ */
+export function corsOriginCallback(
+  origin: string | undefined,
+  callback: (err: Error | null, allow?: boolean) => void,
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  if (!origin) {
+    callback(null, true);
+    return;
+  }
+  callback(null, originAllowed(origin, env));
+}
+
+export function corsOptions(env: NodeJS.ProcessEnv = process.env) {
+  return {
+    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) =>
+      corsOriginCallback(origin, callback, env),
+    /** Desk auth uses Authorization Bearer — do not enable cookie credentials with CORS. */
+    credentials: false as const,
+  };
+}
+
 export function trustedHostnames(env: NodeJS.ProcessEnv = process.env): Set<string> {
   const hosts = new Set<string>(["localhost", "127.0.0.1", "[::1]"]);
   for (const origin of configuredOrigins(env)) {

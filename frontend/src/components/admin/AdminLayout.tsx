@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
-import { Link, Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
+import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
+  Bell,
+  ChevronDown,
   ChevronsLeft,
   ChevronsRight,
   KeyRound,
@@ -10,7 +12,6 @@ import {
   Moon,
   Sun,
 } from "lucide-react";
-import { Avatar, AvatarFallback } from "../../admin/components/ui/avatar";
 import { Button } from "../../admin/components/ui/button";
 import {
   DropdownMenu,
@@ -22,21 +23,26 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../../admin/components/ui/dropdown-menu";
-import { RoleBadge } from "../../admin/components/ui/status-badge";
 import { ScrollArea } from "../../admin/components/ui/scroll-area";
-import { Separator } from "../../admin/components/ui/separator";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "../../admin/components/ui/sheet";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../admin/components/ui/tooltip";
 import { initials } from "../../admin/lib/format";
-import { canAccessAdminPath, firstAllowedAdminPath, navSectionsForUser, pageTitleFromPath } from "../../admin/lib/nav";
+import { canAccessAdminPath, firstAllowedAdminPath, navSectionsForUser } from "../../admin/lib/nav";
+import { hasDeskPermission } from "../../admin/lib/permissions";
 import type { ThemePreference } from "../../admin/lib/theme";
 import { useAdminTheme } from "../../admin/lib/theme";
 import { cn } from "../../lib/cn";
 import { useAuth } from "../../lib/auth";
-import { AdminLogo } from "./AdminLogo";
+import { CameraSpinner } from "../ui/CameraSpinner";
 import { ChangePasswordDialog } from "./ChangePasswordDialog";
 
 const SIDEBAR_KEY = "pa_admin_sidebar_collapsed";
+
+function showBadge(badge: number | string | undefined): boolean {
+  if (badge == null) return false;
+  if (typeof badge === "number") return badge > 0;
+  return String(badge).trim().length > 0 && String(badge) !== "0";
+}
 
 function NavItems({
   collapsed,
@@ -49,42 +55,62 @@ function NavItems({
   const sections = navSectionsForUser(user);
 
   return (
-    <nav className="flex flex-col gap-admin-stack-sm px-admin-sidebar" aria-label="Admin">
+    <nav className="pa-admin-nav-sections flex flex-col" aria-label="Admin">
       {sections.map((section) => (
-        <div key={section.id}>
+        <div key={section.id} className="pa-admin-nav-block">
           {section.label && !collapsed ? (
-            <p className="mb-1 px-2.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-[hsl(var(--sidebar-foreground))]/40">
-              {section.label}
-            </p>
+            <p className="pa-admin-nav-section-label">{section.label}</p>
           ) : null}
           {section.label && collapsed ? (
-            <div className="mx-auto mb-1 h-px w-6 bg-[hsl(var(--sidebar-border))]" aria-hidden />
+            <div className="pa-admin-nav-section-rule" aria-hidden />
           ) : null}
-          <div className="flex flex-col gap-0.5">
+          <div className="pa-admin-nav-list flex flex-col">
             {section.items.map((item) => {
               const end = item.to === "/admin";
+              const badgeVisible = showBadge(item.badge);
+              const link = (
+                <NavLink
+                  to={item.to}
+                  end={end}
+                  onClick={onNavigate}
+                  className={({ isActive }) =>
+                    cn(
+                      "pa-admin-nav-item group relative flex cursor-pointer items-center",
+                      collapsed && "pa-admin-nav-collapsed justify-center",
+                      isActive && "pa-admin-nav-item--active",
+                    )
+                  }
+                >
+                  <span className="pa-admin-nav-icon relative shrink-0">
+                    <item.icon strokeWidth={1.5} aria-hidden />
+                    {badgeVisible && collapsed ? (
+                      <span
+                        className="pa-admin-nav-badge pa-admin-nav-badge--float"
+                        aria-label={`${item.badge} unread`}
+                      >
+                        {item.badge}
+                      </span>
+                    ) : null}
+                  </span>
+                  {!collapsed ? (
+                    <>
+                      <span className="pa-admin-nav-label min-w-0 flex-1 truncate">{item.label}</span>
+                      {badgeVisible ? (
+                        <span className="pa-admin-nav-badge" aria-label={`${item.badge} unread`}>
+                          {item.badge}
+                        </span>
+                      ) : null}
+                    </>
+                  ) : null}
+                </NavLink>
+              );
+
+              if (!collapsed) return <div key={item.to}>{link}</div>;
+
               return (
                 <Tooltip key={item.to} delayDuration={0}>
-                  <TooltipTrigger asChild>
-                    <NavLink
-                      to={item.to}
-                      end={end}
-                      onClick={onNavigate}
-                      className={({ isActive }) =>
-                        cn(
-                          "group flex items-center gap-3 rounded-md px-2.5 py-2 text-sm font-medium transition-colors",
-                          collapsed && "justify-center px-0",
-                          isActive
-                            ? "bg-sidebar-active/15 text-[hsl(var(--sidebar-active))]"
-                            : "text-[hsl(var(--sidebar-foreground))]/75 hover:bg-black/5 hover:text-[hsl(var(--sidebar-foreground))] dark:hover:bg-white/5",
-                        )
-                      }
-                    >
-                      <item.icon className="h-4 w-4 shrink-0" />
-                      {!collapsed ? <span className="truncate">{item.label}</span> : null}
-                    </NavLink>
-                  </TooltipTrigger>
-                  {collapsed ? <TooltipContent side="right">{item.label}</TooltipContent> : null}
+                  <TooltipTrigger asChild>{link}</TooltipTrigger>
+                  <TooltipContent side="right">{item.label}</TooltipContent>
                 </Tooltip>
               );
             })}
@@ -96,21 +122,37 @@ function NavItems({
 }
 
 function SidebarBrand({ collapsed, homeTo }: { collapsed?: boolean; homeTo: string }) {
+  const { resolved } = useAdminTheme();
   return (
     <Link
       to={homeTo}
-      className={cn(
-        "flex items-center gap-admin-gap px-admin-stack-sm py-admin-stack-sm text-[hsl(var(--sidebar-foreground))]",
-        collapsed && "justify-center px-2",
-      )}
+      className={cn("pa-admin-header-brand", collapsed && "pa-admin-header-brand--collapsed")}
+      aria-label="Photo Arena desk home"
     >
-      <AdminLogo className={cn("shrink-0", collapsed ? "h-8 max-w-[52px] object-contain" : "h-10")} />
-      {!collapsed ? (
-        <p className="min-w-0 truncate text-[11px] uppercase tracking-[0.16em] text-[hsl(var(--sidebar-foreground))]/55">
-          Studio desk
-        </p>
-      ) : null}
+      <img
+        src={resolved === "dark" ? "/admin-logo.png?v=2" : "/admin-logo-on-light.png?v=2"}
+        alt="Photo Arena"
+        className={cn("pa-admin-brand-mark", collapsed && "pa-admin-brand-mark--collapsed")}
+        width={collapsed ? 32 : 200}
+        height={collapsed ? 18 : 112}
+        draggable={false}
+      />
     </Link>
+  );
+}
+
+function SidebarPromo() {
+  return (
+    <div className="pa-admin-promo">
+      <img src="/admin-sidebar-promo.jpg" alt="" className="pa-admin-promo-img" />
+      <div className="pa-admin-promo-veil" aria-hidden />
+      <div className="pa-admin-promo-copy">
+        <p>Capture</p>
+        <p>Create</p>
+        <p>Cherish</p>
+        <span className="pa-admin-promo-rule" aria-hidden />
+      </div>
+    </div>
   );
 }
 
@@ -119,9 +161,9 @@ function ThemeMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon-sm" aria-label="Theme">
-          <Sun className="h-4 w-4 dark:hidden" />
-          <Moon className="hidden h-4 w-4 dark:block" />
+        <Button variant="ghost" size="icon-sm" aria-label="Theme" className="text-muted-foreground">
+          <Sun className="h-4 w-4 dark:hidden" strokeWidth={1.5} />
+          <Moon className="hidden h-4 w-4 dark:block" strokeWidth={1.5} />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-40">
@@ -129,13 +171,13 @@ function ThemeMenu() {
         <DropdownMenuSeparator />
         <DropdownMenuRadioGroup value={theme} onValueChange={(v) => setTheme(v as ThemePreference)}>
           <DropdownMenuRadioItem value="light">
-            <Sun className="mr-2 h-3.5 w-3.5" /> Light
+            <Sun className="mr-2 h-3.5 w-3.5" strokeWidth={1.5} /> Light
           </DropdownMenuRadioItem>
           <DropdownMenuRadioItem value="dark">
-            <Moon className="mr-2 h-3.5 w-3.5" /> Dark
+            <Moon className="mr-2 h-3.5 w-3.5" strokeWidth={1.5} /> Dark
           </DropdownMenuRadioItem>
           <DropdownMenuRadioItem value="system">
-            <Monitor className="mr-2 h-3.5 w-3.5" /> System
+            <Monitor className="mr-2 h-3.5 w-3.5" strokeWidth={1.5} /> System
           </DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
       </DropdownMenuContent>
@@ -143,10 +185,16 @@ function ThemeMenu() {
   );
 }
 
+/** Desk label under the user name — never surface “Owner”. */
+function roleLabel(role: string | undefined) {
+  if (role === "STAFF") return "Staff";
+  return "Admin";
+}
+
 export function AdminLayout() {
   const { ready, user, logout } = useAuth();
   const location = useLocation();
-  const { title, crumbs } = pageTitleFromPath(location.pathname);
+  const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(() => {
     try {
       return localStorage.getItem(SIDEBAR_KEY) === "1";
@@ -169,62 +217,10 @@ export function AdminLayout() {
     setMobileOpen(false);
   }, [location.pathname]);
 
-  // #region agent log
-  useEffect(() => {
-    const report = (runId: string, extra: Record<string, unknown> = {}) => {
-      const root = document.querySelector(".admin-root");
-      const header = document.querySelector("header");
-      const aside = document.querySelector("aside");
-      const scroller = document.querySelector("[data-admin-scroll]");
-      const se = document.scrollingElement;
-      fetch("http://127.0.0.1:7692/ingest/cb172e59-2268-4533-a30f-2583756cd36a", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "399eda" },
-        body: JSON.stringify({
-          sessionId: "399eda",
-          runId,
-          hypothesisId: "A",
-          location: "AdminLayout.tsx:scroll",
-          message: "admin scroll + sticky chrome",
-          data: {
-            path: location.pathname,
-            innerH: window.innerHeight,
-            winY: window.scrollY,
-            htmlSt: se?.scrollTop ?? null,
-            rootOy: root ? getComputedStyle(root).overflowY : null,
-            rootOx: root ? getComputedStyle(root).overflowX : null,
-            rootCan: root ? root.scrollHeight > root.clientHeight + 2 : null,
-            headerTop: header ? Math.round(header.getBoundingClientRect().top) : null,
-            asideTop: aside ? Math.round(aside.getBoundingClientRect().top) : null,
-            scrollerSt: scroller?.scrollTop ?? null,
-            scrollerCan: scroller ? scroller.scrollHeight > scroller.clientHeight + 2 : null,
-            htmlCan: document.documentElement.scrollHeight > document.documentElement.clientHeight + 2,
-            htmlSh: document.documentElement.scrollHeight,
-            htmlCh: document.documentElement.clientHeight,
-            htmlOy: getComputedStyle(document.documentElement).overflowY,
-            scrollerVBar: scroller ? scroller.offsetWidth - scroller.clientWidth : null,
-            ...extra,
-          },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-    };
-    report("admin-scroll-mount");
-    const scroller = document.querySelector("[data-admin-scroll]");
-    const onScroll = () => report("admin-scroll-move", { source: "scroller" });
-    scroller?.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => {
-      scroller?.removeEventListener("scroll", onScroll);
-      window.removeEventListener("scroll", onScroll);
-    };
-  }, [location.pathname]);
-  // #endregion
-
   if (!ready) {
     return (
-      <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
-        Loading desk…
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <CameraSpinner label="Loading desk" caption="Loading desk…" />
       </div>
     );
   }
@@ -240,55 +236,56 @@ export function AdminLayout() {
 
   return (
     <TooltipProvider>
-      <div className="flex h-full min-h-0 overflow-hidden bg-background text-foreground">
-        {/* Desktop sidebar */}
+      <div className="pa-admin-shell">
         <aside
           className={cn(
-            "hidden h-full shrink-0 flex-col border-r border-[hsl(var(--sidebar-border))] bg-[hsl(var(--sidebar))] transition-[width] duration-200 lg:flex",
-            collapsed ? "w-[68px]" : "w-60",
+            "pa-admin-sidebar hidden flex-col lg:flex",
+            collapsed && "pa-admin-sidebar--collapsed",
           )}
         >
           <SidebarBrand collapsed={collapsed} homeTo={homeTo} />
-          <Separator className="bg-[hsl(var(--sidebar-border))]" />
-          <ScrollArea className="min-h-0 flex-1 py-admin-nav">
+          <ScrollArea className="pa-admin-sidebar-scroll min-h-0 flex-1">
             <NavItems collapsed={collapsed} />
           </ScrollArea>
-          <div className="border-t border-[hsl(var(--sidebar-border))] p-2">
+          {!collapsed ? <SidebarPromo /> : null}
+          <div className="pa-admin-sidebar-foot">
             <Button
               variant="ghost"
               size={collapsed ? "icon-sm" : "sm"}
-              className={cn(
-                "w-full text-[hsl(var(--sidebar-foreground))]/70 hover:bg-black/5 hover:text-[hsl(var(--sidebar-foreground))] dark:hover:bg-white/5",
-                !collapsed && "justify-start",
-              )}
+              className={cn("pa-admin-collapse-btn", !collapsed && "justify-start")}
               onClick={() => setCollapsed((v) => !v)}
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             >
-              {collapsed ? <ChevronsRight /> : <ChevronsLeft />}
-              {!collapsed ? "Collapse" : null}
+              {collapsed ? <ChevronsRight strokeWidth={1.5} /> : <ChevronsLeft strokeWidth={1.5} />}
+              {!collapsed ? <span>Collapse</span> : null}
             </Button>
           </div>
         </aside>
 
-        {/* Mobile drawer */}
         <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
           <SheetContent
             side="left"
-            className="w-[280px] border-[hsl(var(--sidebar-border))] bg-[hsl(var(--sidebar))] p-0 text-[hsl(var(--sidebar-foreground))]"
+            className="pa-admin-sidebar pa-admin-sidebar--sheet w-[var(--admin-sidebar-w)] border-0 p-0"
             hideClose
           >
             <SheetHeader className="sr-only">
               <SheetTitle>Navigation</SheetTitle>
             </SheetHeader>
             <SidebarBrand homeTo={homeTo} />
-            <Separator className="bg-[hsl(var(--sidebar-border))]" />
-            <div className="py-admin-nav">
+            <div className="pa-admin-sidebar-scroll flex-1 overflow-y-auto">
               <NavItems onNavigate={() => setMobileOpen(false)} />
             </div>
+            <SidebarPromo />
           </SheetContent>
         </Sheet>
 
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <header className="z-30 flex h-admin-header shrink-0 items-center gap-admin-gap border-b border-border bg-card/90 px-admin-gutter backdrop-blur sm:gap-admin-stack-sm">
+        <div
+          className={cn(
+            "pa-admin-main-column",
+            collapsed && "pa-admin-main-column--collapsed",
+          )}
+        >
+          <header className="pa-admin-topbar z-30 flex h-admin-header shrink-0 items-center gap-3 px-admin-gutter sm:gap-4">
             <Button
               variant="ghost"
               size="icon-sm"
@@ -296,43 +293,62 @@ export function AdminLayout() {
               onClick={() => setMobileOpen(true)}
               aria-label="Open menu"
             >
-              <Menu />
+              <Menu strokeWidth={1.5} />
             </Button>
 
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold sm:text-base">{title}</p>
-              <p className="hidden truncate text-[11px] text-muted-foreground sm:block">
-                {crumbs.join(" / ")}
-              </p>
-            </div>
-
-            <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-1">
+            <div className="ml-auto flex shrink-0 items-center gap-2.5 sm:gap-3">
               <ThemeMenu />
+
+              {hasDeskPermission(user, "notifications") ? (
+                <button
+                  type="button"
+                  className="pa-admin-header-icon relative inline-flex items-center justify-center rounded-lg text-foreground transition-colors hover:bg-muted/60"
+                  aria-label="Notifications"
+                  onClick={() => {
+                    void navigate("/admin/notifications");
+                  }}
+                >
+                  <Bell className="h-5 w-5" strokeWidth={1.5} />
+                </button>
+              ) : null}
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm" className="gap-2 pl-1.5 pr-2">
-                    <Avatar className="h-7 w-7">
-                      <AvatarFallback className="bg-primary/15 text-xs text-primary">
+                  <button
+                    type="button"
+                    aria-label={`Account menu for ${user.name}`}
+                    className="inline-flex items-center gap-2 rounded-md py-0.5 pl-0.5 pr-0.5 text-left transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  >
+                    <span className="pa-admin-header-avatar relative flex shrink-0 items-center justify-center rounded-full border border-primary bg-[#8b7355]">
+                      <span className="text-xs font-semibold tracking-wide text-white">
                         {initials(user.name)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <span className="hidden max-w-[120px] truncate text-sm sm:inline">{user.name}</span>
-                  </Button>
+                      </span>
+                    </span>
+                    <span className="hidden min-w-0 flex-col items-start leading-none sm:flex">
+                      <span className="flex items-center gap-1">
+                        <span className="max-w-[140px] truncate text-xs font-semibold text-foreground">
+                          {user.name}
+                        </span>
+                        <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" strokeWidth={1.75} />
+                      </span>
+                      <span className="mt-1 text-[10px] font-normal text-muted-foreground">
+                        {roleLabel(user.role)}
+                      </span>
+                    </span>
+                  </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
                   <DropdownMenuLabel className="space-y-1 font-normal">
                     <p className="font-medium">{user.name}</p>
                     <p className="truncate text-xs text-muted-foreground">{user.email}</p>
-                    <RoleBadge role={user.role} className="mt-1" />
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => setPasswordOpen(true)}>
-                    <KeyRound />
+                    <KeyRound strokeWidth={1.5} />
                     Change password
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={logout} className="text-destructive focus:text-destructive">
-                    <LogOut />
+                    <LogOut strokeWidth={1.5} />
                     Sign out
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -340,8 +356,8 @@ export function AdminLayout() {
             </div>
           </header>
 
-          <div data-admin-scroll className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain">
-            <main className="mx-auto w-full max-w-[1400px] min-w-0 px-admin-gutter py-admin-page">
+          <div data-admin-scroll className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain">
+            <main className="pa-admin-content">
               <Outlet />
             </main>
           </div>

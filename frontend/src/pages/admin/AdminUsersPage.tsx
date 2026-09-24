@@ -1,526 +1,486 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import { KeyRound, Plus } from "lucide-react";
-import { Navigate } from "react-router-dom";
+import { useCallback, useMemo, useState, type FormEvent } from "react";
+import { KeyRound, MoreHorizontal, Plus, Trash2, UserPlus, Users } from "lucide-react";
+import { ActiveBadge, RoleBadge } from "../../admin/components/ui/status-badge";
 import { Button } from "../../admin/components/ui/button";
-import { Checkbox } from "../../admin/components/ui/checkbox";
-import { ConfirmDialog } from "../../admin/components/ui/confirm-dialog";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "../../admin/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "../../admin/components/ui/dropdown-menu";
 import { EmptyState } from "../../admin/components/ui/empty-state";
 import { ErrorBanner } from "../../admin/components/ui/error-banner";
-import { FormField } from "../../admin/components/ui/form-field";
 import { Input } from "../../admin/components/ui/input";
-import { PageHeader } from "../../admin/components/ui/page-header";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../admin/components/ui/select";
+import { Label } from "../../admin/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../admin/components/ui/select";
 import { Skeleton } from "../../admin/components/ui/skeleton";
-import { ActiveBadge, RoleBadge } from "../../admin/components/ui/status-badge";
+import { StatCard } from "../../admin/components/ui/stat-card";
 import { Switch } from "../../admin/components/ui/switch";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../../admin/components/ui/table";
 import { toast } from "../../admin/components/ui/toaster";
 import { useAdminApi } from "../../admin/lib/adminApi";
-import { formatLagosDateTime, formatRelative } from "../../admin/lib/format";
-import {
-  accessSummary,
-  DESK_PERMISSIONS,
-  FULL_ACCESS,
-  type DeskPermission,
-} from "../../admin/lib/permissions";
-import type { AdminUser, Role } from "../../admin/lib/types";
-import { ROLES } from "../../admin/lib/types";
+import { accessSummary, DESK_PERMISSIONS, FULL_ACCESS } from "../../admin/lib/permissions";
+import { formatLagosDateTime } from "../../admin/lib/format";
+import type { AdminUser } from "../../admin/lib/types";
 import { useQuery } from "../../admin/lib/useQuery";
 import { errorMessage } from "../../lib/api";
-import { useAuth } from "../../lib/auth";
+import { isOwner, useAuth, type Role } from "../../lib/auth";
+import { cn } from "../../lib/cn";
 
-const ALL_KEYS = DESK_PERMISSIONS.map((item) => item.key);
+type EditorMode = "create" | "edit" | "password";
+
+type EditorForm = {
+  email: string;
+  name: string;
+  role: Role;
+  password: string;
+  isActive: boolean;
+  fullAccess: boolean;
+  permissions: string[];
+};
+
+const EMPTY_FORM: EditorForm = {
+  email: "",
+  name: "",
+  role: "ADMIN",
+  password: "",
+  isActive: true,
+  fullAccess: false,
+  permissions: [],
+};
 
 export function AdminUsersPage() {
   const api = useAdminApi();
-  const { user, hasPermission } = useAuth();
-  const isOwner = user?.role === "OWNER";
-    const canList = user?.role === "OWNER" || (user?.role === "ADMIN" && hasPermission("users"));
-  const query = useQuery(() => api.users.list(), [], { enabled: !!canList });
-  const [createOpen, setCreateOpen] = useState(false);
-  const [edit, setEdit] = useState<AdminUser | null>(null);
-  const [resetUser, setResetUser] = useState<AdminUser | null>(null);
+  const { user: me } = useAuth();
+  const owner = isOwner(me?.role);
 
-  const ownerCount = useMemo(
-    () => (query.data ?? []).filter((u) => u.role === "OWNER" && u.isActive).length,
-    [query.data],
-  );
+  const listQuery = useQuery(() => api.users.list(), []);
+  const rows = listQuery.data ?? [];
 
-  if (!canList) {
-    return <Navigate to="/admin" replace />;
+  const [mode, setMode] = useState<EditorMode | null>(null);
+  const [editing, setEditing] = useState<AdminUser | null>(null);
+  const [form, setForm] = useState<EditorForm>(EMPTY_FORM);
+  const [saving, setSaving] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const stats = useMemo(() => {
+    const total = rows.length;
+    const active = rows.filter((row) => row.isActive).length;
+    const owners = rows.filter((row) => row.role === "OWNER").length;
+    const admins = rows.filter((row) => row.role === "ADMIN").length;
+    return { total, active, owners, admins };
+  }, [rows]);
+
+  const openCreate = useCallback(() => {
+    setMode("create");
+    setEditing(null);
+    setForm(EMPTY_FORM);
+  }, []);
+
+  const openEdit = useCallback((row: AdminUser) => {
+    const perms = row.permissions ?? [];
+    setMode("edit");
+    setEditing(row);
+    setForm({
+      email: row.email,
+      name: row.name,
+      role: row.role,
+      password: "",
+      isActive: row.isActive,
+      fullAccess: perms.includes(FULL_ACCESS),
+      permissions: perms.filter((p) => p !== FULL_ACCESS),
+    });
+  }, []);
+
+  const openPassword = useCallback((row: AdminUser) => {
+    setMode("password");
+    setEditing(row);
+    setForm({ ...EMPTY_FORM, password: "" });
+  }, []);
+
+  const closeEditor = useCallback(() => {
+    setMode(null);
+    setEditing(null);
+    setForm(EMPTY_FORM);
+    setSaving(false);
+  }, []);
+
+  function togglePermission(key: string) {
+    setForm((prev) => {
+      if (prev.permissions.includes(key)) {
+        return { ...prev, permissions: prev.permissions.filter((p) => p !== key) };
+      }
+      return { ...prev, permissions: [...prev.permissions, key] };
+    });
   }
 
-  return (
-    <div className="space-y-admin">
-      <PageHeader
-        title="Users"
-        description="Desk staff accounts. Only the owner can create, edit, or delete logins."
-        actions={
-          isOwner ? (
-            <Button onClick={() => setCreateOpen(true)}>
-              <Plus />
-              Add user
-            </Button>
-          ) : null
-        }
-      />
-      <ErrorBanner message={query.error} onRetry={() => void query.refetch()} retrying={query.fetching} />
+  async function onSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (!owner) {
+      toast.error("Only the owner can manage desk users");
+      return;
+    }
 
-      {query.loading ? (
-        Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)
-      ) : !query.data?.length ? (
-        <EmptyState title="No users" />
-      ) : (
-        <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full min-w-[820px] text-sm">
-            <thead className="bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
-              <tr>
-                <th className="px-3 py-3">Name</th>
-                <th className="px-3 py-3">Email</th>
-                <th className="px-3 py-3">Role</th>
-                <th className="px-3 py-3">Access</th>
-                <th className="px-3 py-3">Last login</th>
-                <th className="px-3 py-3">Status</th>
-                <th className="px-3 py-3" />
-              </tr>
-            </thead>
-            <tbody>
-              {query.data.map((u) => {
-                const isLastOwner = u.role === "OWNER" && u.isActive && ownerCount <= 1;
-                return (
-                  <tr key={u.id} className="border-t border-border">
-                    <td className="px-3 py-3 font-medium">{u.name}</td>
-                    <td className="px-3 py-3">{u.role === "OWNER" ? u.email : "Studio login"}</td>
-                    <td className="px-3 py-3">
-                      <RoleBadge role={u.role} />
-                    </td>
-                    <td className="px-3 py-3 text-muted-foreground">{accessSummary(u)}</td>
-                    <td className="px-3 py-3 text-muted-foreground">
-                      {u.lastLoginAt ? formatRelative(u.lastLoginAt) : "Never"}
-                    </td>
-                    <td className="px-3 py-3">
-                      <ActiveBadge active={u.isActive} />
-                    </td>
-                    <td className="px-3 py-3 text-right">
-                      {isOwner ? (
-                        <div className="flex justify-end gap-1">
-                          <Button size="sm" variant="outline" onClick={() => setEdit(u)}>
-                            Edit
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => setResetUser(u)}>
-                            <KeyRound />
-                          </Button>
-                          {u.role === "OWNER" && !isLastOwner && u.id !== user?.id ? (
-                            <ConfirmDialog
-                              title="Deactivate owner?"
-                              description={`${u.name} will no longer be able to sign in. Owner accounts cannot be deleted.`}
-                              confirmLabel="Deactivate"
-                              destructive
-                              successMessage="User deactivated"
-                              onConfirm={async () => {
-                                await api.users.update(u.id, { isActive: false });
-                                await query.refetch();
-                              }}
-                              trigger={
-                                <Button size="sm" variant="ghost" className="text-destructive">
-                                  Deactivate
-                                </Button>
-                              }
-                            />
-                          ) : null}
-                          {u.role !== "OWNER" && u.id !== user?.id ? (
-                            <ConfirmDialog
-                              title="Delete this login permanently?"
-                              description={`${u.name} will be removed completely. They cannot sign in with that password again.`}
-                              confirmLabel="Delete account"
-                              destructive
-                              successMessage="Account deleted"
-                              onConfirm={async () => {
-                                await api.users.remove(u.id);
-                                await query.refetch();
-                              }}
-                              trigger={
-                                <Button size="sm" variant="ghost" className="text-destructive">
-                                  Delete
-                                </Button>
-                              }
-                            />
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      <CreateUserDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        onCreated={async () => {
-          setCreateOpen(false);
-          await query.refetch();
-        }}
-      />
-      <EditUserDialog
-        user={edit}
-        protectOwner={!!edit && edit.role === "OWNER" && ownerCount <= 1}
-        onOpenChange={(open) => !open && setEdit(null)}
-        onSaved={async () => {
-          setEdit(null);
-          await query.refetch();
-        }}
-      />
-      <ResetPasswordDialog
-        user={resetUser}
-        onOpenChange={(open) => !open && setResetUser(null)}
-        onDone={() => setResetUser(null)}
-      />
-    </div>
-  );
-}
-
-function AccessPicker({
-  fullAccess,
-  permissions,
-  onFullAccess,
-  onToggle,
-}: {
-  fullAccess: boolean;
-  permissions: string[];
-  onFullAccess: (value: boolean) => void;
-  onToggle: (key: DeskPermission, checked: boolean) => void;
-}) {
-  return (
-    <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-medium">Portal access</p>
-          <p className="text-xs text-muted-foreground">
-            Full access opens every desk area. Turn it off to choose specific pages.
-          </p>
-        </div>
-        <Switch
-          checked={fullAccess}
-          onCheckedChange={onFullAccess}
-          aria-label="Full access"
-        />
-      </div>
-      {!fullAccess ? (
-        <div className="grid gap-2 sm:grid-cols-2">
-          {DESK_PERMISSIONS.map((item) => {
-            const checked = permissions.includes(item.key);
-            return (
-              <label
-                key={item.key}
-                className="flex cursor-pointer items-start gap-2 rounded-md border border-transparent px-1 py-1.5 hover:bg-background"
-              >
-                <Checkbox
-                  checked={checked}
-                  onCheckedChange={(value) => onToggle(item.key, value === true)}
-                  className="mt-0.5"
-                />
-                <span>
-                  <span className="block text-sm leading-tight">{item.label}</span>
-                  <span className="block text-[11px] text-muted-foreground">{item.hint}</span>
-                </span>
-              </label>
-            );
-          })}
-        </div>
-      ) : (
-        <p className="text-xs text-muted-foreground">This admin can open every area of the desk.</p>
-      )}
-    </div>
-  );
-}
-
-function CreateUserDialog({
-  open,
-  onOpenChange,
-  onCreated,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onCreated: () => Promise<void>;
-}) {
-  const api = useAdminApi();
-  const [name, setName] = useState("");
-  const [role, setRole] = useState<Role>("ADMIN");
-  const [password, setPassword] = useState("");
-  const [fullAccess, setFullAccess] = useState(true);
-  const [permissions, setPermissions] = useState<string[]>(ALL_KEYS);
-  const [pending, setPending] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    setName("");
-    setPassword("");
-    setRole("ADMIN");
-    setFullAccess(true);
-    setPermissions(ALL_KEYS);
-  }, [open]);
-
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
-    setPending(true);
+    setSaving(true);
     try {
-      await api.users.create({
-        name,
-        role,
-        password,
-        ...(role === "ADMIN" ? { fullAccess, permissions: fullAccess ? [FULL_ACCESS] : permissions } : {}),
-      });
-      toast.success("User created");
-      await onCreated();
+      if (mode === "create") {
+        if (form.password.length < 8) {
+          toast.error("Password must be at least 8 characters");
+          setSaving(false);
+          return;
+        }
+        const created = await api.users.create({
+          email: form.email.trim(),
+          name: form.name.trim(),
+          role: form.role,
+          password: form.password,
+          fullAccess: form.role === "OWNER" ? true : form.fullAccess,
+          permissions: form.fullAccess || form.role === "OWNER" ? undefined : form.permissions,
+        });
+        listQuery.setData((current) => (current ? [...current, created] : [created]));
+        toast.success("User created");
+      } else if (mode === "edit" && editing) {
+        const updated = await api.users.update(editing.id, {
+          name: form.name.trim(),
+          role: form.role,
+          isActive: form.isActive,
+          fullAccess: form.role === "OWNER" ? true : form.fullAccess,
+          permissions: form.fullAccess || form.role === "OWNER" ? undefined : form.permissions,
+        });
+        listQuery.setData((current) =>
+          current ? current.map((row) => (row.id === updated.id ? { ...row, ...updated } : row)) : [updated],
+        );
+        toast.success("User updated");
+      } else if (mode === "password" && editing) {
+        if (form.password.length < 8) {
+          toast.error("Password must be at least 8 characters");
+          setSaving(false);
+          return;
+        }
+        await api.users.resetPassword(editing.id, form.password);
+        toast.success("Password reset");
+      }
+      closeEditor();
     } catch (err) {
-      toast.error(errorMessage(err));
-    } finally {
-      setPending(false);
+      toast.error(errorMessage(err, "Could not save user"));
+      setSaving(false);
     }
   }
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl">
-        <DialogHeader>
-          <DialogTitle>Add user</DialogTitle>
-        </DialogHeader>
-        <form className="space-y-4" onSubmit={onSubmit}>
-          <FormField label="Name" required>
-            {(c) => <Input id={c.id} value={name} onChange={(e) => setName(e.target.value)} required />}
-          </FormField>
-          <FormField label="Role">
-            {(c) => (
-              <Select
-                value={role}
-                onValueChange={(v) => {
-                  const next = v as Role;
-                  setRole(next);
-                  if (next === "ADMIN") {
-                    setFullAccess(true);
-                    setPermissions(ALL_KEYS);
-                  }
-                }}
-              >
-                <SelectTrigger id={c.id}><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {ROLES.map((r) => (
-                    <SelectItem key={r} value={r}>{r}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          </FormField>
-          {role === "ADMIN" ? (
-            <AccessPicker
-              fullAccess={fullAccess}
-              permissions={permissions}
-              onFullAccess={(value) => {
-                setFullAccess(value);
-                if (!value) setPermissions(ALL_KEYS);
-              }}
-              onToggle={(key, checked) => {
-                setPermissions((current) =>
-                  checked ? [...current.filter((item) => item !== key), key] : current.filter((item) => item !== key),
-                );
-              }}
-            />
-          ) : null}
-          <FormField label="Temporary password" required hint="Must be unique. They sign in with the studio email and this password.">
-            {(c) => (
-              <Input id={c.id} type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} />
-            )}
-          </FormField>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" loading={pending}>Create</Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
+  async function deactivate(row: AdminUser) {
+    if (!owner) return;
+    if (!window.confirm(`Deactivate ${row.name}? Their sessions will end.`)) return;
+    setBusyId(row.id);
+    try {
+      const updated = await api.users.remove(row.id);
+      listQuery.setData((current) =>
+        current ? current.map((item) => (item.id === updated.id ? { ...item, ...updated } : item)) : [updated],
+      );
+      toast.success("User deactivated");
+    } catch (err) {
+      toast.error(errorMessage(err, "Could not deactivate user"));
+    } finally {
+      setBusyId(null);
+    }
+  }
 
-function EditUserDialog({
-  user,
-  protectOwner,
-  onOpenChange,
-  onSaved,
-}: {
-  user: AdminUser | null;
-  protectOwner: boolean;
-  onOpenChange: (open: boolean) => void;
-  onSaved: () => Promise<void>;
-}) {
-  const api = useAdminApi();
-  const [name, setName] = useState("");
-  const [role, setRole] = useState<Role>("STAFF");
-  const [isActive, setIsActive] = useState(true);
-  const [fullAccess, setFullAccess] = useState(true);
-  const [permissions, setPermissions] = useState<string[]>(ALL_KEYS);
-  const [pending, setPending] = useState(false);
-
-  useEffect(() => {
-    if (!user) return;
-    setName(user.name);
-    setRole(user.role);
-    setIsActive(user.isActive);
-    const perms = user.permissions ?? [];
-    const isFull = user.role !== "ADMIN" || perms.includes(FULL_ACCESS);
-    setFullAccess(isFull);
-    setPermissions(isFull ? ALL_KEYS : perms.filter((item) => ALL_KEYS.includes(item as DeskPermission)));
-  }, [user]);
+  const showAccessControls = form.role === "ADMIN" || form.role === "STAFF";
 
   return (
-    <Dialog open={!!user} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl">
-        <DialogHeader>
-          <DialogTitle>Edit {user?.name}</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3">
-          <FormField label="Name">
-            {(c) => <Input id={c.id} value={name} onChange={(e) => setName(e.target.value)} />}
-          </FormField>
-          <FormField label="Role">
-            {(c) => (
-              <Select
-                value={role}
-                onValueChange={(v) => {
-                  const next = v as Role;
-                  setRole(next);
-                  if (next === "ADMIN") {
-                    setFullAccess(true);
-                    setPermissions(ALL_KEYS);
-                  }
-                }}
-                disabled={protectOwner}
-              >
-                <SelectTrigger id={c.id}><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {ROLES.map((r) => (
-                    <SelectItem key={r} value={r}>{r}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          </FormField>
-          {role === "ADMIN" ? (
-            <AccessPicker
-              fullAccess={fullAccess}
-              permissions={permissions}
-              onFullAccess={(value) => {
-                setFullAccess(value);
-                if (!value) setPermissions(ALL_KEYS);
-              }}
-              onToggle={(key, checked) => {
-                setPermissions((current) =>
-                  checked ? [...current.filter((item) => item !== key), key] : current.filter((item) => item !== key),
-                );
-              }}
-            />
-          ) : null}
-          <FormField label="Active" inline hint={protectOwner ? "Cannot deactivate the last owner." : undefined}>
-            {() => (
-              <Switch
-                checked={isActive}
-                onCheckedChange={setIsActive}
-                disabled={protectOwner && isActive}
-              />
-            )}
-          </FormField>
-          {user ? (
-            <p className="text-xs text-muted-foreground">Joined {formatLagosDateTime(user.createdAt)}</p>
-          ) : null}
+    <div className="pa-users space-y-admin-stack">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="font-display text-3xl font-normal tracking-tight text-foreground sm:text-[2rem]">
+            Users
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Desk accounts. Owner manages create, access, and password resets.
+          </p>
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button
-            loading={pending}
-            onClick={() => {
-              if (!user) return;
-              setPending(true);
-              void api.users
-                .update(user.id, {
-                  name,
-                  role,
-                  isActive,
-                  ...(role === "ADMIN"
-                    ? { fullAccess, permissions: fullAccess ? [FULL_ACCESS] : permissions }
-                    : { fullAccess: false, permissions: [] }),
-                })
-                .then(() => {
-                  toast.success("User updated");
-                  return onSaved();
-                })
-                .catch((err) => toast.error(errorMessage(err)))
-                .finally(() => setPending(false));
-            }}
-          >
-            Save
+        {owner ? (
+          <Button type="button" onClick={openCreate}>
+            <UserPlus strokeWidth={1.5} />
+            Add user
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
+        ) : null}
+      </header>
 
-function ResetPasswordDialog({
-  user,
-  onOpenChange,
-  onDone,
-}: {
-  user: AdminUser | null;
-  onOpenChange: (open: boolean) => void;
-  onDone: () => void;
-}) {
-  const api = useAdminApi();
-  const [password, setPassword] = useState("");
-  const [pending, setPending] = useState(false);
+      {!owner ? (
+        <p className="rounded-lg border border-border bg-card/50 px-3 py-2 text-sm text-muted-foreground">
+          You can view the roster. Only the owner can create or edit desk users.
+        </p>
+      ) : null}
 
-  return (
-    <Dialog open={!!user} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Reset password · {user?.name}</DialogTitle>
-        </DialogHeader>
-        <FormField label="New password">
-          {(c) => (
-            <Input id={c.id} type="password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} />
-          )}
-        </FormField>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button
-            loading={pending}
-            disabled={password.length < 8}
-            onClick={() => {
-              if (!user) return;
-              setPending(true);
-              void api.users
-                .resetPassword(user.id, password)
-                .then(() => {
-                  toast.success("Password reset");
-                  setPassword("");
-                  onDone();
-                })
-                .catch((err) => toast.error(errorMessage(err)))
-                .finally(() => setPending(false));
-            }}
-          >
-            Reset
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      <ErrorBanner message={listQuery.error} onRetry={() => void listQuery.refetch()} retrying={listQuery.fetching} />
+
+      <section className="grid gap-admin-gap sm:grid-cols-2 xl:grid-cols-4" aria-label="User metrics">
+        <StatCard label="Accounts" icon={Users} tone="primary" loading={listQuery.loading} value={stats.total} />
+        <StatCard label="Active" icon={Users} loading={listQuery.loading} value={stats.active} />
+        <StatCard label="Owners" icon={Users} loading={listQuery.loading} value={stats.owners} />
+        <StatCard label="Admins" icon={Users} loading={listQuery.loading} value={stats.admins} />
+      </section>
+
+      {listQuery.loading ? (
+        <div className="space-y-2">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <Skeleton key={index} className="h-14 w-full rounded-xl" />
+          ))}
+        </div>
+      ) : rows.length === 0 ? (
+        <EmptyState icon={Users} title="No users" description="Create the first desk account." />
+      ) : (
+        <div className="overflow-hidden rounded-xl border border-border bg-card">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Role</TableHead>
+                <TableHead>Access</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Last login</TableHead>
+                <TableHead className="w-12 text-right"> </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((row) => (
+                <TableRow key={row.id} className={cn(!row.isActive && "opacity-70")}>
+                  <TableCell>
+                    <p className="text-sm text-foreground">{row.name}</p>
+                    <p className="text-xs text-muted-foreground">{row.email}</p>
+                  </TableCell>
+                  <TableCell>
+                    <RoleBadge role={row.role} />
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {accessSummary(row)}
+                  </TableCell>
+                  <TableCell>
+                    <ActiveBadge active={row.isActive} />
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {row.lastLoginAt ? formatLagosDateTime(row.lastLoginAt) : "—"}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {owner ? (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            type="button"
+                            size="icon-sm"
+                            variant="ghost"
+                            aria-label={`Actions for ${row.name}`}
+                            disabled={busyId === row.id}
+                          >
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => openEdit(row)}>Edit</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => openPassword(row)}>
+                            <KeyRound className="h-4 w-4" />
+                            Reset password
+                          </DropdownMenuItem>
+                          {row.isActive && row.id !== me?.id ? (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                onClick={() => void deactivate(row)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                                Deactivate
+                              </DropdownMenuItem>
+                            </>
+                          ) : null}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    ) : null}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      <Dialog open={mode != null} onOpenChange={(open) => !open && closeEditor()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {mode === "create" ? "Add user" : mode === "password" ? "Reset password" : "Edit user"}
+            </DialogTitle>
+            <DialogDescription>
+              {mode === "password"
+                ? "Passwords must be unique across active desk users and at least 8 characters."
+                : "Access is loaded from the database on every request — not from the login form."}
+            </DialogDescription>
+          </DialogHeader>
+          <form className="space-y-admin-stack-sm" onSubmit={(event) => void onSubmit(event)}>
+            {mode === "password" ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="user-password">New password</Label>
+                <Input
+                  id="user-password"
+                  type="password"
+                  autoComplete="new-password"
+                  value={form.password}
+                  onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
+                  required
+                  minLength={8}
+                />
+              </div>
+            ) : (
+              <>
+                {mode === "create" ? (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="user-email">Email</Label>
+                    <Input
+                      id="user-email"
+                      type="email"
+                      value={form.email}
+                      onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))}
+                      required
+                    />
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">{editing?.email}</p>
+                )}
+                <div className="space-y-1.5">
+                  <Label htmlFor="user-name">Name</Label>
+                  <Input
+                    id="user-name"
+                    value={form.name}
+                    onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
+                    required
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="user-role">Role</Label>
+                  <Select
+                    value={form.role}
+                    onValueChange={(value) => setForm((prev) => ({ ...prev, role: value as Role }))}
+                  >
+                    <SelectTrigger id="user-role">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="OWNER">Owner</SelectItem>
+                      <SelectItem value="ADMIN">Admin</SelectItem>
+                      <SelectItem value="STAFF">Staff</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {mode === "create" ? (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="user-password-create">Password</Label>
+                    <Input
+                      id="user-password-create"
+                      type="password"
+                      autoComplete="new-password"
+                      value={form.password}
+                      onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
+                      required
+                      minLength={8}
+                    />
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
+                    <div>
+                      <p className="text-sm text-foreground">Active</p>
+                      <p className="text-xs text-muted-foreground">Inactive users cannot sign in.</p>
+                    </div>
+                    <Switch
+                      checked={form.isActive}
+                      onCheckedChange={(isActive) => setForm((prev) => ({ ...prev, isActive }))}
+                      aria-label="Active"
+                      disabled={editing?.id === me?.id}
+                    />
+                  </div>
+                )}
+                {showAccessControls ? (
+                  <>
+                    <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
+                      <div>
+                        <p className="text-sm text-foreground">Full desk access</p>
+                        <p className="text-xs text-muted-foreground">All areas (`*`). Overrides the checklist.</p>
+                      </div>
+                      <Switch
+                        checked={form.fullAccess}
+                        onCheckedChange={(fullAccess) => setForm((prev) => ({ ...prev, fullAccess }))}
+                        aria-label="Full desk access"
+                      />
+                    </div>
+                    {!form.fullAccess ? (
+                      <fieldset className="space-y-2 rounded-lg border border-border p-3">
+                        <legend className="px-1 text-sm text-foreground">Areas</legend>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {DESK_PERMISSIONS.map((perm) => {
+                            const checked = form.permissions.includes(perm.key);
+                            return (
+                              <label
+                                key={perm.key}
+                                className="flex cursor-pointer items-start gap-2 rounded-md border border-transparent px-2 py-1.5 hover:bg-muted/40"
+                              >
+                                <input
+                                  type="checkbox"
+                                  className="mt-1"
+                                  checked={checked}
+                                  onChange={() => togglePermission(perm.key)}
+                                />
+                                <span>
+                                  <span className="block text-sm text-foreground">{perm.label}</span>
+                                  <span className="block text-xs text-muted-foreground">{perm.hint}</span>
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </fieldset>
+                    ) : null}
+                  </>
+                ) : null}
+              </>
+            )}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={closeEditor} disabled={saving}>
+                Cancel
+              </Button>
+              <Button type="submit" loading={saving}>
+                {mode === "create" ? (
+                  <>
+                    <Plus className="h-4 w-4" />
+                    Create
+                  </>
+                ) : (
+                  "Save"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }

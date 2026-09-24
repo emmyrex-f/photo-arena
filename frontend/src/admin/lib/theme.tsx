@@ -23,7 +23,7 @@ function readPreference(): ThemePreference {
   } catch {
     /* ignore */
   }
-  return "system";
+  return "dark";
 }
 
 function systemTheme(): ResolvedTheme {
@@ -54,7 +54,7 @@ export function AdminThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const previous = document.body.style.backgroundColor;
     const previousScheme = document.documentElement.style.colorScheme;
-    document.body.style.backgroundColor = resolved === "dark" ? "hsl(210 15% 5%)" : "hsl(40 20% 98%)";
+    document.body.style.backgroundColor = resolved === "dark" ? "#0b0d0f" : "hsl(0 0% 97%)";
     document.documentElement.style.colorScheme = resolved;
     return () => {
       document.body.style.backgroundColor = previous;

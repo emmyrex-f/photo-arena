@@ -46,7 +46,7 @@ export class BookingsController {
   }
 
   @Get(":id/status")
-  status(@Param("id") id: string) {
-    return this.bookings.publicStatus(id);
+  status(@Param("id") id: string, @Query("reference") reference?: string) {
+    return this.bookings.publicStatus(id, reference);
   }
 }

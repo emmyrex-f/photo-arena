@@ -50,6 +50,11 @@ export class AdminBookingsController {
     });
   }
 
+  @Get("bookings/stats")
+  stats() {
+    return this.bookings.deskStats();
+  }
+
   @Get("bookings/range")
   range(
     @Query("from") from: string,
@@ -95,14 +100,16 @@ export class AdminBookingsController {
     @Body() body: StudioPaymentDto,
     @CurrentUser() user: AuthUser,
   ) {
-    const booking = await this.bookings.recordStudioPayment(id, body);
+    const { booking, amountKobo } = await this.bookings.recordStudioPayment(id, {
+      note: body.note,
+    });
     await this.audit.log({
       userId: user.id,
       userEmail: user.email,
       action: "booking.payment",
       entity: "booking",
       entityId: id,
-      meta: { amountKobo: body.amountKobo, note: body.note },
+      meta: { amountKobo, note: body.note },
     });
     return booking;
   }

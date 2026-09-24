@@ -1,7 +1,6 @@
 import { BookingCtaSection } from "../components/home/BookingCtaSection";
 import { HeroSection } from "../components/home/HeroSection";
 import { HomeAboutSection } from "../components/home/HomeAboutSection";
-import { InstagramStrip } from "../components/home/InstagramStrip";
 import { PortfolioPreviewSection } from "../components/home/PortfolioPreviewSection";
 import { ServicesPreviewSection } from "../components/home/ServicesPreviewSection";
 import { StudioTourSection } from "../components/home/StudioTourSection";
@@ -16,13 +15,12 @@ export function HomePage() {
       <Seo path="/" />
       <JsonLd data={localBusiness} />
       <HeroSection />
-      <PortfolioPreviewSection />
-      <ServicesPreviewSection />
       <HomeAboutSection />
+      <ServicesPreviewSection />
+      <PortfolioPreviewSection />
       <StudioTourSection />
       <TestimonialsSection />
       <BookingCtaSection />
-      <InstagramStrip />
     </>
   );
 }

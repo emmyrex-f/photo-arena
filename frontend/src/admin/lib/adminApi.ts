@@ -8,11 +8,14 @@ import type {
   BlogPost,
   BookingRecord,
   BookingStatus,
+  BookingsDeskStats,
   CustomerDetail,
   CustomerListItem,
+  CustomersSummary,
   DashboardData,
   Enquiry,
   EnquiryStatus,
+  EnquiriesSummary,
   Faq,
   GalleryImage,
   MediaKind,
@@ -83,11 +86,15 @@ export function createAdminApi({ token, onUnauthorized }: ClientOptions) {
     },
 
     dashboard: {
-      get: () => get<DashboardData>("/admin/dashboard"),
+      get: (params?: { weekStart?: string }) =>
+        get<DashboardData>(`/admin/dashboard${qs(params ?? {})}`),
+      revenue: (params?: { weekStart?: string }) =>
+        get<DashboardData["weeklyRevenue"]>(`/admin/dashboard/revenue${qs(params ?? {})}`),
     },
 
     bookings: {
       packages: () => get<PackageOption[]>("/admin/packages"),
+      stats: () => get<BookingsDeskStats>("/admin/bookings/stats"),
       availability: (date: string, durationMinutes: number) =>
         get<AvailabilityResponse>(`/admin/availability${qs({ date, durationMinutes })}`),
       byDay: (date: string) => get<BookingRecord[]>(`/admin/bookings${qs({ date })}`),
@@ -103,7 +110,8 @@ export function createAdminApi({ token, onUnauthorized }: ClientOptions) {
         source: "WALK_IN" | "ADMIN";
         notes?: string;
       }) => post<BookingRecord>("/admin/bookings", body),
-      recordPayment: (id: string, body?: { amountKobo?: number; note?: string }) =>
+      /** Studio Mark Paid — server charges full outstanding; optional note only. */
+      recordPayment: (id: string, body?: { note?: string }) =>
         post<BookingRecord>(`/admin/bookings/${id}/payment`, body ?? {}),
       setStatus: (id: string, status: "COMPLETED" | "NO_SHOW" | "CANCELLED") =>
         patch<BookingRecord>(`/admin/bookings/${id}/status`, { status }),
@@ -113,8 +121,14 @@ export function createAdminApi({ token, onUnauthorized }: ClientOptions) {
     },
 
     customers: {
-      list: (params: { q?: string; page?: number; pageSize?: number; tag?: string }) =>
-        get<Paginated<CustomerListItem>>(`/admin/customers${qs(params)}`),
+      summary: () => get<CustomersSummary>("/admin/customers/summary"),
+      list: (params: {
+        q?: string;
+        page?: number;
+        pageSize?: number;
+        tag?: string;
+        status?: "active" | "inactive" | "";
+      }) => get<Paginated<CustomerListItem>>(`/admin/customers${qs(params)}`),
       get: (id: string) => get<CustomerDetail>(`/admin/customers/${id}`),
       update: (id: string, body: { name?: string; email?: string | null; notes?: string; tags?: string[] }) =>
         patch<CustomerDetail>(`/admin/customers/${id}`, body),
@@ -122,8 +136,14 @@ export function createAdminApi({ token, onUnauthorized }: ClientOptions) {
     },
 
     enquiries: {
-      list: (params: { status?: EnquiryStatus | ""; page?: number; pageSize?: number }) =>
-        get<Paginated<Enquiry>>(`/admin/enquiries${qs(params)}`),
+      summary: () => get<EnquiriesSummary>("/admin/enquiries/summary"),
+      list: (params: {
+        status?: EnquiryStatus | "";
+        q?: string;
+        page?: number;
+        pageSize?: number;
+      }) => get<Paginated<Enquiry>>(`/admin/enquiries${qs(params)}`),
+      get: (id: string) => get<Enquiry>(`/admin/enquiries/${id}`),
       update: (id: string, body: { status?: EnquiryStatus; internalNote?: string }) =>
         patch<Enquiry>(`/admin/enquiries/${id}`, body),
       remove: (id: string) => del<{ ok: true }>(`/admin/enquiries/${id}`),
@@ -151,7 +171,10 @@ export function createAdminApi({ token, onUnauthorized }: ClientOptions) {
         body: {
           name: string;
           durationMinutes: number;
-          includes: string;
+          outfitCount?: number | null;
+          backdropCount?: number | null;
+          editedPhotoCount?: number | null;
+          includes?: string;
           priceKobo: number;
           isActive?: boolean;
           isProvisional?: boolean;
@@ -236,6 +259,7 @@ export function createAdminApi({ token, onUnauthorized }: ClientOptions) {
         to?: string;
         status?: PaymentStatus | "";
         method?: PaymentMethod | "";
+        q?: string;
         page?: number;
         pageSize?: number;
       }) => get<Paginated<Payment>>(`/admin/payments${qs(params)}`),
@@ -277,7 +301,7 @@ export function createAdminApi({ token, onUnauthorized }: ClientOptions) {
       ) => patch<AdminUser>(`/admin/users/${id}`, body),
       resetPassword: (id: string, password: string) =>
         post<{ ok: true }>(`/admin/users/${id}/reset-password`, { password }),
-      remove: (id: string) => del<{ ok: true; id: string }>(`/admin/users/${id}`),
+      remove: (id: string) => del<AdminUser>(`/admin/users/${id}`),
     },
 
     audit: {

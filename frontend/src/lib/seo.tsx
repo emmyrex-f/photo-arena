@@ -72,6 +72,9 @@ export function useLocalBusinessJsonLd() {
   const name = useSetting("site.name");
   const phone = useSetting("site.phone");
   const email = useSetting("site.email");
+  const address = useSetting("site.address");
+  const hoursWeekday = useSetting("site.hours.weekday");
+  const hoursSunday = useSetting("site.hours.sunday");
   const description = useSetting("seo.defaultDescription");
   const image = useSetting("seo.ogImage");
   const instagram = useSetting("social.instagram");
@@ -97,7 +100,7 @@ export function useLocalBusinessJsonLd() {
     paymentAccepted: "Cash, Bank transfer, Card",
     address: {
       "@type": "PostalAddress",
-      streetAddress: `${site.address.line1}, ${site.address.line2}`,
+      streetAddress: address || `${site.address.line1}, ${site.address.line2}`,
       addressLocality: site.address.city,
       addressRegion: site.address.state,
       addressCountry: "NG",
@@ -109,8 +112,15 @@ export function useLocalBusinessJsonLd() {
         dayOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
         opens: "08:00",
         closes: "18:00",
+        description: hoursWeekday || undefined,
       },
-      { "@type": "OpeningHoursSpecification", dayOfWeek: "Sunday", opens: "12:00", closes: "18:00" },
+      {
+        "@type": "OpeningHoursSpecification",
+        dayOfWeek: "Sunday",
+        opens: "12:00",
+        closes: "18:00",
+        description: hoursSunday || undefined,
+      },
     ],
     sameAs: [instagram, facebook, tiktok].filter(Boolean),
     potentialAction: { "@type": "ReserveAction", target: `${site.url}/book` },

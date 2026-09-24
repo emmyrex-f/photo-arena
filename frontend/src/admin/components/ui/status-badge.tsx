@@ -95,7 +95,7 @@ function RoleBadge({ role, className }: { role: Role; className?: string }) {
 
 function ActiveBadge({ active, className }: { active: boolean; className?: string }) {
   return (
-    <Badge variant={active ? "success" : "muted"} className={className}>
+    <Badge variant={active ? "success" : "destructive"} className={className}>
       {active ? "Active" : "Inactive"}
     </Badge>
   );

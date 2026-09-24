@@ -2,34 +2,66 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Recoleta Regular + Sofia Pro Light/Regular. Place licensed files in /public/fonts:
+   Recoleta-Regular.woff2, SofiaPro-Light.woff2, SofiaPro-Regular.woff2 (woff optional).
+   Missing files fall through to Fraunces / Nunito Sans. */
+@font-face {
+  font-family: "Recoleta";
+  src:
+    local("Recoleta"),
+    local("Recoleta Regular"),
+    url("/fonts/Recoleta-Regular.woff2") format("woff2"),
+    url("/fonts/Recoleta-Regular.woff") format("woff");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Sofia Pro";
+  src:
+    local("Sofia Pro Light"),
+    local("SofiaPro-Light"),
+    url("/fonts/SofiaPro-Light.woff2") format("woff2"),
+    url("/fonts/SofiaPro-Light.woff") format("woff");
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Sofia Pro";
+  src:
+    local("Sofia Pro"),
+    local("Sofia Pro Regular"),
+    local("SofiaPro-Regular"),
+    url("/fonts/SofiaPro-Regular.woff2") format("woff2"),
+    url("/fonts/SofiaPro-Regular.woff") format("woff");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* Single shorthand so duration isn't overridden by transition-opacity's baked-in 150ms. */
 .hero-video-fade {
   transition: opacity 1.2s ease-out;
 }
 
-.hero-copy {
-  text-shadow:
-    0 1px 1px rgba(0, 0, 0, 0.95),
-    0 2px 6px rgba(0, 0, 0, 0.85),
-    0 6px 20px rgba(0, 0, 0, 0.75),
-    0 0 36px rgba(0, 0, 0, 0.7);
+/* Shrink-wrap translucent panel behind hero / banner copy (fits text, doesn’t clip width) */
+.pa-banner-copy {
+  display: inline-block;
+  width: fit-content;
+  max-width: min(100%, 48rem);
+  box-sizing: border-box;
+  padding: 1.25rem 1.5rem;
+  background: rgba(32, 31, 31, 0.62);
+  color: #fff;
 }
 
-.hero-copy-glow {
-  background: radial-gradient(
-    ellipse 85% 75% at 28% 42%,
-    rgba(0, 0, 0, 0.72) 0%,
-    rgba(0, 0, 0, 0.42) 48%,
-    transparent 74%
-  );
-}
-
-.hero-edge-bottom {
-  background: linear-gradient(
-    to top,
-    rgba(11, 13, 15, 0.75) 0%,
-    transparent 100%
-  );
+@media (min-width: 640px) {
+  .pa-banner-copy {
+    padding: 1.5rem 1.75rem;
+  }
 }
 
 /* Book Now: contained package rail on small screens, grid on large. */
@@ -91,39 +123,55 @@
 }
 
 .nav-edge {
-  background: linear-gradient(to bottom, rgba(11, 13, 15, 0.7), transparent);
+  background: linear-gradient(to bottom, rgba(32, 31, 31, 0.55), transparent);
 }
 
 .nav-edge-up {
-  background: linear-gradient(to top, rgba(11, 13, 15, 0.7), transparent);
+  background: linear-gradient(to top, rgba(32, 31, 31, 0.7), transparent);
 }
 
 :root {
-  --color-bg: #0b0d0f;
-  --color-surface: #181c20;
-  --color-elevated: #22272c;
-  --color-dark: #111417;
-  --color-dark-deep: #0b0d0f;
-  --color-overlay: rgba(11, 13, 15, 0.72);
-  --color-text: #f3f4f6;
-  --color-text-secondary: #c5cad0;
-  --color-text-muted: #9ca3aa;
-  --color-text-inverse: #f3f4f6;
-  --color-text-inverse-muted: #9ca3aa;
-  --color-on-accent: #0b0d0f;
-  --color-accent: #c8b89a;
-  --color-accent-hover: #d8c9ad;
-  --color-champagne: #c8b89a;
-  --color-border: #30363d;
-  --color-border-subtle: rgba(48, 54, 61, 0.7);
-  --color-border-strong: #3d444d;
-  --color-border-on-dark: rgba(243, 244, 246, 0.12);
+  --pa-amber: #ebbc71;
+  --pa-sage: #bcbda6;
+  --pa-olive: #bba350;
+  --pa-brown: #573418;
+  --pa-ink: #201f1f;
+
+  --font-heading: "EB Garamond", Georgia, serif;
+  --font-subtitle: "Overpass Mono", ui-monospace, monospace;
+  --font-body: "Libre Baskerville", Georgia, serif;
+  --font-button: "Overpass Mono", ui-monospace, monospace;
+
+  /* Milky page wash — keep sage tint, push closer to white */
+  --color-bg: color-mix(in srgb, var(--pa-sage) 5%, white);
+  --color-surface: color-mix(in srgb, var(--pa-sage) 9%, white);
+  --color-elevated: color-mix(in srgb, var(--pa-sage) 14%, white);
+  --color-dark: var(--pa-ink);
+  --color-dark-deep: var(--pa-ink);
+  --color-overlay: rgba(32, 31, 31, 0.72);
+  --color-text: var(--pa-ink);
+  --color-text-secondary: var(--pa-brown);
+  --color-text-muted: color-mix(in srgb, var(--pa-brown) 72%, var(--pa-sage));
+  --color-text-inverse: var(--pa-sage);
+  --color-text-inverse-muted: color-mix(in srgb, var(--pa-sage) 70%, var(--pa-ink));
+  --color-on-accent: var(--pa-ink);
+  --color-accent: var(--pa-amber);
+  --color-accent-hover: var(--pa-olive);
+  --color-champagne: var(--pa-amber);
+  --color-sage: var(--pa-sage);
+  --color-brown: var(--pa-brown);
+  --color-olive: var(--pa-olive);
+  --color-ink: var(--pa-ink);
+  --color-border: color-mix(in srgb, var(--pa-brown) 28%, var(--pa-sage));
+  --color-border-subtle: color-mix(in srgb, var(--pa-brown) 18%, var(--pa-sage));
+  --color-border-strong: var(--pa-brown);
+  --color-border-on-dark: rgba(188, 189, 166, 0.22);
   --color-success: #6fa58a;
-  --color-warning: #d1a65a;
+  --color-warning: var(--pa-olive);
   --color-error: #d97878;
 
-  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.24), 0 16px 40px -20px rgba(0, 0, 0, 0.55);
-  --shadow-nav: 0 1px 0 rgba(48, 54, 61, 0.8), 0 12px 32px -18px rgba(0, 0, 0, 0.6);
+  --shadow-soft: 0 1px 2px rgba(32, 31, 31, 0.08), 0 18px 44px -24px rgba(32, 31, 31, 0.35);
+  --shadow-nav: 0 1px 0 rgba(235, 188, 113, 0.28), 0 12px 32px -18px rgba(32, 31, 31, 0.55);
 
   /*
    * 8px public spacing scale (see src/lib/theme.ts layout.spacing).
@@ -132,11 +180,11 @@
   --pa-gutter: 1.25rem;
   --pa-section-y: 5rem;
   --pa-header-y: 4rem;
-  /* Logo 56px + vertical padding; matches the fixed public header. */
-  --pa-nav-h: calc(56px + (var(--pa-eyebrow) * 2));
+  /* Logo 40px + vertical padding; 2rem shorter than the previous 80px bar. */
+  --pa-nav-h: calc(40px + (var(--pa-eyebrow) * 2));
   --pa-footer-y: 2.5rem;
   --pa-label: 0.5rem;
-  --pa-eyebrow: 0.75rem;
+  --pa-eyebrow: 0.25rem;
   --pa-stack-sm: 1rem;
   --pa-stack: 1.25rem;
   --pa-stack-lg: 2rem;
@@ -163,7 +211,7 @@
 @media (min-width: 640px) {
   :root {
     --pa-gutter: 2rem;
-    --pa-nav-h: calc(68px + (var(--pa-eyebrow) * 2));
+    --pa-nav-h: calc(52px + (var(--pa-eyebrow) * 2));
   }
 }
 
@@ -400,12 +448,12 @@
   }
 }
 
-/* Space for the sticky bar, optional consent sheet, and FAB row. */
+/* Space for the sticky Book Now bar (and cookie sheet when open).
+   The WhatsApp FAB overlays the footer — do not add it to page pad or a
+   cream gap appears below the footer and creates extra mobile scroll. */
 @media (max-width: 1023px) {
   :root {
-    --pa-page-pad: calc(
-      var(--pa-book-bar) + var(--pa-consent) + var(--pa-fab-size) + var(--pa-fab-gap)
-    );
+    --pa-page-pad: var(--pa-book-bar);
   }
 }
 
@@ -434,7 +482,7 @@ html.pa-book-bar-off .pa-consent-sheet {
 }
 
 html.pa-consent-on {
-  --pa-consent: 10.5rem;
+  --pa-consent: 4.5rem;
 }
 
 @media (max-width: 1023px) {
@@ -453,71 +501,116 @@ html.pa-consent-on {
 @media (min-width: 1024px) {
   .pa-consent-sheet {
     bottom: 0;
-    padding-bottom: 1.5rem;
+    padding-bottom: 0.5rem;
   }
 
   html.pa-consent-on {
-    --pa-consent: 8.5rem;
+    --pa-consent: 3.5rem;
   }
 }
 
-/* Slightly lifted charcoal sections. Semantic tokens stay the same language. */
+/* Dark bands: nav, footer, testimonials, studio tour. */
 .tone-dark {
-  --color-bg: #111417;
-  --color-text: #f3f4f6;
-  --color-text-secondary: #c5cad0;
-  --color-text-muted: #9ca3aa;
-  --color-border: #30363d;
-  --color-border-subtle: rgba(48, 54, 61, 0.7);
-  --color-border-strong: #3d444d;
-  --color-surface: #181c20;
-  --color-elevated: #22272c;
-  --color-champagne: #c8b89a;
-  background: var(--color-dark);
+  --color-bg: var(--pa-ink);
+  --color-text: color-mix(in srgb, var(--pa-sage) 88%, white);
+  --color-text-secondary: var(--pa-sage);
+  --color-text-muted: color-mix(in srgb, var(--pa-sage) 70%, var(--pa-ink));
+  --color-border: rgba(188, 189, 166, 0.22);
+  --color-border-subtle: rgba(188, 189, 166, 0.14);
+  --color-border-strong: var(--pa-brown);
+  --color-surface: color-mix(in srgb, var(--pa-brown) 35%, var(--pa-ink));
+  --color-elevated: color-mix(in srgb, var(--pa-brown) 48%, var(--pa-ink));
+  --color-champagne: var(--pa-amber);
+  background: var(--pa-ink);
   color: var(--color-text);
 }
 
 .tone-deep {
-  --color-bg: #0b0d0f;
-  --color-text: #f3f4f6;
-  --color-text-secondary: #c5cad0;
-  --color-text-muted: #9ca3aa;
-  --color-border: #30363d;
-  --color-border-subtle: rgba(48, 54, 61, 0.7);
-  --color-border-strong: #3d444d;
-  --color-surface: #181c20;
-  --color-elevated: #22272c;
-  background: var(--color-dark-deep);
+  --color-bg: var(--pa-ink);
+  --color-text: color-mix(in srgb, var(--pa-sage) 88%, white);
+  --color-text-secondary: var(--pa-sage);
+  --color-text-muted: color-mix(in srgb, var(--pa-sage) 70%, var(--pa-ink));
+  --color-border: rgba(188, 189, 166, 0.22);
+  --color-border-subtle: rgba(188, 189, 166, 0.14);
+  --color-border-strong: var(--pa-brown);
+  --color-surface: color-mix(in srgb, var(--pa-brown) 35%, var(--pa-ink));
+  --color-elevated: color-mix(in srgb, var(--pa-brown) 48%, var(--pa-ink));
+  background: var(--pa-ink);
   color: var(--color-text);
+}
+
+/* Full-width booking band — brown from the brand board. */
+.tone-accent {
+  --color-bg: var(--pa-brown);
+  --color-text: var(--pa-amber);
+  --color-text-secondary: var(--pa-sage);
+  --color-text-muted: color-mix(in srgb, var(--pa-sage) 80%, var(--pa-brown));
+  --color-border: rgba(235, 188, 113, 0.28);
+  --color-border-subtle: rgba(188, 189, 166, 0.2);
+  --color-surface: color-mix(in srgb, var(--pa-ink) 28%, var(--pa-brown));
+  --color-elevated: color-mix(in srgb, var(--pa-ink) 40%, var(--pa-brown));
+  --color-on-accent: var(--pa-ink);
+  background: linear-gradient(90deg, var(--pa-brown), color-mix(in srgb, var(--pa-olive) 35%, var(--pa-brown)), var(--pa-brown));
+  color: var(--color-text);
+}
+
+.pa-eyebrow-pill {
+  color: var(--pa-brown);
+}
+
+.tone-dark .pa-eyebrow-pill,
+.tone-accent .pa-eyebrow-pill,
+.tone-deep .pa-eyebrow-pill {
+  color: var(--pa-amber);
 }
 
 html {
   scroll-behavior: auto;
   -webkit-text-size-adjust: 100%;
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
+  max-width: 100%;
 }
 
 body {
   margin: 0;
-  min-height: 100vh;
+  min-height: 100dvh;
+  max-width: 100%;
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
   background: var(--color-bg);
   color: var(--color-text);
-  font-family: Inter, system-ui, sans-serif;
+  font-family: var(--font-body);
+  font-weight: 400;
   font-feature-settings: "kern", "liga", "calt";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
 
-.font-display {
-  font-family: Manrope, Inter, system-ui, sans-serif;
-  font-weight: 600;
-  letter-spacing: -0.03em;
+h1,
+h2,
+h3,
+.font-display,
+.font-hero {
+  font-family: var(--font-heading);
+  font-weight: 400;
+  letter-spacing: -0.02em;
   font-feature-settings: "kern", "liga", "calt";
 }
 
-.font-hero {
-  font-family: "Playfair Display", Georgia, serif;
-  font-feature-settings: "kern", "liga", "dlig";
+.font-subtitle,
+nav,
+nav a,
+.pa-eyebrow-pill {
+  font-family: var(--font-subtitle);
+  font-weight: 400;
+}
+
+button,
+.font-button {
+  font-family: var(--font-button);
+  font-weight: 400;
 }
 
 :focus-visible {
@@ -526,7 +619,7 @@ body {
 }
 
 ::selection {
-  background: rgba(200, 184, 154, 0.35);
+  background: rgba(235, 188, 113, 0.45);
 }
 
 img,
@@ -538,9 +631,14 @@ video {
 /* Native form controls inherit brand colours (date input icon, select arrows). */
 input,
 select,
-textarea,
-button {
+textarea {
   font: inherit;
+  color: inherit;
+}
+
+button {
+  font-family: var(--font-button);
+  font-weight: 400;
   color: inherit;
 }
 
@@ -584,13 +682,12 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   margin-top: 1.25em;
 }
 .prose-pa h2,
-.prose-pa h3,
-.prose-pa h4 {
-  font-family: Manrope, Inter, system-ui, sans-serif;
-  font-weight: 600;
+.prose-pa h3 {
+  font-family: var(--font-heading);
+  font-weight: 400;
   color: var(--color-text);
   line-height: 1.2;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.02em;
 }
 .prose-pa h2 {
   font-size: 1.85rem;
@@ -602,6 +699,8 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 }
 .prose-pa h4 {
   font-size: 1.15rem;
+  font-family: var(--font-subtitle);
+  font-weight: 400;
 }
 .prose-pa p strong {
   color: var(--color-text);
@@ -628,11 +727,10 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 .prose-pa blockquote {
   border-left: 1px solid var(--color-accent);
   padding-left: 1.25rem;
-  font-family: Manrope, Inter, system-ui, sans-serif;
-  font-weight: 500;
+  font-family: var(--font-subtitle);
+  font-weight: 400;
   font-size: 1.2rem;
   line-height: 1.5;
-  letter-spacing: -0.02em;
   color: var(--color-text);
 }
 .prose-pa img {
@@ -723,6 +821,18 @@ select.pa-input {
 @media (min-width: 1440px) {
   .masonry {
     column-count: 4;
+  }
+}
+
+.pa-shutter-spin {
+  display: block;
+  animation: pa-shutter-spin 1.15s linear infinite;
+  transform-origin: 50% 50%;
+}
+
+@keyframes pa-shutter-spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 

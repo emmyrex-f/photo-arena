@@ -49,7 +49,7 @@ export function StudioTourSection() {
 
           <Reveal delay={0.1} className="relative">
             {available ? (
-              <div className="relative overflow-hidden border border-border">
+              <div className="relative overflow-hidden rounded-2xl border border-border">
                 <video
                   className="aspect-video w-full object-cover"
                   muted
@@ -62,7 +62,7 @@ export function StudioTourSection() {
                 </video>
               </div>
             ) : (
-              <div className="flex aspect-video items-center justify-center border border-border bg-surface/40 text-sm text-text-secondary">
+              <div className="flex aspect-video items-center justify-center rounded-2xl border border-border bg-surface/40 text-sm text-text-secondary">
                 Studio tour video coming soon.
               </div>
             )}

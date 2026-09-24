@@ -1,374 +1,324 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
-import { CalendarPlus, ChevronLeft, ChevronRight, CalendarDays, ChevronRight as OpenIcon, Search } from "lucide-react";
-import { Button } from "../../admin/components/ui/button";
-import { ConfirmDialog } from "../../admin/components/ui/confirm-dialog";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "../../admin/components/ui/dialog";
+  AlertTriangle,
+  Calendar as CalendarIcon,
+  CalendarPlus,
+  ChevronLeft,
+  ChevronRight,
+  Mail,
+  MapPin,
+  MoreHorizontal,
+  Phone,
+} from "lucide-react";
+import { addDays, format, getDaysInMonth, startOfMonth } from "date-fns";
+import { Avatar, AvatarFallback } from "../../admin/components/ui/avatar";
+import { Badge } from "../../admin/components/ui/badge";
+import { Button } from "../../admin/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "../../admin/components/ui/card";
+import { ConfirmDialog } from "../../admin/components/ui/confirm-dialog";
 import { EmptyState } from "../../admin/components/ui/empty-state";
 import { ErrorBanner } from "../../admin/components/ui/error-banner";
-import { FormField } from "../../admin/components/ui/form-field";
-import { Input } from "../../admin/components/ui/input";
-import { Label } from "../../admin/components/ui/label";
-import { MoneyInput } from "../../admin/components/ui/money-input";
-import { PageHeader } from "../../admin/components/ui/page-header";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../admin/components/ui/select";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "../../admin/components/ui/sheet";
 import { Skeleton } from "../../admin/components/ui/skeleton";
-import { Switch } from "../../admin/components/ui/switch";
+import { StatCard } from "../../admin/components/ui/stat-card";
+import { BookingStatusBadge } from "../../admin/components/ui/status-badge";
 import {
-  BookingStatusBadge,
-  PaymentStatusBadge,
-  bookingCalendarTone,
-} from "../../admin/components/ui/status-badge";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../admin/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../../admin/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "../../admin/components/ui/tabs";
 import { Textarea } from "../../admin/components/ui/textarea";
 import { toast } from "../../admin/components/ui/toaster";
 import { useAdminApi } from "../../admin/lib/adminApi";
 import {
-  addYmdDays,
-  formatDuration,
-  formatLagosDateTime,
+  formatLagosDate,
   formatLagosTime,
   formatNairaFromKobo,
-  formatYmd,
   humanize,
-  lagosParts,
+  initials,
   lagosToday,
   lagosYmd,
-  openingHoursForYmd,
-  weekOf,
+  parseYmd,
+  toYmd,
 } from "../../admin/lib/format";
-import type { BookingRecord, BookingStatus, Payment } from "../../admin/lib/types";
-import { BOOKING_STATUSES } from "../../admin/lib/types";
-import { useQuery } from "../../admin/lib/useQuery";
-import { errorMessage } from "../../lib/api";
-import { canManageBookings, useAuth } from "../../lib/auth";
+import { hasDeskPermission } from "../../admin/lib/permissions";
+import type {
+  BookingRecord,
+  BookingsDeskStats,
+  DashboardPaymentStatus,
+  PackageOption,
+} from "../../admin/lib/types";
+import { ApiError, errorMessage } from "../../lib/api";
+import { useAuth } from "../../lib/auth";
 import { cn } from "../../lib/cn";
-import { useSiteInfo } from "../../lib/settings";
 
-const AGENDA_DAYS = 14;
-const HOUR_PX = 88;
-const TIME_GUTTER = "3.5rem";
+const PAGE_SIZE = 8;
 
-function isQuietBooking(booking: BookingRecord): boolean {
-  return booking.status === "CANCELLED" || booking.status === "TEMPORARY_HOLD";
+type StatusTab = "ALL" | "CONFIRMED" | "PENDING" | "COMPLETED" | "CANCELLED" | "NO_SHOW";
+
+const STATUS_TABS: Array<{ id: StatusTab; label: string }> = [
+  { id: "ALL", label: "All Bookings" },
+  { id: "CONFIRMED", label: "Confirmed" },
+  { id: "PENDING", label: "Pending" },
+  { id: "COMPLETED", label: "Completed" },
+  { id: "CANCELLED", label: "Cancelled" },
+  { id: "NO_SHOW", label: "No Show" },
+];
+
+function signedDelta(n: number): string {
+  if (n > 0) return `+${n}`;
+  return String(n);
 }
 
-function paymentSummary(booking: BookingRecord): { amount: string; status: Payment["status"] | null; label: string } {
-  const paid = booking.payments.find((p) => p.status === "SUCCESS");
-  const latest = paid ?? booking.payments[0] ?? null;
-  const amountKobo = latest?.amountKobo ?? booking.amountKobo ?? null;
-  const amount = amountKobo != null ? formatNairaFromKobo(amountKobo) : "—";
-  if (!latest) return { amount, status: null, label: amountKobo != null ? "Unpaid" : "—" };
-  if (latest.status === "SUCCESS") return { amount, status: latest.status, label: "Paid" };
-  if (latest.status === "FAILED") return { amount, status: latest.status, label: "Failed" };
-  if (latest.status === "PROCESSING") return { amount, status: latest.status, label: "Processing" };
-  return { amount, status: latest.status, label: "Pending" };
+function pctHint(deltaPct: number | null, fallback: string): string {
+  if (deltaPct == null) return fallback;
+  const sign = deltaPct > 0 ? "+" : "";
+  return `${sign}${deltaPct}% from last 30 days`;
 }
 
-function packageLabel(booking: BookingRecord): string {
-  const service = booking.package.service?.name?.trim() ?? "";
-  const name = booking.package.name.trim();
-  const duration = formatDuration(booking.package.durationMinutes);
-  const title =
-    service && !name.toLowerCase().includes(service.toLowerCase()) ? `${service} · ${name}` : name;
-  if (/\d+\s*(min|h)\b/i.test(title)) return title;
-  return `${title} · ${duration}`;
+function revenueHint(deltaPct: number | null, deltaKobo: number): string {
+  if (deltaPct != null) {
+    const sign = deltaPct > 0 ? "+" : "";
+    return `${sign}${deltaPct}% from yesterday`;
+  }
+  const sign = deltaKobo > 0 ? "+" : deltaKobo < 0 ? "−" : "";
+  return `${sign}${formatNairaFromKobo(Math.abs(deltaKobo))} from yesterday`;
 }
 
-function dayHeading(ymd: string, today: string): string {
-  const label = formatYmd(ymd, "EEEE d MMM");
-  if (ymd === today) return `${label} · Today`;
-  if (ymd === addYmdDays(today, 1)) return `${label} · Tomorrow`;
-  return label;
+function paidSuccessKobo(booking: BookingRecord): number {
+  return booking.payments
+    .filter((p) => p.status === "SUCCESS")
+    .reduce((sum, p) => sum + p.amountKobo, 0);
 }
 
-function hoursForDay(ymd: string, unifyWeek = false): number[] {
-  const { startHour, endHour } = unifyWeek
-    ? { startHour: 8, endHour: 18 }
-    : openingHoursForYmd(ymd);
-  const out: number[] = [];
-  for (let h = startHour; h < endHour; h++) out.push(h);
-  return out;
+function amountDueKobo(booking: BookingRecord): number {
+  if (booking.amountKobo != null && booking.amountKobo > 0) return booking.amountKobo;
+  return booking.package.priceKobo;
 }
 
-function formatHourLabel(hour: number) {
-  const ampm = hour >= 12 ? "PM" : "AM";
-  const h12 = ((hour + 11) % 12) + 1;
-  return `${h12} ${ampm}`;
+function paymentDisplay(booking: BookingRecord): DashboardPaymentStatus {
+  const due = amountDueKobo(booking);
+  const paid = paidSuccessKobo(booking);
+  if (paid <= 0) return "UNPAID";
+  if (paid >= due) return "PAID";
+  return "PARTIAL";
 }
 
-function statusLabel(status: BookingStatus): string {
-  return status === "TEMPORARY_HOLD" ? "Hold" : humanize(status);
-}
-
-function BookingCard({
-  booking,
-  onClick,
-  gridStartMinutes,
-  compact,
-}: {
-  booking: BookingRecord;
-  onClick: () => void;
-  gridStartMinutes: number;
-  compact?: boolean;
-}) {
-  const start = lagosParts(booking.startTime).minutesOfDay;
-  const end = lagosParts(booking.endTime).minutesOfDay;
-  const top = ((start - gridStartMinutes) / 60) * HOUR_PX;
-  const height = Math.max(20, ((end - start) / 60) * HOUR_PX - 4);
-  const tone = bookingCalendarTone[booking.status];
-  const quiet = isQuietBooking(booking);
-  const showTime = height >= 28;
-  const showService = height >= 38;
-  const showStatus = !compact && height >= 62;
-  const horizontal = !compact && height < 52;
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "absolute left-1.5 right-1.5 z-10 overflow-hidden rounded-md text-left ring-1 ring-inset transition hover:brightness-110",
-        tone.card,
-        quiet && "opacity-70",
-        horizontal && "flex items-center gap-2 py-0",
-      )}
-      style={{ top, height: horizontal ? Math.max(height, 36) : height }}
-      title={`${formatLagosTime(booking.startTime)} · ${booking.customer.name} · ${packageLabel(booking)} · ${statusLabel(booking.status)}`}
-    >
-      <span className={cn("absolute inset-y-0 left-0 w-[3px]", tone.bar)} />
-      {horizontal ? (
-        <span className="flex min-w-0 flex-1 items-center justify-between gap-3 py-1 pl-2.5 pr-3">
-          <span className="flex min-w-0 items-center gap-2">
-            <span className="shrink-0 text-[10px] font-medium tabular-nums text-muted-foreground">
-              {formatLagosTime(booking.startTime)}
-            </span>
-            <span className={cn("max-w-[10rem] truncate text-xs font-semibold", quiet && "line-through")}>
-              {booking.customer.name}
-            </span>
-            <span className="min-w-0 truncate text-[11px] text-muted-foreground">{packageLabel(booking)}</span>
-          </span>
-          <span className="shrink-0 text-[10px] font-medium text-foreground/70">{statusLabel(booking.status)}</span>
-        </span>
-      ) : (
-        <span className="flex h-full flex-col justify-center gap-0.5 py-1 pl-2.5 pr-1.5">
-          {showTime ? (
-            <span className="text-[10px] font-medium leading-none tabular-nums text-muted-foreground">
-              {formatLagosTime(booking.startTime)}
-            </span>
-          ) : null}
-          <span className={cn("truncate text-xs font-semibold leading-tight", quiet && "line-through")}>
-            {booking.customer.name}
-          </span>
-          {showService ? (
-            <span className="truncate text-[10px] leading-tight text-muted-foreground">{packageLabel(booking)}</span>
-          ) : null}
-          {showStatus ? (
-            <span className="mt-0.5 truncate text-[10px] font-medium leading-none text-muted-foreground">
-              {statusLabel(booking.status)}
-            </span>
-          ) : null}
-        </span>
-      )}
-    </button>
-  );
-}
-
-function CalendarDayHeader({ ymd, today }: { ymd: string; today: string }) {
-  const isToday = ymd === today;
-  return (
-    <div className="flex flex-col items-center justify-center gap-1 border-l border-border/50 px-2 py-3">
-      <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-        {formatYmd(ymd, "EEE")}
-      </span>
-      <span
-        className={cn(
-          "flex h-8 min-w-8 items-center justify-center rounded-full px-1.5 text-sm font-semibold tabular-nums",
-          isToday ? "bg-primary text-primary-foreground" : "text-foreground",
-        )}
-      >
-        {formatYmd(ymd, "d")}
-      </span>
-    </div>
-  );
-}
-
-function CalendarBoard({
-  days,
-  week,
-  today,
-  loading,
-  bookingsByDay,
-  quietHidden,
-  onOpen,
-}: {
-  days: string[];
-  week: boolean;
-  today: string;
-  loading: boolean;
-  bookingsByDay: Map<string, BookingRecord[]>;
-  quietHidden: boolean;
-  onOpen: (id: string) => void;
-}) {
-  const hours = hoursForDay(days[0] ?? today, week);
-  const gridStart = (hours[0] ?? 8) * 60;
-  const totalH = hours.length * HOUR_PX;
-  const colMin = week ? "7rem" : "12rem";
-  const now = lagosParts(new Date());
-  const nowTop = ((now.minutesOfDay - gridStart) / 60) * HOUR_PX;
-  const gridEnd = (hours[hours.length - 1] ?? 17) * 60 + 60;
-  const showNow = now.minutesOfDay >= gridStart && now.minutesOfDay < gridEnd;
-
-  if (loading) {
+/** Solid pills matching the bookings board reference. */
+function PaymentPill({ status }: { status: DashboardPaymentStatus }) {
+  if (status === "PAID") {
     return (
-      <div className="rounded-2xl border border-border/60 bg-card p-admin-card">
-        <Skeleton className="h-64 w-full rounded-xl" />
-      </div>
+      <Badge className="rounded-full border-transparent bg-emerald-600 px-2.5 text-[11px] font-semibold text-white">
+        Paid
+      </Badge>
     );
   }
-
+  if (status === "PARTIAL") {
+    return (
+      <Badge className="rounded-full border-transparent bg-amber-500 px-2.5 text-[11px] font-semibold text-amber-950">
+        Partial
+      </Badge>
+    );
+  }
   return (
-    <div className="max-h-[min(72vh,46rem)] overflow-auto rounded-2xl border border-border/60 bg-card">
-      <div style={{ minWidth: week ? `max(100%, calc(${TIME_GUTTER} + ${days.length} * 7rem))` : undefined }}>
-        <div className="sticky top-0 z-20 flex border-b border-border/50 bg-card">
-          <div className="sticky left-0 z-30 shrink-0 bg-card" style={{ width: TIME_GUTTER }} />
-          {days.map((day) => (
-            <div key={day} className="min-w-0 flex-1" style={{ minWidth: colMin }}>
-              <CalendarDayHeader ymd={day} today={today} />
-            </div>
-          ))}
-        </div>
-
-        <div className="flex">
-          <div className="sticky left-0 z-10 shrink-0 bg-card" style={{ width: TIME_GUTTER, height: totalH }}>
-            {hours.map((hour, i) => (
-              <div key={hour} className="relative" style={{ height: HOUR_PX }}>
-                <span
-                  className={cn(
-                    "absolute right-2 text-[11px] font-medium tabular-nums text-muted-foreground",
-                    i === 0 ? "top-1" : "-top-2",
-                  )}
-                >
-                  {formatHourLabel(hour)}
-                </span>
-              </div>
-            ))}
-          </div>
-
-          {days.map((day) => {
-            const open = openingHoursForYmd(day);
-            const dayBookings = bookingsByDay.get(day) ?? [];
-            const closedTop = Math.max(0, ((open.startHour * 60 - gridStart) / 60) * HOUR_PX);
-            const closedBottomStart = ((open.endHour * 60 - gridStart) / 60) * HOUR_PX;
-            const isToday = day === today;
-            return (
-              <div
-                key={day}
-                className="relative min-w-0 flex-1 border-l border-border/40"
-                style={{ minWidth: colMin, height: totalH }}
-              >
-                {hours.map((hour) => (
-                  <div key={`${day}-${hour}`} className="relative border-t border-border/35" style={{ height: HOUR_PX }}>
-                    <div className="absolute inset-x-4 top-1/2 border-t border-dashed border-border/25" />
-                  </div>
-                ))}
-                {closedTop > 0 ? (
-                  <div className="pointer-events-none absolute inset-x-0 top-0 bg-muted/30" style={{ height: closedTop }} />
-                ) : null}
-                {closedBottomStart < totalH ? (
-                  <div
-                    className="pointer-events-none absolute inset-x-0 bg-muted/30"
-                    style={{ top: closedBottomStart, height: totalH - closedBottomStart }}
-                  />
-                ) : null}
-                <div className="pointer-events-none absolute inset-0">
-                  <div className="pointer-events-auto relative h-full">
-                    {dayBookings.map((b) => {
-                      if (isQuietBooking(b) && quietHidden) return null;
-                      const start = lagosParts(b.startTime).minutesOfDay;
-                      if (start < gridStart) return null;
-                      return (
-                        <BookingCard
-                          key={b.id}
-                          booking={b}
-                          gridStartMinutes={gridStart}
-                          compact={week}
-                          onClick={() => onOpen(b.id)}
-                        />
-                      );
-                    })}
-                  </div>
-                </div>
-                {isToday && showNow ? (
-                  <div className="pointer-events-none absolute inset-x-0 z-20 flex items-center" style={{ top: nowTop }}>
-                    <span className="h-2 w-2 shrink-0 -translate-x-0.5 rounded-full bg-primary" />
-                    <span className="h-px flex-1 bg-primary" />
-                  </div>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
+    <Badge className="rounded-full border-transparent bg-red-700 px-2.5 text-[11px] font-semibold text-white">
+      Unpaid
+    </Badge>
   );
+}
+
+function BoardStatusBadge({ status }: { status: BookingRecord["status"] }) {
+  const className = (() => {
+    switch (status) {
+      case "CONFIRMED":
+        return "rounded-full border-transparent bg-emerald-600 px-2.5 text-[11px] font-semibold text-white";
+      case "PENDING":
+        return "rounded-full border-transparent bg-amber-500 px-2.5 text-[11px] font-semibold text-amber-950";
+      case "COMPLETED":
+        return "rounded-full border-transparent bg-blue-600 px-2.5 text-[11px] font-semibold text-white";
+      case "CANCELLED":
+        return "rounded-full border-transparent bg-muted px-2.5 text-[11px] font-semibold text-muted-foreground";
+      case "NO_SHOW":
+        return "rounded-full border-transparent bg-destructive px-2.5 text-[11px] font-semibold text-white";
+      case "TEMPORARY_HOLD":
+        return "rounded-full border-transparent bg-violet-600 px-2.5 text-[11px] font-semibold text-white";
+      default: {
+        const _exhaustive: never = status;
+        return _exhaustive;
+      }
+    }
+  })();
+  return (
+    <Badge className={className}>
+      {status === "TEMPORARY_HOLD" ? "Hold" : humanize(status)}
+    </Badge>
+  );
+}
+
+function formatCompactTime(iso: string): string {
+  return formatLagosTime(iso);
+}
+
+function formatCompactDate(iso: string): string {
+  return format(parseYmd(lagosYmd(iso)), "MMM d");
+}
+
+/** Monday–Sunday week containing Lagos YMD. */
+function weekRangeContaining(ymd: string): { from: string; to: string } {
+  const day = parseYmd(ymd);
+  const mondayOffset = (day.getDay() + 6) % 7;
+  const from = addDays(day, -mondayOffset);
+  return { from: toYmd(from), to: toYmd(addDays(from, 6)) };
+}
+
+function formatWeekRangeLabel(from: string, to: string): string {
+  return `${format(parseYmd(from), "MMM d, yyyy")} – ${format(parseYmd(to), "MMM d, yyyy")}`;
+}
+
+function pageItems(current: number, total: number): Array<number | "ellipsis"> {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const items: Array<number | "ellipsis"> = [1];
+  const start = Math.max(2, current - 1);
+  const end = Math.min(total - 1, current + 1);
+  if (start > 2) items.push("ellipsis");
+  for (let p = start; p <= end; p++) items.push(p);
+  if (end < total - 1) items.push("ellipsis");
+  items.push(total);
+  return items;
+}
+
+function monthMatrix(ymd: string): Array<Array<string | null>> {
+  const start = startOfMonth(parseYmd(ymd.slice(0, 7) + "-01"));
+  const days = getDaysInMonth(start);
+  const firstWeekday = (start.getDay() + 6) % 7; // Mon=0
+  const cells: Array<string | null> = [];
+  for (let i = 0; i < firstWeekday; i++) cells.push(null);
+  for (let d = 1; d <= days; d++) {
+    cells.push(toYmd(addDays(start, d - 1)));
+  }
+  while (cells.length % 7 !== 0) cells.push(null);
+  const rows: Array<Array<string | null>> = [];
+  for (let i = 0; i < cells.length; i += 7) rows.push(cells.slice(i, i + 7));
+  return rows;
+}
+
+function packageMeta(pkg: BookingRecord["package"]): string {
+  const parts: string[] = [`${pkg.durationMinutes} min`];
+  if (pkg.backdropCount) parts.push(`${pkg.backdropCount} backdrop${pkg.backdropCount === 1 ? "" : "s"}`);
+  if (pkg.editedPhotoCount) parts.push(`${pkg.editedPhotoCount} photos`);
+  return parts.join(" · ");
+}
+
+/** Reference table package line: "1 outfit, 15 min". */
+function packageBoardMeta(pkg: BookingRecord["package"]): string {
+  const parts: string[] = [];
+  if (pkg.outfitCount) {
+    parts.push(`${pkg.outfitCount} outfit${pkg.outfitCount === 1 ? "" : "s"}`);
+  }
+  parts.push(`${pkg.durationMinutes} min`);
+  return parts.join(", ");
 }
 
 export function AdminBookingsPage() {
   const api = useAdminApi();
   const { user } = useAuth();
-  const { hoursWeekday, hoursSunday } = useSiteInfo();
-  const manage = canManageBookings(user?.role);
   const [params, setParams] = useSearchParams();
+  const today = lagosToday();
+
+  const selectedDate = params.get("date") && /^\d{4}-\d{2}-\d{2}$/.test(params.get("date")!)
+    ? params.get("date")!
+    : today;
   const selectedId = params.get("id");
+  const q = (params.get("q") ?? "").trim();
+  const statusTab = (params.get("tab") as StatusTab) || "ALL";
 
-  const [view, setView] = useState<"agenda" | "day" | "week">("agenda");
-  const [calendarMode, setCalendarMode] = useState<"day" | "week">("day");
-  const [cursor, setCursor] = useState(lagosToday);
-  const [statusFilter, setStatusFilter] = useState<BookingStatus | "">("");
-  const [showQuiet, setShowQuiet] = useState(false);
-  const [q, setQ] = useState("");
-  const [newOpen, setNewOpen] = useState(false);
+  const [monthCursor, setMonthCursor] = useState(() => selectedDate.slice(0, 7) + "-01");
+  const [stats, setStats] = useState<BookingsDeskStats | null>(null);
+  const [rows, setRows] = useState<BookingRecord[]>([]);
+  const [packages, setPackages] = useState<PackageOption[]>([]);
   const [detail, setDetail] = useState<BookingRecord | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [serviceFilter, setServiceFilter] = useState<string>("all");
+  const [packageFilter, setPackageFilter] = useState<string>("all");
+  const [paymentFilter, setPaymentFilter] = useState<string>("all");
   const [notesDraft, setNotesDraft] = useState("");
-  const [payOpen, setPayOpen] = useState(false);
-  const [payAmount, setPayAmount] = useState<number | null>(null);
-  const [rescheduleOpen, setRescheduleOpen] = useState(false);
-  const [rescheduleDate, setRescheduleDate] = useState(lagosToday);
-  const [rescheduleSlot, setRescheduleSlot] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [markPaidOpen, setMarkPaidOpen] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
 
-  const range = useMemo(() => {
-    if (view === "week") {
-      const days = weekOf(cursor);
-      return { from: days[0], to: days[6], days };
-    }
-    if (view === "agenda") {
-      const days = Array.from({ length: AGENDA_DAYS }, (_, i) => addYmdDays(cursor, i));
-      return { from: days[0]!, to: days[AGENDA_DAYS - 1]!, days };
-    }
-    return { from: cursor, to: cursor, days: [cursor] };
-  }, [cursor, view]);
+  const canMutate = hasDeskPermission(user, "bookings") && (user?.role === "OWNER" || user?.role === "ADMIN");
 
-  const listQuery = useQuery(
-    () => api.bookings.range({ from: range.from, to: range.to, status: statusFilter, q: q.trim() || undefined }),
-    [range.from, range.to, statusFilter, q],
+  const setParam = useCallback(
+    (patch: Record<string, string | null>) => {
+      setParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          for (const [key, value] of Object.entries(patch)) {
+            if (value == null || value === "") next.delete(key);
+            else next.set(key, value);
+          }
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setParams],
   );
 
-  const packagesQuery = useQuery(() => api.bookings.packages(), [], { enabled: manage });
+  const monthStart = monthCursor.slice(0, 7) + "-01";
+  const monthEnd = toYmd(addDays(startOfMonth(parseYmd(monthStart)), getDaysInMonth(parseYmd(monthStart)) - 1));
+
+  const loadList = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [statsRes, listRes, pkgs] = await Promise.all([
+        api.bookings.stats(),
+        api.bookings.range({
+          from: monthStart,
+          to: monthEnd,
+          q: q || undefined,
+        }),
+        api.bookings.packages(),
+      ]);
+      setStats(statsRes);
+      setRows(listRes);
+      setPackages(pkgs);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) return;
+      setError(errorMessage(err));
+      setRows([]);
+      setStats(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [api, monthEnd, monthStart, q]);
+
+  useEffect(() => {
+    void loadList();
+  }, [loadList]);
+
+  useEffect(() => {
+    setMonthCursor(selectedDate.slice(0, 7) + "-01");
+  }, [selectedDate]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [selectedDate, statusTab, serviceFilter, packageFilter, paymentFilter, q]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -376,754 +326,722 @@ export function AdminBookingsPage() {
       return;
     }
     let cancelled = false;
-    void (async () => {
-      try {
-        const row = await api.bookings.get(selectedId);
+    setDetailLoading(true);
+    void api.bookings
+      .get(selectedId)
+      .then((b) => {
         if (!cancelled) {
-          setDetail(row);
-          setNotesDraft(row.notes ?? "");
+          setDetail(b);
+          setNotesDraft(b.notes ?? "");
+          setEditingNotes(false);
         }
-      } catch (err) {
-        if (!cancelled) toast.error(errorMessage(err, "Could not load booking"));
-      }
-    })();
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          toast.error(errorMessage(err));
+          setParam({ id: null });
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setDetailLoading(false);
+      });
     return () => {
       cancelled = true;
     };
-  }, [api, selectedId]);
+  }, [api, selectedId, setParam]);
 
-  function openBooking(id: string) {
-    setParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.set("id", id);
-      return next;
+  const weekRange = useMemo(() => weekRangeContaining(selectedDate), [selectedDate]);
+
+  const weekRows = useMemo(
+    () =>
+      rows.filter((b) => {
+        const y = lagosYmd(b.startTime);
+        return y >= weekRange.from && y <= weekRange.to;
+      }),
+    [rows, weekRange.from, weekRange.to],
+  );
+
+  const filtered = useMemo(() => {
+    return weekRows.filter((b) => {
+      if (statusTab !== "ALL" && b.status !== statusTab) return false;
+      if (serviceFilter !== "all" && b.package.service?.id !== serviceFilter) return false;
+      if (packageFilter !== "all" && b.package.id !== packageFilter) return false;
+      const pay = paymentDisplay(b);
+      if (paymentFilter !== "all" && pay !== paymentFilter) return false;
+      return true;
     });
-  }
+  }, [weekRows, statusTab, serviceFilter, packageFilter, paymentFilter]);
 
-  function closeDetail() {
-    setParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.delete("id");
-      return next;
-    });
-    setDetail(null);
-  }
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount);
+  const pageRows = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
-  async function refresh() {
-    await listQuery.refetch();
-    if (selectedId) {
-      const row = await api.bookings.get(selectedId);
-      setDetail(row);
-      setNotesDraft(row.notes ?? "");
+  const services = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of packages) {
+      if (p.service) map.set(p.service.id, p.service.name);
     }
-  }
+    return [...map.entries()].map(([id, name]) => ({ id, name }));
+  }, [packages]);
+
+  const packageOptions = useMemo(() => {
+    if (serviceFilter === "all") return packages;
+    return packages.filter((p) => p.serviceId === serviceFilter || p.service?.id === serviceFilter);
+  }, [packages, serviceFilter]);
+
+  const daysWithBookings = useMemo(() => {
+    const set = new Set(rows.map((b) => lagosYmd(b.startTime)));
+    return set;
+  }, [rows]);
 
   async function saveNotes() {
     if (!detail) return;
-    setBusy(true);
-    try {
-      await api.bookings.update(detail.id, { notes: notesDraft });
-      toast.success("Notes saved");
-      await refresh();
-    } catch (err) {
-      toast.error(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
+    const updated = await api.bookings.update(detail.id, { notes: notesDraft });
+    setDetail(updated);
+    setEditingNotes(false);
+    toast.success("Notes saved");
+    await loadList();
   }
 
-  async function setStatus(status: "COMPLETED" | "NO_SHOW" | "CANCELLED") {
+  async function confirmMarkPaid() {
     if (!detail) return;
-    setBusy(true);
-    try {
-      await api.bookings.setStatus(detail.id, status);
-      toast.success(`Marked ${status.toLowerCase().replace("_", " ")}`);
-      await refresh();
-    } catch (err) {
-      toast.error(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
+    const updated = await api.bookings.recordPayment(detail.id);
+    setDetail(updated);
+    await loadList();
   }
 
-  const rescheduleSlotsQuery = useQuery(
-    () =>
-      api.bookings.availability(
-        rescheduleDate,
-        detail?.package.durationMinutes ?? 60,
-      ),
-    [rescheduleDate, detail?.package.durationMinutes],
-    { enabled: rescheduleOpen && !!detail },
-  );
+  async function confirmCancel() {
+    if (!detail) return;
+    const updated = await api.bookings.setStatus(detail.id, "CANCELLED");
+    setDetail(updated);
+    await loadList();
+  }
 
-  useEffect(() => {
-    const first = rescheduleSlotsQuery.data?.slots[0] ?? "";
-    setRescheduleSlot((cur) => (rescheduleSlotsQuery.data?.slots.includes(cur) ? cur : first));
-  }, [rescheduleSlotsQuery.data]);
-
-  const bookingsByDay = useMemo(() => {
-    const map = new Map<string, BookingRecord[]>();
-    for (const day of range.days) map.set(day, []);
-    for (const b of listQuery.data ?? []) {
-      const key = lagosYmd(b.startTime);
-      const list = map.get(key);
-      if (list) list.push(b);
-    }
-    for (const list of map.values()) {
-      list.sort((a, b) => a.startTime.localeCompare(b.startTime));
-    }
-    return map;
-  }, [listQuery.data, range.days]);
-
-  const agendaGroups = useMemo(() => {
-    const today = lagosToday();
-    const searching = Boolean(q.trim()) || Boolean(statusFilter);
-    const includeQuiet = showQuiet || searching;
-    const groups: Array<{ day: string; live: BookingRecord[]; quiet: BookingRecord[] }> = [];
-    for (const day of range.days) {
-      const rows = bookingsByDay.get(day) ?? [];
-      const live = rows.filter((b) => !isQuietBooking(b));
-      const quiet = rows.filter((b) => isQuietBooking(b));
-      if (live.length === 0 && (quiet.length === 0 || !includeQuiet)) continue;
-      groups.push({ day, live, quiet: includeQuiet ? quiet : [] });
-    }
-    return { groups, today, quietHidden: !includeQuiet };
-  }, [bookingsByDay, range.days, q, statusFilter, showQuiet]);
-
-  const navStep = view === "agenda" ? AGENDA_DAYS : view === "week" ? 7 : 1;
-  const pageTab = view === "agenda" ? "agenda" : "calendar";
+  const monthLabel = format(parseYmd(monthStart), "MMMM yyyy");
+  const canMarkPaid =
+    canMutate && detail?.status === "PENDING" && paymentDisplay(detail) !== "PAID";
 
   return (
-    <div className="space-y-admin">
-      <PageHeader
-        title="Bookings"
-        description={`Mon–Sat ${hoursWeekday} · Sunday ${hoursSunday} · Africa/Lagos`}
-        actions={
-          manage ? (
-            <Button className="w-full sm:w-auto" onClick={() => setNewOpen(true)}>
-              <CalendarPlus />
-              New reservation
-            </Button>
-          ) : null
-        }
-      />
-
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex flex-wrap items-center gap-2">
-            <Tabs
-              value={pageTab}
-              onValueChange={(v) => setView(v === "agenda" ? "agenda" : calendarMode)}
-            >
-              <TabsList>
-                <TabsTrigger value="agenda">Agenda</TabsTrigger>
-                <TabsTrigger value="calendar">
-                  <CalendarDays className="h-3.5 w-3.5" /> Calendar
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
-            {pageTab === "calendar" ? (
-              <Tabs value={calendarMode} onValueChange={(v) => {
-                const mode = v as "day" | "week";
-                setCalendarMode(mode);
-                setView(mode);
-              }}>
-                <TabsList className="h-8">
-                  <TabsTrigger value="day" className="h-6 px-2.5 text-xs">Day</TabsTrigger>
-                  <TabsTrigger value="week" className="h-6 px-2.5 text-xs">Week</TabsTrigger>
-                </TabsList>
-              </Tabs>
-            ) : null}
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {pageTab === "calendar" ? (
-              <>
-                <div className="inline-flex items-center rounded-lg border border-border/70 bg-card">
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => setCursor((c) => addYmdDays(c, -navStep))}
-                    aria-label="Previous"
-                  >
-                    <ChevronLeft />
-                  </Button>
-                  <span className="min-w-[8.75rem] px-1 text-center text-sm font-medium tabular-nums">
-                    {view === "week"
-                      ? `${formatYmd(range.from, "d MMM")} – ${formatYmd(range.to, "d MMM")}`
-                      : formatYmd(cursor, "EEE d MMM")}
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => setCursor((c) => addYmdDays(c, navStep))}
-                    aria-label="Next"
-                  >
-                    <ChevronRight />
-                  </Button>
-                </div>
-                <Button variant="outline" size="sm" onClick={() => setCursor(lagosToday)}>
-                  Today
-                </Button>
-              </>
-            ) : (
-              <>
-                <Button
-                  variant="outline"
-                  size="icon-sm"
-                  onClick={() => setCursor((c) => addYmdDays(c, -navStep))}
-                  aria-label="Previous"
-                >
-                  <ChevronLeft />
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => setCursor(lagosToday)}>
-                  Today
-                </Button>
-                <Button
-                  variant="outline"
-                  size="icon-sm"
-                  onClick={() => setCursor((c) => addYmdDays(c, navStep))}
-                  aria-label="Next"
-                >
-                  <ChevronRight />
-                </Button>
-                <span className="text-sm font-medium">
-                  {`${formatYmd(range.from, "d MMM")} – ${formatYmd(range.to, "d MMM yyyy")}`}
-                </span>
-              </>
-            )}
-          </div>
+    <div className="pa-bookings space-y-admin-stack">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="font-display text-3xl font-normal tracking-tight text-foreground sm:text-[2rem]">
+            Bookings
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Manage all studio bookings, view details, and update statuses.
+          </p>
         </div>
+      </header>
 
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <div className="relative min-w-0 flex-1 sm:max-w-sm">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search name, phone, reference…"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              className="pl-8"
-              aria-label="Search bookings"
-            />
-          </div>
-          <Select value={statusFilter || "all"} onValueChange={(v) => setStatusFilter(v === "all" ? "" : (v as BookingStatus))}>
-            <SelectTrigger className="sm:w-48" aria-label="Filter by status">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All statuses</SelectItem>
-              {BOOKING_STATUSES.map((s) => (
-                <SelectItem key={s} value={s}>
-                  {s === "TEMPORARY_HOLD" ? "Hold" : s.replace("_", " ")}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {statusFilter ? null : (
-            <label className="flex min-h-9 cursor-pointer items-center gap-2 text-sm text-muted-foreground">
-              <Switch checked={showQuiet} onCheckedChange={setShowQuiet} aria-label="Show holds and cancelled" />
-              Holds & cancelled
-            </label>
-          )}
+      <ErrorBanner message={error} onRetry={() => void loadList()} retrying={loading} />
+
+      <section className="grid gap-admin-gap sm:grid-cols-2 xl:grid-cols-4" aria-label="Booking metrics">
+        <StatCard
+          label="Total Bookings"
+          icon={CalendarPlus}
+          tone="primary"
+          loading={loading}
+          value={stats?.totalLast30.count ?? "—"}
+          hint={
+            stats
+              ? pctHint(stats.totalLast30.deltaPct, `${stats.totalLast30.count} in last 30 days`)
+              : undefined
+          }
+        />
+        <StatCard
+          label="Today's Bookings"
+          icon={CalendarIcon}
+          loading={loading}
+          value={stats?.today.count ?? "—"}
+          hint={stats ? `${signedDelta(stats.today.delta)} from yesterday` : undefined}
+        />
+        <StatCard
+          label="Today's Revenue"
+          tone="success"
+          loading={loading}
+          value={stats ? formatNairaFromKobo(stats.todayRevenue.totalKobo) : "—"}
+          hint={
+            stats
+              ? revenueHint(stats.todayRevenue.deltaPct, stats.todayRevenue.deltaKobo)
+              : undefined
+          }
+        />
+        <StatCard
+          label="Pending / Unpaid"
+          icon={AlertTriangle}
+          tone="warning"
+          loading={loading}
+          value={stats?.unpaid.count ?? "—"}
+          hint="Needs attention"
+        />
+      </section>
+
+      <div className="flex flex-col gap-3 border-b border-border sm:flex-row sm:items-center sm:justify-between">
+        <Tabs
+          value={statusTab}
+          onValueChange={(v) => setParam({ tab: v === "ALL" ? null : v })}
+          className="min-w-0 flex-1"
+        >
+          <TabsList className="h-auto w-full flex-wrap justify-start gap-0 rounded-none border-0 bg-transparent p-0">
+            {STATUS_TABS.map((tab) => (
+              <TabsTrigger
+                key={tab.id}
+                value={tab.id}
+                className="rounded-none border-b-2 border-transparent px-3 py-3 text-sm text-muted-foreground shadow-none data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none"
+              >
+                {tab.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+        <div
+          className="mb-px inline-flex shrink-0 items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground"
+          aria-label={`Week range ${formatWeekRangeLabel(weekRange.from, weekRange.to)}`}
+        >
+          <CalendarIcon className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
+          <span className="tabular-nums">{formatWeekRangeLabel(weekRange.from, weekRange.to)}</span>
         </div>
       </div>
 
-      <ErrorBanner message={listQuery.error} onRetry={() => void listQuery.refetch()} retrying={listQuery.fetching} />
-
-      {view === "agenda" ? (
-        <AgendaList
-          loading={listQuery.loading}
-          groups={agendaGroups.groups}
-          today={agendaGroups.today}
-          quietHidden={agendaGroups.quietHidden}
-          onOpen={openBooking}
-        />
-      ) : (
-        <CalendarBoard
-          days={range.days}
-          week={view === "week"}
-          today={agendaGroups.today}
-          loading={listQuery.loading}
-          bookingsByDay={bookingsByDay}
-          quietHidden={agendaGroups.quietHidden}
-          onOpen={openBooking}
-        />
-      )}
-
-      <Sheet open={!!selectedId} onOpenChange={(open) => !open && closeDetail()}>
-        <SheetContent className="sm:max-w-lg">
-          {!detail ? (
-            <div className="space-y-3 pt-8">
-              <Skeleton className="h-6 w-40" />
-              <Skeleton className="h-24 w-full" />
-            </div>
-          ) : (
-            <>
-              <SheetHeader>
-                <SheetTitle>{detail.customer.name}</SheetTitle>
-                <SheetDescription>
-                  {formatLagosDateTime(detail.startTime)} · {packageLabel(detail)}
-                </SheetDescription>
-              </SheetHeader>
-              <div className="mt-4 space-y-4">
-                <div className="flex flex-wrap gap-2">
-                  <BookingStatusBadge status={detail.status} />
-                  <span className="text-xs text-muted-foreground">{detail.source}</span>
-                  {detail.reference ? (
-                    <span className="rounded bg-muted px-2 py-0.5 font-mono text-[11px]">{detail.reference}</span>
-                  ) : null}
-                </div>
-                <div className="grid gap-1 text-sm">
-                  <p>
-                    <span className="text-muted-foreground">Phone:</span> {detail.customer.phone}
-                  </p>
-                  <p>
-                    <span className="text-muted-foreground">Email:</span> {detail.customer.email || "—"}
-                  </p>
-                  <p>
-                    <span className="text-muted-foreground">Amount:</span>{" "}
-                    {detail.amountKobo != null ? formatNairaFromKobo(detail.amountKobo) : "—"}
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Notes</Label>
-                  <Textarea value={notesDraft} onChange={(e) => setNotesDraft(e.target.value)} rows={3} disabled={!manage} />
-                  {manage ? (
-                    <Button size="sm" onClick={() => void saveNotes()} loading={busy}>
-                      Save notes
-                    </Button>
-                  ) : null}
-                </div>
-
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Payments</p>
-                  {detail.payments.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No payments recorded</p>
-                  ) : (
-                    detail.payments.map((p) => (
-                      <div key={p.id} className="flex items-center justify-between rounded border border-border px-3 py-3 text-sm">
-                        <span>
-                          {formatNairaFromKobo(p.amountKobo)} · {p.method === "STUDIO" ? "Studio" : "Online"}
-                        </span>
-                        <PaymentStatusBadge status={p.status} />
-                      </div>
-                    ))
-                  )}
-                </div>
-
-                {manage ? (
-                  <div className="flex flex-wrap gap-2 border-t border-border pt-4">
-                    <Button size="sm" onClick={() => { setPayAmount(detail.amountKobo ?? null); setPayOpen(true); }}>
-                      Record payment
-                    </Button>
-                    <Button size="sm" variant="secondary" onClick={() => { setRescheduleDate(lagosYmd(detail.startTime)); setRescheduleOpen(true); }}>
-                      Reschedule
-                    </Button>
-                    <Button size="sm" variant="outline" disabled={busy} onClick={() => void setStatus("COMPLETED")}>
-                      Complete
-                    </Button>
-                    <Button size="sm" variant="outline" disabled={busy} onClick={() => void setStatus("NO_SHOW")}>
-                      No-show
-                    </Button>
-                    <ConfirmDialog
-                      title="Cancel booking?"
-                      description="This marks the session cancelled. Holds and pending payments may be affected."
-                      confirmLabel="Cancel booking"
-                      destructive
-                      successMessage="Booking cancelled"
-                      onConfirm={() => api.bookings.setStatus(detail.id, "CANCELLED").then(() => refresh())}
-                      trigger={
-                        <Button size="sm" variant="destructive">
-                          Cancel
-                        </Button>
-                      }
-                    />
-                  </div>
-                ) : null}
-              </div>
-            </>
-          )}
-        </SheetContent>
-      </Sheet>
-
-      <Dialog open={payOpen} onOpenChange={setPayOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Record studio payment</DialogTitle>
-            <DialogDescription>Optional amount override in naira.</DialogDescription>
-          </DialogHeader>
-          <FormField label="Amount">
-            {(c) => <MoneyInput id={c.id} valueKobo={payAmount} onChangeKobo={setPayAmount} />}
-          </FormField>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPayOpen(false)}>
-              Close
-            </Button>
-            <Button
-              loading={busy}
-              onClick={() => {
-                if (!detail) return;
-                setBusy(true);
-                void api.bookings
-                  .recordPayment(detail.id, payAmount != null ? { amountKobo: payAmount } : undefined)
-                  .then(() => {
-                    toast.success("Payment recorded");
-                    setPayOpen(false);
-                    return refresh();
-                  })
-                  .catch((err) => toast.error(errorMessage(err)))
-                  .finally(() => setBusy(false));
-              }}
-            >
-              Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={rescheduleOpen} onOpenChange={setRescheduleOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Reschedule</DialogTitle>
-            <DialogDescription>
-              Moving a booking records a <strong>15% reschedule fee</strong> as a pending studio payment.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <FormField label="Date">
-              {(c) => (
-                <Input
-                  id={c.id}
-                  type="date"
-                  value={rescheduleDate}
-                  onChange={(e) => setRescheduleDate(e.target.value)}
-                />
-              )}
-            </FormField>
-            <FormField label="Start time">
-              {(c) => (
-                <Select value={rescheduleSlot} onValueChange={setRescheduleSlot}>
-                  <SelectTrigger id={c.id}>
-                    <SelectValue placeholder="Pick a slot" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(rescheduleSlotsQuery.data?.slots ?? []).map((iso) => (
-                      <SelectItem key={iso} value={iso}>
-                        {formatLagosTime(iso)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            </FormField>
-            {rescheduleSlotsQuery.error ? <p className="text-sm text-destructive">{rescheduleSlotsQuery.error}</p> : null}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRescheduleOpen(false)}>
-              Close
-            </Button>
-            <Button
-              loading={busy}
-              disabled={!rescheduleSlot}
-              onClick={() => {
-                if (!detail || !rescheduleSlot) return;
-                setBusy(true);
-                void api.bookings
-                  .reschedule(detail.id, rescheduleSlot)
-                  .then(() => {
-                    toast.success("Rescheduled (15% fee pending)");
-                    setRescheduleOpen(false);
-                    return refresh();
-                  })
-                  .catch((err) => toast.error(errorMessage(err)))
-                  .finally(() => setBusy(false));
-              }}
-            >
-              Confirm reschedule
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {manage ? (
-        <NewReservationDialog
-          open={newOpen}
-          onOpenChange={setNewOpen}
-          packages={packagesQuery.data ?? []}
-          onCreated={async (id) => {
-            setNewOpen(false);
-            await listQuery.refetch();
-            openBooking(id);
-          }}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-function AgendaList({
-  loading,
-  groups,
-  today,
-  quietHidden,
-  onOpen,
-}: {
-  loading: boolean;
-  groups: Array<{ day: string; live: BookingRecord[]; quiet: BookingRecord[] }>;
-  today: string;
-  quietHidden: boolean;
-  onOpen: (id: string) => void;
-}) {
-  if (loading) {
-    return (
-      <div className="space-y-3">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <Skeleton key={i} className="h-16 w-full rounded-xl" />
-        ))}
-      </div>
-    );
-  }
-
-  if (groups.length === 0) {
-    return (
-      <EmptyState
-        icon={CalendarDays}
-        title="No sessions in this window"
-        description={
-          quietHidden
-            ? "Holds and cancelled bookings are hidden. Turn them on, search, or pick another date."
-            : "Nothing is booked in this range. Create a reservation or move the date window."
-        }
-      />
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      {groups.map((group) => (
-        <section key={group.day} className="space-y-2">
-          <h2 className="px-1 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-            {dayHeading(group.day, today)}
-          </h2>
-          <div className="overflow-hidden rounded-xl border border-border bg-card">
-            <div className="hidden border-b border-border bg-muted/40 px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground md:grid md:grid-cols-[5.5rem_minmax(0,1.1fr)_minmax(0,1.4fr)_7.5rem_7rem_5.5rem] md:gap-3">
-              <span>Time</span>
-              <span>Customer</span>
-              <span>Package</span>
-              <span>Payment</span>
-              <span>Status</span>
-              <span className="text-right">Action</span>
-            </div>
-            <ul>
-              {group.live.map((booking) => (
-                <AgendaRow key={booking.id} booking={booking} onOpen={onOpen} />
-              ))}
-              {group.quiet.map((booking) => (
-                <AgendaRow key={booking.id} booking={booking} onOpen={onOpen} quiet />
-              ))}
-            </ul>
-          </div>
-        </section>
-      ))}
-    </div>
-  );
-}
-
-function AgendaRow({
-  booking,
-  onOpen,
-  quiet = false,
-}: {
-  booking: BookingRecord;
-  onOpen: (id: string) => void;
-  quiet?: boolean;
-}) {
-  const pay = paymentSummary(booking);
-  return (
-    <li>
-      <button
-        type="button"
-        onClick={() => onOpen(booking.id)}
+      <div
         className={cn(
-          "grid w-full gap-1 border-t border-border px-4 py-3 text-left transition-colors first:border-t-0 hover:bg-muted/40 md:grid-cols-[5.5rem_minmax(0,1.1fr)_minmax(0,1.4fr)_7.5rem_7rem_5.5rem] md:items-center md:gap-3",
-          quiet && "bg-muted/20 text-muted-foreground",
+          "grid gap-admin-stack",
+          detail || detailLoading
+            ? "xl:grid-cols-[17.5rem_minmax(0,1fr)_20rem]"
+            : "xl:grid-cols-[17.5rem_minmax(0,1fr)]",
         )}
       >
-        <p className="font-medium tabular-nums text-foreground">{formatLagosTime(booking.startTime)}</p>
-        <div className="min-w-0">
-          <p className={cn("truncate font-medium", quiet ? "text-muted-foreground" : "text-foreground")}>
-            {booking.customer.name}
-          </p>
-          <p className="truncate text-xs text-muted-foreground md:hidden">{packageLabel(booking)}</p>
-        </div>
-        <p className="hidden min-w-0 truncate text-sm text-muted-foreground md:block">{packageLabel(booking)}</p>
-        <div className="flex flex-wrap items-center gap-2 text-sm md:block">
-          <span className="tabular-nums">{pay.amount}</span>
-          <span className="text-xs text-muted-foreground">{pay.label}</span>
-        </div>
-        <div>
-          <BookingStatusBadge status={booking.status} className={cn(quiet && "opacity-80")} />
-        </div>
-        <span className="hidden items-center justify-end gap-1 text-sm font-medium text-primary md:inline-flex">
-          Open
-          <OpenIcon className="h-3.5 w-3.5" />
-        </span>
-      </button>
-    </li>
-  );
-}
+        <aside className="space-y-admin-stack-sm">
+          <Card className="overflow-hidden">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 p-admin-card-sm pb-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Previous month"
+                onClick={() =>
+                  setMonthCursor(toYmd(addDays(startOfMonth(parseYmd(monthStart)), -1)))
+                }
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <CardTitle className="text-sm font-medium">{monthLabel}</CardTitle>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Next month"
+                onClick={() =>
+                  setMonthCursor(
+                    toYmd(addDays(startOfMonth(parseYmd(monthStart)), getDaysInMonth(parseYmd(monthStart)))),
+                  )
+                }
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </CardHeader>
+            <CardContent className="p-admin-card-sm pt-0">
+              <div className="mb-1 grid grid-cols-7 gap-0.5 text-center text-[10px] font-medium text-muted-foreground">
+                {["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map((d) => (
+                  <span key={d}>{d}</span>
+                ))}
+              </div>
+              <div className="grid grid-cols-7 gap-0.5">
+                {monthMatrix(monthStart).flatMap((week, wi) =>
+                  week.map((day, di) => {
+                    if (!day) return <span key={`${wi}-${di}`} className="h-8" />;
+                    const isSelected = day === selectedDate;
+                    const isToday = day === today;
+                    const inWeek = day >= weekRange.from && day <= weekRange.to;
+                    const has = daysWithBookings.has(day);
+                    return (
+                      <button
+                        key={day}
+                        type="button"
+                        onClick={() => setParam({ date: day, id: null })}
+                        className={cn(
+                          "relative flex h-8 cursor-pointer items-center justify-center text-xs tabular-nums transition-colors",
+                          isSelected
+                            ? "rounded-full bg-primary font-semibold text-primary-foreground"
+                            : "rounded-full text-foreground hover:bg-muted/50",
+                          inWeek && !isSelected && "bg-primary/10",
+                          isToday && !isSelected && "ring-1 ring-primary/40",
+                        )}
+                      >
+                        {Number(day.slice(8))}
+                        {has && !isSelected ? (
+                          <span className="absolute bottom-0.5 h-1 w-1 rounded-full bg-primary" />
+                        ) : null}
+                      </button>
+                    );
+                  }),
+                )}
+              </div>
+            </CardContent>
+          </Card>
 
-function NewReservationDialog({
-  open,
-  onOpenChange,
-  packages,
-  onCreated,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  packages: Array<{
-    id: string;
-    name: string;
-    durationMinutes: number;
-    service: { name: string };
-  }>;
-  onCreated: (id: string) => Promise<void>;
-}) {
-  const api = useAdminApi();
-  const [customerName, setCustomerName] = useState("");
-  const [customerPhone, setCustomerPhone] = useState("");
-  const [customerEmail, setCustomerEmail] = useState("");
-  const [packageId, setPackageId] = useState("");
-  const [date, setDate] = useState(lagosToday);
-  const [startTime, setStartTime] = useState("");
-  const [source, setSource] = useState<"WALK_IN" | "ADMIN">("WALK_IN");
-  const [notes, setNotes] = useState("");
-  const [pending, setPending] = useState(false);
-
-  const selected = packages.find((p) => p.id === packageId) ?? packages[0];
-
-  useEffect(() => {
-    if (open && packages[0] && !packageId) setPackageId(packages[0].id);
-  }, [open, packages, packageId]);
-
-  const slotsQuery = useQuery(
-    () => api.bookings.availability(date, selected?.durationMinutes ?? 60),
-    [date, selected?.durationMinutes],
-    { enabled: open && !!selected },
-  );
-
-  useEffect(() => {
-    const first = slotsQuery.data?.slots[0] ?? "";
-    setStartTime((cur) => (slotsQuery.data?.slots.includes(cur) ? cur : first));
-  }, [slotsQuery.data]);
-
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
-    if (!selected || !startTime) return;
-    setPending(true);
-    try {
-      const created = await api.bookings.create({
-        customerName,
-        customerPhone,
-        customerEmail: customerEmail || undefined,
-        packageId: selected.id,
-        startTime,
-        source,
-        notes: notes || undefined,
-      });
-      toast.success("Reservation created");
-      setCustomerName("");
-      setCustomerPhone("");
-      setCustomerEmail("");
-      setNotes("");
-      await onCreated(created.id);
-    } catch (err) {
-      toast.error(errorMessage(err));
-    } finally {
-      setPending(false);
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>New reservation</DialogTitle>
-          <DialogDescription>Walk-in or desk booking for an available Lagos slot.</DialogDescription>
-        </DialogHeader>
-        <form className="space-y-4" onSubmit={onSubmit}>
-          <FormField label="Customer name" required>
-            {(c) => <Input id={c.id} value={customerName} onChange={(e) => setCustomerName(e.target.value)} required />}
-          </FormField>
-          <FormField label="Phone" required>
-            {(c) => <Input id={c.id} value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} required />}
-          </FormField>
-          <FormField label="Email">
-            {(c) => <Input id={c.id} type="email" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} />}
-          </FormField>
-          <FormField label="Package" required>
-            {(c) => (
-              <Select value={selected?.id} onValueChange={setPackageId}>
-                <SelectTrigger id={c.id}>
-                  <SelectValue placeholder="Select package" />
+          <Card>
+            <CardHeader className="p-admin-card-sm pb-2">
+              <CardTitle className="text-sm font-medium">Quick Filters</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2.5 p-admin-card-sm pt-0">
+              <Select value={serviceFilter} onValueChange={(v) => { setServiceFilter(v); setPackageFilter("all"); }}>
+                <SelectTrigger aria-label="Filter by service" className="h-10">
+                  <SelectValue placeholder="All Services" />
                 </SelectTrigger>
                 <SelectContent>
-                  {packages.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.service.name} · {p.name} ({formatDuration(p.durationMinutes)})
+                  <SelectItem value="all">All Services</SelectItem>
+                  {services.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            )}
-          </FormField>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <FormField label="Date" required>
-              {(c) => <Input id={c.id} type="date" value={date} onChange={(e) => setDate(e.target.value)} required />}
-            </FormField>
-            <FormField label="Start" required>
-              {(c) => (
-                <Select value={startTime} onValueChange={setStartTime}>
-                  <SelectTrigger id={c.id}>
-                    <SelectValue placeholder="Slot" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(slotsQuery.data?.slots ?? []).map((iso) => (
-                      <SelectItem key={iso} value={iso}>
-                        {formatLagosTime(iso)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            </FormField>
-          </div>
-          <FormField label="Source">
-            {(c) => (
-              <Select value={source} onValueChange={(v) => setSource(v as "WALK_IN" | "ADMIN")}>
-                <SelectTrigger id={c.id}>
-                  <SelectValue />
+              <Select value={packageFilter} onValueChange={setPackageFilter}>
+                <SelectTrigger aria-label="Filter by package" className="h-10">
+                  <SelectValue placeholder="All Package Options" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="WALK_IN">Walk-in</SelectItem>
-                  <SelectItem value="ADMIN">Admin</SelectItem>
+                  <SelectItem value="all">All Package Options</SelectItem>
+                  {packageOptions.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
+              <Select value={paymentFilter} onValueChange={setPaymentFilter}>
+                <SelectTrigger aria-label="Filter by payment status" className="h-10">
+                  <SelectValue placeholder="All Payment Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Payment Status</SelectItem>
+                  <SelectItem value="PAID">Paid</SelectItem>
+                  <SelectItem value="UNPAID">Unpaid</SelectItem>
+                  <SelectItem value="PARTIAL">Partial</SelectItem>
+                </SelectContent>
+              </Select>
+            </CardContent>
+          </Card>
+        </aside>
+
+        <Card className="min-w-0 overflow-hidden">
+          <CardContent className="p-0">
+            {loading ? (
+              <div className="space-y-3 p-admin-card-sm" aria-busy>
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Skeleton key={i} className="h-14 w-full" />
+                ))}
+              </div>
+            ) : pageRows.length === 0 ? (
+              <EmptyState
+                compact
+                className="m-admin-card-sm border-0 bg-transparent"
+                title="No bookings"
+                description={
+                  q
+                    ? `No matches for “${q}” in this week.`
+                    : `Nothing scheduled for ${formatWeekRangeLabel(weekRange.from, weekRange.to)}.`
+                }
+              />
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Time
+                      </TableHead>
+                      <TableHead className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Customer
+                      </TableHead>
+                      <TableHead className="hidden text-[11px] font-semibold uppercase tracking-wide text-muted-foreground lg:table-cell">
+                        Service
+                      </TableHead>
+                      <TableHead className="hidden text-[11px] font-semibold uppercase tracking-wide text-muted-foreground md:table-cell">
+                        Package
+                      </TableHead>
+                      <TableHead className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Status
+                      </TableHead>
+                      <TableHead className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Payment
+                      </TableHead>
+                      <TableHead className="w-10" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {pageRows.map((row) => {
+                      const active = row.id === selectedId;
+                      return (
+                        <TableRow
+                          key={row.id}
+                          className={cn("cursor-pointer", active && "bg-muted/40")}
+                          onClick={() => setParam({ id: row.id })}
+                        >
+                          <TableCell>
+                            <div className="leading-tight">
+                              <p className="tabular-nums text-sm font-semibold">
+                                {formatCompactTime(row.startTime)}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {formatCompactDate(row.startTime)}
+                              </p>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex min-w-0 items-center gap-2.5">
+                              <Avatar className="h-8 w-8">
+                                <AvatarFallback className="text-[10px]">
+                                  {initials(row.customer.name)}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-medium">{row.customer.name}</p>
+                                <p className="truncate text-xs text-muted-foreground">
+                                  {row.customer.phone}
+                                </p>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="hidden max-w-[10rem] truncate text-sm lg:table-cell">
+                            {row.package.service?.name ?? "—"}
+                          </TableCell>
+                          <TableCell className="hidden max-w-[9rem] truncate text-sm text-muted-foreground md:table-cell">
+                            {packageBoardMeta(row.package)}
+                          </TableCell>
+                          <TableCell>
+                            <BoardStatusBadge status={row.status} />
+                          </TableCell>
+                          <TableCell>
+                            <PaymentPill status={paymentDisplay(row)} />
+                          </TableCell>
+                          <TableCell>
+                            <MoreHorizontal className="h-4 w-4 text-muted-foreground" aria-hidden />
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
             )}
-          </FormField>
-          <FormField label="Notes">
-            {(c) => <Textarea id={c.id} value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />}
-          </FormField>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+
+            {!loading && filtered.length > 0 ? (
+              <div className="flex flex-col gap-3 border-t border-border px-admin-card-sm py-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs text-muted-foreground">
+                  Showing {pageRows.length} of {filtered.length} booking
+                  {filtered.length === 1 ? "" : "s"}
+                </p>
+                <div className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    disabled={safePage <= 1}
+                    aria-label="Previous page"
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  {pageItems(safePage, pageCount).map((item, idx) =>
+                    item === "ellipsis" ? (
+                      <span
+                        key={`e-${idx}`}
+                        className="px-1.5 text-xs text-muted-foreground"
+                        aria-hidden
+                      >
+                        …
+                      </span>
+                    ) : (
+                      <button
+                        key={item}
+                        type="button"
+                        aria-label={`Page ${item}`}
+                        aria-current={item === safePage ? "page" : undefined}
+                        onClick={() => setPage(item)}
+                        className={cn(
+                          "flex h-7 w-7 cursor-pointer items-center justify-center rounded-full text-xs tabular-nums transition-colors",
+                          item === safePage
+                            ? "bg-primary font-semibold text-primary-foreground"
+                            : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                        )}
+                      >
+                        {item}
+                      </button>
+                    ),
+                  )}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    disabled={safePage >= pageCount}
+                    aria-label="Next page"
+                    onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+
+        {detailLoading || detail ? (
+          <BookingDetailPanel
+            loading={detailLoading}
+            booking={detail}
+            notesDraft={notesDraft}
+            editingNotes={editingNotes}
+            canMutate={canMutate}
+            canMarkPaid={Boolean(canMarkPaid)}
+            onClose={() => setParam({ id: null })}
+            onNotesChange={setNotesDraft}
+            onEditNotes={() => setEditingNotes(true)}
+            onCancelEditNotes={() => {
+              setEditingNotes(false);
+              setNotesDraft(detail?.notes ?? "");
+            }}
+            onSaveNotes={() => void saveNotes()}
+            onCancel={() => setCancelOpen(true)}
+            onMarkPaid={() => setMarkPaidOpen(true)}
+          />
+        ) : null}
+      </div>
+
+      <ConfirmDialog
+        open={markPaidOpen}
+        onOpenChange={setMarkPaidOpen}
+        title="Mark booking paid"
+        description={
+          detail ? (
+            <>
+              Record a studio payment of{" "}
+              <strong>
+                {formatNairaFromKobo(Math.max(0, amountDueKobo(detail) - paidSuccessKobo(detail)))}
+              </strong>{" "}
+              for {detail.customer.name}? This confirms the pending reservation.
+            </>
+          ) : null
+        }
+        confirmLabel="Mark Paid"
+        successMessage="Payment recorded"
+        onConfirm={confirmMarkPaid}
+      />
+
+      <ConfirmDialog
+        open={cancelOpen}
+        onOpenChange={setCancelOpen}
+        title="Cancel booking"
+        description={
+          detail ? (
+            <>
+              Cancel the session for <strong>{detail.customer.name}</strong>? This cannot be undone
+              by the customer.
+            </>
+          ) : null
+        }
+        confirmLabel="Cancel booking"
+        destructive
+        successMessage="Booking cancelled"
+        onConfirm={confirmCancel}
+      />
+    </div>
+  );
+}
+
+function BookingDetailPanel({
+  loading,
+  booking,
+  notesDraft,
+  editingNotes,
+  canMutate,
+  canMarkPaid,
+  onClose,
+  onNotesChange,
+  onEditNotes,
+  onCancelEditNotes,
+  onSaveNotes,
+  onCancel,
+  onMarkPaid,
+}: {
+  loading: boolean;
+  booking: BookingRecord | null;
+  notesDraft: string;
+  editingNotes: boolean;
+  canMutate: boolean;
+  canMarkPaid: boolean;
+  onClose: () => void;
+  onNotesChange: (v: string) => void;
+  onEditNotes: () => void;
+  onCancelEditNotes: () => void;
+  onSaveNotes: () => void;
+  onCancel: () => void;
+  onMarkPaid: () => void;
+}) {
+  if (loading || !booking) {
+    return (
+      <Card className="h-fit">
+        <CardContent className="space-y-3 p-admin-card-sm" aria-busy>
+          <Skeleton className="h-6 w-40" />
+          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-24 w-full" />
+          <Skeleton className="h-20 w-full" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const due = amountDueKobo(booking);
+  const paid = paidSuccessKobo(booking);
+  const payStatus = paymentDisplay(booking);
+  const discount =
+    booking.source === "ONLINE" && booking.package.priceKobo > due
+      ? booking.package.priceKobo - due
+      : 0;
+
+  return (
+    <Card className="h-fit">
+      <CardHeader className="flex flex-row items-start justify-between space-y-0 p-admin-card-sm">
+        <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <CardTitle className="font-display text-lg font-normal">Booking Details</CardTitle>
+            <BookingStatusBadge status={booking.status} />
+          </div>
+          <button
+            type="button"
+            className="cursor-pointer text-xs text-muted-foreground underline-offset-2 hover:underline"
+            onClick={onClose}
+          >
+            Back to list
+          </button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-5 p-admin-card-sm pt-0">
+        <div className="flex items-start gap-3">
+          <Avatar className="h-12 w-12">
+            <AvatarFallback>{initials(booking.customer.name)}</AvatarFallback>
+          </Avatar>
+          <div className="min-w-0">
+            <p className="font-medium">{booking.customer.name}</p>
+            <DetailLine icon={<Phone className="h-3.5 w-3.5" />} text={booking.customer.phone} />
+            {booking.customer.email ? (
+              <DetailLine icon={<Mail className="h-3.5 w-3.5" />} text={booking.customer.email} />
+            ) : null}
+          </div>
+        </div>
+
+        <div className="space-y-2 text-sm">
+          <DetailLine
+            icon={<CalendarIcon className="h-3.5 w-3.5" />}
+            text={formatLagosDate(booking.startTime)}
+          />
+          <DetailLine
+            icon={<CalendarIcon className="h-3.5 w-3.5" />}
+            text={`${formatLagosTime(booking.startTime)} – ${formatLagosTime(booking.endTime)}`}
+          />
+          <DetailLine
+            icon={<MapPin className="h-3.5 w-3.5" />}
+            text="Photo Arena Studio, Lagos, Nigeria"
+          />
+        </div>
+
+        <div className="rounded-xl border border-border bg-muted/20 p-3">
+          <p className="font-medium">{booking.package.service?.name ?? booking.package.name}</p>
+          {booking.package.outfitCount ? (
+            <Badge variant="outline" className="mt-1">
+              {booking.package.outfitCount} outfit{booking.package.outfitCount === 1 ? "" : "s"}
+            </Badge>
+          ) : null}
+          <p className="mt-2 text-xs text-muted-foreground">{packageMeta(booking.package)}</p>
+          <p className="mt-2 text-sm font-semibold tabular-nums">
+            {formatNairaFromKobo(booking.package.priceKobo)}
+          </p>
+        </div>
+
+        <div className="space-y-1.5 text-sm">
+          <div className="flex justify-between gap-2">
+            <span className="text-muted-foreground">Studio price</span>
+            <span className="tabular-nums">{formatNairaFromKobo(booking.package.priceKobo)}</span>
+          </div>
+          {discount > 0 ? (
+            <div className="flex justify-between gap-2">
+              <span className="text-muted-foreground">Online discount (5%)</span>
+              <span className="tabular-nums text-[var(--color-success)]">
+                −{formatNairaFromKobo(discount)}
+              </span>
+            </div>
+          ) : null}
+          <div className="flex items-center justify-between gap-2 border-t border-border pt-2">
+            <span className="font-medium">
+              {payStatus === "PAID" ? "Total paid" : "Amount due"}
+            </span>
+            <span className="flex items-center gap-2 font-semibold tabular-nums text-primary">
+              {formatNairaFromKobo(payStatus === "PAID" ? paid : Math.max(0, due - paid))}
+              <PaymentPill status={payStatus} />
+            </span>
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-1.5 flex items-center justify-between">
+            <p className="text-sm font-medium">Booking notes</p>
+            {canMutate && !editingNotes ? (
+              <Button type="button" variant="ghost" size="sm" onClick={onEditNotes}>
+                Edit
+              </Button>
+            ) : null}
+          </div>
+          {editingNotes ? (
+            <div className="space-y-2">
+              <Textarea
+                value={notesDraft}
+                onChange={(e) => onNotesChange(e.target.value)}
+                rows={3}
+                aria-label="Booking notes"
+              />
+              <div className="flex gap-2">
+                <Button type="button" size="sm" onClick={onSaveNotes}>
+                  Save
+                </Button>
+                <Button type="button" size="sm" variant="ghost" onClick={onCancelEditNotes}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {booking.notes?.trim() || "No notes yet."}
+            </p>
+          )}
+        </div>
+
+        <div className="flex flex-wrap gap-2 border-t border-border pt-4">
+          {canMutate && booking.status !== "CANCELLED" && booking.status !== "COMPLETED" ? (
+            <Button type="button" variant="outline" size="sm" onClick={onCancel}>
               Cancel
             </Button>
-            <Button type="submit" loading={pending} disabled={!startTime}>
-              Create
+          ) : null}
+          {canMarkPaid ? (
+            <Button type="button" size="sm" onClick={onMarkPaid}>
+              Mark Paid
             </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+          ) : null}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function DetailLine({ icon, text }: { icon: ReactNode; text: string }) {
+  return (
+    <p className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+      <span className="text-muted-foreground/80" aria-hidden>
+        {icon}
+      </span>
+      <span className="truncate">{text}</span>
+    </p>
   );
 }

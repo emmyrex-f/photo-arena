@@ -22,7 +22,7 @@ import {
   MinLength,
   ValidateIf,
 } from "class-validator";
-import { Type } from "class-transformer";
+import { Transform, Type } from "class-transformer";
 import { AuditService } from "../audit/audit.service";
 import type { AuthUser } from "../auth/auth.types";
 import { CurrentUser } from "../auth/current-user.decorator";
@@ -31,6 +31,12 @@ import { RequirePermission } from "../auth/permissions.decorator";
 import { Roles } from "../auth/roles.decorator";
 import { RolesGuard } from "../auth/roles.guard";
 import { CatalogService } from "./catalog.service";
+
+function nullableInt({ value }: { value: unknown }): number | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || value === "") return null;
+  return Number(value);
+}
 
 class CreateServiceDto {
   @IsOptional()
@@ -131,9 +137,30 @@ class CreatePackageDto {
   @Min(15)
   durationMinutes!: number;
 
+  @IsOptional()
+  @Transform(nullableInt)
+  @ValidateIf((_, value) => value !== null)
+  @IsInt()
+  @Min(1)
+  outfitCount?: number | null;
+
+  @IsOptional()
+  @Transform(nullableInt)
+  @ValidateIf((_, value) => value !== null)
+  @IsInt()
+  @Min(0)
+  backdropCount?: number | null;
+
+  @IsOptional()
+  @Transform(nullableInt)
+  @ValidateIf((_, value) => value !== null)
+  @IsInt()
+  @Min(0)
+  editedPhotoCount?: number | null;
+
+  @IsOptional()
   @IsString()
-  @MinLength(1)
-  includes!: string;
+  includes?: string;
 
   @Type(() => Number)
   @IsInt()
@@ -159,6 +186,27 @@ class UpdatePackageDto {
   @IsInt()
   @Min(15)
   durationMinutes?: number;
+
+  @IsOptional()
+  @Transform(nullableInt)
+  @ValidateIf((_, value) => value !== null)
+  @IsInt()
+  @Min(1)
+  outfitCount?: number | null;
+
+  @IsOptional()
+  @Transform(nullableInt)
+  @ValidateIf((_, value) => value !== null)
+  @IsInt()
+  @Min(0)
+  backdropCount?: number | null;
+
+  @IsOptional()
+  @Transform(nullableInt)
+  @ValidateIf((_, value) => value !== null)
+  @IsInt()
+  @Min(0)
+  editedPhotoCount?: number | null;
 
   @IsOptional()
   @IsString()

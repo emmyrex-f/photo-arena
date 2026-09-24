@@ -38,7 +38,7 @@ function TagsInput({ value, onChange, placeholder = "Add tag…", disabled, clas
     <div className={cn("grid gap-2", className)}>
       <div
         className={cn(
-          "flex min-h-9 flex-wrap items-center gap-1.5 rounded-md border border-input bg-card px-2 py-1 text-sm shadow-sm focus-within:ring-1 focus-within:ring-ring",
+          "flex min-h-9 flex-wrap items-center gap-1.5 rounded-md border border-input bg-card px-2 py-1 text-sm shadow-none focus-within:ring-1 focus-within:ring-ring",
           disabled && "opacity-50",
         )}
       >

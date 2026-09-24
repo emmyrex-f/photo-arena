@@ -18,12 +18,8 @@ type ConsentContextValue = {
   /** True until localStorage has been read (avoids a banner flash on hydration). */
   hydrated: boolean;
   bannerOpen: boolean;
-  preferencesOpen: boolean;
   acceptAll: () => void;
   rejectNonEssential: () => void;
-  save: (choice: { analytics: boolean; marketing: boolean }) => void;
-  openPreferences: () => void;
-  closePreferences: () => void;
 };
 
 const ConsentContext = createContext<ConsentContextValue | null>(null);
@@ -56,7 +52,6 @@ function persist(state: ConsentState) {
 export function ConsentProvider({ children }: { children: ReactNode }) {
   const [consent, setConsent] = useState<ConsentState | null>(null);
   const [hydrated, setHydrated] = useState(false);
-  const [preferencesOpen, setPreferencesOpen] = useState(false);
 
   useEffect(() => {
     setConsent(readStoredConsent());
@@ -67,22 +62,17 @@ export function ConsentProvider({ children }: { children: ReactNode }) {
     const next: ConsentState = { necessary: true, ...choice, decidedAt: new Date().toISOString() };
     persist(next);
     setConsent(next);
-    setPreferencesOpen(false);
   }, []);
 
   const value = useMemo<ConsentContextValue>(
     () => ({
       consent,
       hydrated,
-      bannerOpen: hydrated && consent === null && !preferencesOpen,
-      preferencesOpen,
+      bannerOpen: hydrated && consent === null,
       acceptAll: () => commit({ analytics: true, marketing: true }),
       rejectNonEssential: () => commit({ analytics: false, marketing: false }),
-      save: commit,
-      openPreferences: () => setPreferencesOpen(true),
-      closePreferences: () => setPreferencesOpen(false),
     }),
-    [consent, hydrated, preferencesOpen, commit],
+    [consent, hydrated, commit],
   );
 
   return <ConsentContext.Provider value={value}>{children}</ConsentContext.Provider>;

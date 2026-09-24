@@ -152,7 +152,10 @@ export class CatalogService {
     input: {
       name: string;
       durationMinutes: number;
-      includes: string;
+      outfitCount?: number | null;
+      backdropCount?: number | null;
+      editedPhotoCount?: number | null;
+      includes?: string;
       priceKobo: number;
       isActive?: boolean;
       isProvisional?: boolean;
@@ -168,7 +171,10 @@ export class CatalogService {
         serviceId,
         name: input.name.trim(),
         durationMinutes: input.durationMinutes,
-        includes: input.includes.trim(),
+        outfitCount: input.outfitCount ?? null,
+        backdropCount: input.backdropCount ?? null,
+        editedPhotoCount: input.editedPhotoCount ?? null,
+        includes: (input.includes ?? "").trim(),
         priceKobo: input.priceKobo,
         isActive: input.isActive ?? true,
         isProvisional: input.isProvisional ?? true,
@@ -183,6 +189,9 @@ export class CatalogService {
     input: Partial<{
       name: string;
       durationMinutes: number;
+      outfitCount: number | null;
+      backdropCount: number | null;
+      editedPhotoCount: number | null;
       includes: string;
       priceKobo: number;
       isActive: boolean;

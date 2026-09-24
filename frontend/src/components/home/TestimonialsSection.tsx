@@ -12,15 +12,15 @@ export function TestimonialsSection() {
   if (source !== "api" || !data || data.length === 0) return null;
 
   return (
-    <Section className="bg-surface/30">
+    <Section className="tone-dark">
       <Container>
         <Reveal>
-          <Eyebrow>Client notes</Eyebrow>
-          <Heading>From the studio</Heading>
+          <Eyebrow>Client Testimonials</Eyebrow>
+          <Heading className="mt-stack-sm">From the studio</Heading>
         </Reveal>
         <Stagger className="mt-stack-xl grid gap-stack-lg md:grid-cols-2">
           {data.map((item) => (
-            <StaggerItem key={item.id} className="border-l border-accent pl-6">
+            <StaggerItem key={item.id} className="rounded-2xl border border-border bg-surface p-card">
               <blockquote>
                 {item.media?.url ? (
                   <img

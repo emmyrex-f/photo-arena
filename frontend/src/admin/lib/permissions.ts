@@ -34,14 +34,17 @@ export function hasDeskPermission(
   permission: DeskPermission,
 ): boolean {
   if (!user) return false;
-  if (user.role === "OWNER" || user.role === "STAFF") return true;
+  if (user.role === "OWNER") return true;
+  // STAFF uses stored permissions only (same as ADMIN). Empty list = no desk areas.
+  if (user.role !== "ADMIN" && user.role !== "STAFF") return false;
   const perms = user.permissions ?? [];
   if (perms.includes(FULL_ACCESS)) return true;
   return perms.includes(permission);
 }
 
 export function accessSummary(user: { role: string; permissions?: string[] }): string {
-  if (user.role !== "ADMIN") return "—";
+  if (user.role === "OWNER") return "Full access";
+  if (user.role !== "ADMIN" && user.role !== "STAFF") return "—";
   const perms = user.permissions ?? [];
   if (perms.includes(FULL_ACCESS)) return "Full access";
   if (!perms.length) return "Account only";

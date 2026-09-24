@@ -2,69 +2,71 @@
  * Photo Arena design tokens.
  * Hex values live here once. Components consume semantic CSS variables / Tailwind aliases.
  *
- * Palette: charcoal editorial photography brand, champagne accent.
+ * Palette from the studio brand board (Desert Torchwood):
+ * amber #EBBC71, sage #BCBDA6, olive #BBA350, brown #573418, ink #201F1F.
  */
 
 export const palette = {
-  background: "#0B0D0F",
-  backgroundSecondary: "#111417",
-  surface: "#181C20",
-  elevated: "#22272C",
-  border: "#30363D",
-  textMuted: "#9CA3AA",
-  textSecondary: "#C5CAD0",
-  textPrimary: "#F3F4F6",
+  amber: "#EBBC71",
+  sage: "#BCBDA6",
+  olive: "#BBA350",
+  brown: "#573418",
+  ink: "#201F1F",
   white: "#FFFFFF",
-  accent: "#C8B89A",
-  accentHover: "#D8C9AD",
-  success: "#6FA58A",
-  error: "#D97878",
-  warning: "#D1A65A",
 } as const;
 
 export const colors = {
   palette,
   background: {
-    base: palette.background,
-    surface: palette.surface,
-    elevated: palette.elevated,
-    dark: palette.backgroundSecondary,
-    darkDeep: palette.background,
-    overlay: "rgba(11, 13, 15, 0.72)",
+    base: "color-mix(in srgb, #BCBDA6 5%, white)",
+    surface: "color-mix(in srgb, #BCBDA6 9%, white)",
+    elevated: "color-mix(in srgb, #BCBDA6 14%, white)",
+    dark: palette.ink,
+    darkDeep: palette.ink,
+    overlay: "rgba(32, 31, 31, 0.72)",
   },
   text: {
-    primary: palette.textPrimary,
-    secondary: palette.textSecondary,
-    muted: palette.textMuted,
-    inverse: palette.textPrimary,
-    inverseMuted: palette.textMuted,
-    onAccent: palette.background,
-    accent: palette.accent,
+    primary: palette.ink,
+    secondary: palette.brown,
+    muted: "color-mix(in srgb, #573418 72%, #BCBDA6)",
+    inverse: palette.sage,
+    inverseMuted: "color-mix(in srgb, #BCBDA6 70%, #201F1F)",
+    onAccent: palette.ink,
+    accent: palette.amber,
   },
   border: {
-    subtle: "rgba(48, 54, 61, 0.7)",
-    default: palette.border,
-    strong: "#3D444D",
-    onDark: "rgba(243, 244, 246, 0.12)",
-    focus: palette.accent,
+    subtle: "color-mix(in srgb, #573418 18%, #BCBDA6)",
+    default: "color-mix(in srgb, #573418 28%, #BCBDA6)",
+    strong: palette.brown,
+    onDark: "rgba(188, 189, 166, 0.22)",
+    focus: palette.amber,
   },
   action: {
-    primary: palette.accent,
-    primaryHover: palette.accentHover,
-    champagne: palette.accent,
+    primary: palette.amber,
+    primaryHover: palette.olive,
+    champagne: palette.amber,
   },
   status: {
-    success: palette.success,
-    warning: palette.warning,
-    error: palette.error,
+    success: "#6FA58A",
+    warning: palette.olive,
+    error: "#D97878",
   },
 } as const;
 
 export const typography = {
   fontFamily: {
-    display: '"Manrope", "Inter", system-ui, sans-serif',
-    hero: '"Playfair Display", Georgia, serif',
-    body: '"Inter", system-ui, -apple-system, sans-serif',
+    heading: '"EB Garamond", Georgia, serif',
+    subtitle: '"Overpass Mono", ui-monospace, monospace',
+    body: '"Libre Baskerville", Georgia, serif',
+    button: '"Overpass Mono", ui-monospace, monospace',
+    display: '"EB Garamond", Georgia, serif',
+    hero: '"EB Garamond", Georgia, serif',
+  },
+  fontWeight: {
+    heading: 500,
+    subtitle: 400,
+    paragraph: 400,
+    button: 500,
   },
 } as const;
 
@@ -149,6 +151,10 @@ export const cssVariables = {
   "--color-accent": colors.action.primary,
   "--color-accent-hover": colors.action.primaryHover,
   "--color-champagne": colors.action.champagne,
+  "--color-sage": palette.sage,
+  "--color-brown": palette.brown,
+  "--color-olive": palette.olive,
+  "--color-ink": palette.ink,
   "--color-border": colors.border.default,
   "--color-border-subtle": colors.border.subtle,
   "--color-border-strong": colors.border.strong,

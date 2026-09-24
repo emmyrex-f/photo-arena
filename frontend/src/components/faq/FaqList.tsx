@@ -1,5 +1,6 @@
 import { useId, useState } from "react";
 import { Plus } from "lucide-react";
+import { CameraSpinner } from "../../components/ui/CameraSpinner";
 import { fetchFaqs, type Faq } from "../../lib/publicApi";
 import { usePublicData } from "../../lib/usePublicData";
 
@@ -10,7 +11,7 @@ export function FaqList({ items }: { items?: Faq[] }) {
   const [open, setOpen] = useState<number | null>(0);
 
   if (!items && loading && faqs.length === 0) {
-    return <p className="text-text-secondary">Loading questions…</p>;
+    return <CameraSpinner label="Loading questions" caption="Loading questions…" />;
   }
 
   if (faqs.length === 0) {

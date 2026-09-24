@@ -2,11 +2,13 @@ import { Link } from "react-router-dom";
 import { PageHeader } from "../components/layout/PageHeader";
 import { Container } from "../components/ui/Container";
 import { Section } from "../components/ui/Section";
-import { useConsent } from "../lib/consent";
 import { Seo } from "../lib/seo";
+import { useSiteInfo } from "../lib/settings";
 import { site } from "../lib/site";
 
 export function PrivacyPage() {
+  const info = useSiteInfo();
+
   return (
     <>
       <Seo
@@ -23,9 +25,9 @@ export function PrivacyPage() {
         <Container className="prose-pa max-w-2xl">
           <h2>Who we are</h2>
           <p>
-            {site.name} (“we”, “us”) operates a portrait studio at {site.address.full}, and this website
-            at {site.domain}. Contact:{" "}
-            <a href={site.emailHref}>{site.email}</a> · <a href={site.phoneHref}>{site.phone}</a>.
+            {info.name} (“we”, “us”) operates a portrait studio at {info.address}, and this website at{" "}
+            {site.domain}. Contact:{" "}
+            <a href={info.emailHref}>{info.email}</a> · <a href={info.phoneHref}>{info.phone}</a>.
           </p>
 
           <h2>What we collect</h2>
@@ -72,8 +74,7 @@ export function PrivacyPage() {
           <h2>Your rights</h2>
           <p>
             You may request access, correction, or deletion of your personal data, or withdraw cookie
-            consent at any time via{" "}
-            <CookieSettingsLink />. To exercise NDPR rights, email {site.email}.
+            consent, by emailing {info.email}. To exercise other NDPR rights, use the same address.
           </p>
 
           <h2>Security</h2>
@@ -86,14 +87,5 @@ export function PrivacyPage() {
         </Container>
       </Section>
     </>
-  );
-}
-
-function CookieSettingsLink() {
-  const { openPreferences } = useConsent();
-  return (
-    <button type="button" onClick={openPreferences} className="text-accent-hover underline underline-offset-3">
-      Cookie settings
-    </button>
   );
 }

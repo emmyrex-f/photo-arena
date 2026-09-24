@@ -9,7 +9,7 @@ export function Footer() {
   const info = useSiteInfo();
 
   return (
-    <footer className="tone-dark">
+    <footer className="tone-dark pb-[var(--pa-page-pad)] lg:pb-0">
       <div className="mx-auto grid max-w-site gap-stack-lg px-gutter py-footer-y md:grid-cols-2 lg:grid-cols-12">
         <div className="lg:col-span-3">
           <Link to="/" className="inline-block">
@@ -17,11 +17,11 @@ export function Footer() {
             <span className="sr-only">{info.name}</span>
           </Link>
           <p className="mt-eyebrow max-w-xs text-sm leading-relaxed text-text-secondary">{info.tagline}</p>
-          <div className="mt-eyebrow flex flex-wrap items-center gap-control">
+          <div className="mt-eyebrow flex flex-wrap items-center gap-2">
             {info.instagram ? (
               <a
                 href={info.instagram}
-                className="text-text-secondary hover:text-accent"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-border text-sage hover:border-accent hover:text-accent"
                 target="_blank"
                 rel="noreferrer"
               >
@@ -32,7 +32,7 @@ export function Footer() {
             {info.facebook ? (
               <a
                 href={info.facebook}
-                className="text-text-secondary hover:text-accent"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-border text-sage hover:border-accent hover:text-accent"
                 target="_blank"
                 rel="noreferrer"
               >
@@ -43,23 +43,18 @@ export function Footer() {
             {info.tiktok ? (
               <a
                 href={info.tiktok}
-                className="text-text-secondary hover:text-accent"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-border text-sage hover:border-accent hover:text-accent"
                 target="_blank"
                 rel="noreferrer"
               >
                 <TikTokIcon className="h-4 w-4" />
                 <span className="sr-only">TikTok</span>
               </a>
-            ) : (
-              <span className="cursor-not-allowed text-text-muted opacity-40" title="TikTok coming soon" aria-disabled>
-                <TikTokIcon className="h-4 w-4" />
-                <span className="sr-only">TikTok unavailable</span>
-              </span>
-            )}
+            ) : null}
             {info.whatsapp ? (
               <a
                 href={info.whatsapp}
-                className="text-text-secondary hover:text-accent"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-border text-sage hover:border-accent hover:text-accent"
                 target="_blank"
                 rel="noreferrer"
               >
@@ -71,7 +66,7 @@ export function Footer() {
         </div>
 
         <div className="lg:col-span-3">
-          <p className="mb-eyebrow text-xs uppercase tracking-[0.18em] text-accent">Visit</p>
+          <p className="font-subtitle mb-eyebrow text-xs uppercase tracking-[0.18em] text-accent">Visit</p>
           <p className="flex items-start gap-2 text-sm text-text-secondary">
             <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-accent" aria-hidden="true" />
             <span>{info.address}</span>
@@ -87,7 +82,7 @@ export function Footer() {
         </div>
 
         <div className="lg:col-span-2">
-          <p className="mb-eyebrow text-xs uppercase tracking-[0.18em] text-accent">Hours</p>
+          <p className="font-subtitle mb-eyebrow text-xs uppercase tracking-[0.18em] text-accent">Hours</p>
           <ul className="space-y-2 text-sm text-text-secondary">
             <li className="flex items-start gap-2">
               <Clock className="mt-0.5 h-4 w-4 shrink-0 text-accent" aria-hidden="true" />
@@ -101,7 +96,7 @@ export function Footer() {
         </div>
 
         <div className="lg:col-span-2">
-          <p className="mb-eyebrow text-xs uppercase tracking-[0.18em] text-accent">Explore</p>
+          <p className="font-subtitle mb-eyebrow text-xs uppercase tracking-[0.18em] text-accent">Explore</p>
           <ul className="space-y-1.5 text-sm">
             {exploreLinks.map((link) => (
               <li key={link.to}>
@@ -114,7 +109,7 @@ export function Footer() {
         </div>
 
         <div className="lg:col-span-2">
-          <p className="mb-eyebrow text-xs uppercase tracking-[0.18em] text-accent">Legal</p>
+          <p className="font-subtitle mb-eyebrow text-xs uppercase tracking-[0.18em] text-accent">Legal</p>
           <ul className="space-y-1.5 text-sm">
             {legalLinks.map((link) => (
               <li key={link.to}>
@@ -127,7 +122,7 @@ export function Footer() {
         </div>
       </div>
 
-      <div className="px-gutter pb-stack-lg text-center text-xs text-text-muted">
+      <div className="px-gutter pb-stack-sm text-center text-xs text-text-muted lg:pb-stack-lg">
         © {new Date().getFullYear()} {info.name}. Port Harcourt, Nigeria. All rights reserved.
       </div>
     </footer>

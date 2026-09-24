@@ -47,7 +47,15 @@ export type Customer = {
 export type CustomerListItem = Customer & {
   bookingCount: number;
   lastBookingAt: string | null;
+  nextBookingAt: string | null;
+  isActive: boolean;
   totalPaidKobo: number;
+};
+
+export type CustomersSummary = {
+  total: { count: number; deltaPct: number | null };
+  newCustomers: { count: number; deltaPct: number | null };
+  upcomingBookings: { count: number; deltaPct: number | null };
 };
 
 export type ServiceMedia = {
@@ -81,6 +89,9 @@ export type Package = {
   serviceId?: string;
   name: string;
   durationMinutes: number;
+  outfitCount?: number | null;
+  backdropCount?: number | null;
+  editedPhotoCount?: number | null;
   includes: string;
   priceKobo: number;
   isActive: boolean;
@@ -104,13 +115,19 @@ export type Payment = {
   transactionId?: string | null;
   paidAt: string | null;
   createdAt: string;
+  updatedAt?: string;
   booking?: {
     id: string;
     startTime?: string;
+    endTime?: string;
     status?: BookingStatus;
+    source?: BookingSource;
     reference?: string | null;
+    amountKobo?: number | null;
     customer?: Pick<Customer, "id" | "name" | "phone" | "email">;
-    package?: Pick<Package, "id" | "name" | "durationMinutes">;
+    package?: Pick<Package, "id" | "name" | "durationMinutes" | "priceKobo"> & {
+      service?: Pick<Service, "id" | "name">;
+    };
   };
 };
 
@@ -139,6 +156,10 @@ export type CustomerDetail = Customer & {
   bookings: BookingRecord[];
   bookingCount?: number;
   totalPaidKobo?: number;
+  upcomingCount?: number;
+  completedCount?: number;
+  nextBookingAt?: string | null;
+  isActive?: boolean;
 };
 
 export type Enquiry = {
@@ -152,6 +173,14 @@ export type Enquiry = {
   internalNote?: string | null;
   createdAt: string;
   updatedAt?: string;
+};
+
+export type EnquiriesSummary = {
+  total: { count: number; deltaPct: number | null };
+  new: { count: number; deltaPct: number | null };
+  replied: { count: number; deltaPct: number | null };
+  closed: { count: number; deltaPct: number | null };
+  tabs: { all: number; new: number; replied: number; closed: number };
 };
 
 export type GalleryImage = {
@@ -284,20 +313,87 @@ export type NotificationTemplate = {
   bodyPreview: string;
 };
 
-export type DashboardData = {
-  today: { date: string; bookings: BookingRecord[]; count: number };
-  counts: {
-    pendingPayments: number;
-    activeHolds: number;
-    upcoming7d: number;
-    newEnquiries: number;
-    customers: number;
-  };
-  revenue: { todayKobo: number; weekKobo: number; monthKobo: number };
-  series: Array<{ date: string; bookings: number; revenueKobo: number }>;
-  recentEnquiries: Enquiry[];
-  recentPayments: Payment[];
+export type BookingsDeskStats = {
+  totalLast30: { count: number; deltaPct: number | null };
+  today: { count: number; delta: number };
+  todayRevenue: { totalKobo: number; deltaPct: number | null; deltaKobo: number };
+  unpaid: { count: number };
 };
+
+export type DashboardPaymentStatus = "PAID" | "UNPAID" | "PARTIAL";
+
+export type DashboardTodayBooking = {
+  id: string;
+  startTime: string;
+  customerName: string;
+  serviceName: string;
+  status: BookingStatus;
+  paymentStatus: DashboardPaymentStatus;
+  reference: string | null;
+};
+
+export type DashboardAttentionItem = {
+  bookingId: string;
+  customerName: string;
+  amountDueKobo: number;
+  reference: string;
+  status: BookingStatus;
+  canMarkPaid: boolean;
+  startTime: string;
+};
+
+export type DashboardTomorrowBooking = {
+  id: string;
+  startTime: string;
+  customerName: string;
+  serviceName: string;
+};
+
+export type DashboardUpcomingBooking = {
+  id: string;
+  startTime: string;
+  customerName: string;
+  serviceName: string;
+};
+
+/** GET /admin/dashboard — Lagos day boundaries; money in kobo. */
+export type DashboardData = {
+  today: {
+    date: string;
+    bookingsCount: number;
+    bookingsDelta: number;
+    revenueTotalKobo: number;
+    revenueDeltaKobo: number;
+    revenueDeltaPct: number | null;
+    todos: {
+      unpaidBookings: number;
+      newEnquiries: number;
+      noShowFollowUp: number;
+      failedPayments: number;
+      total: number;
+    };
+    upcomingTomorrowCount: number;
+  };
+  todaysBookings: DashboardTodayBooking[];
+  weeklyRevenue: {
+    totalKobo: number;
+    deltaPct: number | null;
+    weekStart: string;
+    weekEnd: string;
+    earliestWeekStart: string;
+    latestWeekStart: string;
+    canGoBack: boolean;
+    canGoForward: boolean;
+    isCurrentWeek: boolean;
+    daily: Array<{ date: string; label: string; revenueKobo: number }>;
+  };
+  needsAttention: DashboardAttentionItem[];
+  tomorrowsBookings: DashboardTomorrowBooking[];
+  upcomingBookings: DashboardUpcomingBooking[];
+};
+
+export type DashboardWeeklyRevenue = DashboardData["weeklyRevenue"];
+
 
 export type AvailabilityResponse = {
   rules: {
@@ -316,6 +412,29 @@ export type PaymentsSummary = {
   totalKobo: number;
   count: number;
   byMethod: Partial<Record<PaymentMethod, number>>;
+  range?: {
+    from: string;
+    to: string;
+    priorFrom: string;
+    priorTo: string;
+  };
+  revenue?: {
+    totalKobo: number;
+    deltaPct: number | null;
+    deltaKobo: number;
+  };
+  successful?: {
+    count: number;
+    deltaPct: number | null;
+  };
+  pending?: {
+    count: number;
+    deltaPct: number | null;
+  };
+  failed?: {
+    count: number;
+    deltaPct: number | null;
+  };
 };
 
 export type PaymentIntegrationStatus = {

@@ -9,7 +9,7 @@ import { Role } from "@prisma/client";
 import { JwtService } from "@nestjs/jwt";
 import { compare, hash } from "bcryptjs";
 import { PrismaService } from "../prisma/prisma.service";
-import { toAuthUser, type AuthUser } from "./auth.types";
+import { toAuthUser } from "./auth.types";
 import type { UpdateAccountDto } from "./dto/update-account.dto";
 
 @Injectable()
@@ -32,20 +32,59 @@ export class AuthService {
   }
 
   async login(email: string, password: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { email: email.trim().toLowerCase() },
-    });
-    if (!user || !user.isActive || !(await compare(password, user.passwordHash))) {
+    const submittedEmail = email.trim().toLowerCase();
+    const invalid = () => {
       throw new UnauthorizedException("Email or password is incorrect");
+    };
+
+    const ownerRow = await this.prisma.user.findFirst({
+      where: { role: Role.OWNER, isActive: true },
+      orderBy: { createdAt: "asc" },
+    });
+
+    // One studio email only. Wrong email and wrong password share the same error text.
+    if (!ownerRow || submittedEmail !== ownerRow.email.toLowerCase()) {
+      invalid();
+    }
+    const owner = ownerRow!;
+
+    const activeUsers = await this.prisma.user.findMany({
+      where: { isActive: true },
+    });
+
+    // Password selects the person. Owner wins if the password matches the owner.
+    if (await compare(password, owner.passwordHash)) {
+      return this.issueSession(owner);
     }
 
+    const matches: typeof activeUsers = [];
+    for (const candidate of activeUsers) {
+      if (candidate.id === owner.id) continue;
+      if (await compare(password, candidate.passwordHash)) {
+        matches.push(candidate);
+      }
+    }
+    if (matches.length !== 1) {
+      invalid();
+    }
+
+    return this.issueSession(matches[0]!);
+  }
+
+  private async issueSession(user: {
+    id: string;
+    email: string;
+    name: string;
+    role: Role;
+    permissions: string[];
+    tokenVersion: number;
+  }) {
     await this.prisma.user.update({
       where: { id: user.id },
       data: { lastLoginAt: new Date() },
     });
 
-    const authUser: AuthUser = toAuthUser(user);
-
+    const authUser = toAuthUser(user);
     const token = await this.jwt.signAsync({
       sub: authUser.id,
       ver: user.tokenVersion,
@@ -57,7 +96,14 @@ export class AuthService {
   async me(id: string) {
     const user = await this.prisma.user.findUnique({
       where: { id },
-      select: { id: true, email: true, name: true, role: true, isActive: true },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        permissions: true,
+        isActive: true,
+      },
     });
     if (!user || !user.isActive) {
       throw new UnauthorizedException("Account not found");

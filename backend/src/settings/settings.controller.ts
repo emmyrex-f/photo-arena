@@ -24,6 +24,8 @@ const SETTINGS_KEY_PREFIXES = [
   "social.",
   "hero.",
   "tour.",
+  "cta.",
+  "about.",
   "instagram.",
   "analytics.",
   "seo.",
