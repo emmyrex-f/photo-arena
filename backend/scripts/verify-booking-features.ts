@@ -38,10 +38,11 @@ async function main() {
 
   try {
     // 1. Get owner token for CMS settings modification
-    const ownerEmail = (process.env.SEED_OWNER_EMAIL ?? "owner@photoarenang.com").trim().toLowerCase();
+    const desk = await api<{ email: string }>("GET", "/auth/desk-email");
+    assert.equal(desk.status, 200, `desk-email ${desk.status}`);
     const ownerPassword = process.env.SEED_OWNER_PASSWORD ?? "changeme";
     const loginRes = await api("POST", "/auth/login", {
-      body: { email: ownerEmail, password: ownerPassword },
+      body: { email: desk.data.email, password: ownerPassword },
     });
     assert.equal(loginRes.status, 201, `Login status ${loginRes.status}: ${JSON.stringify(loginRes.data)}`);
     const token = loginRes.data.token;
@@ -58,8 +59,14 @@ async function main() {
 
     // 3. Test B2: Phone number validation on /bookings/hold
     const invalidPhones = ["abc", "123", "0803letters", "080123", "phone-number"];
-    const futureDate = "2026-10-15";
-    const validStartTime = `${futureDate}T10:00:00.000Z`;
+    const availDay = "2026-10-16"; // weekday with free slots
+    const avail = await api<{ slots: string[] }>(
+      "GET",
+      `/bookings/availability?date=${availDay}&durationMinutes=${pkg.durationMinutes}`,
+    );
+    assert.equal(avail.status, 200);
+    assert.ok(avail.data.slots?.length, `Need free slots on ${availDay}`);
+    const validStartTime = avail.data.slots[0];
 
     for (const badPhone of invalidPhones) {
       const badHold = await api("POST", "/bookings/hold", {
@@ -80,14 +87,14 @@ async function main() {
     console.log("✓ Step 3: Bad phone formats strictly rejected by backend validation (B2 passed)");
 
     // 4. Test valid phone formats (Nigerian & formatted)
-    const validPhone = "08091234567";
+    const validPhone = `0809${String(Date.now()).slice(-7)}`;
     const holdRes = await api("POST", "/bookings/hold", {
       body: {
         packageId: pkg.id,
         startTime: validStartTime,
         customerName: "Valid Customer",
         customerPhone: validPhone,
-        customerEmail: "valid@example.com",
+        customerEmail: `valid-${Date.now()}@dammy-ray.com.ng`,
       },
     });
     assert.equal(holdRes.status, 201, `Valid hold status: ${holdRes.status} ${JSON.stringify(holdRes.data)}`);
@@ -100,7 +107,7 @@ async function main() {
         startTime: validStartTime,
         customerName: "Valid Customer Dup",
         customerPhone: validPhone,
-        customerEmail: "valid@example.com",
+        customerEmail: `valid-dup-${Date.now()}@dammy-ray.com.ng`,
       },
     });
     assert.equal(dupRes.status, 409, `Expected 409 Conflict for duplicate hold, got ${dupRes.status}`);

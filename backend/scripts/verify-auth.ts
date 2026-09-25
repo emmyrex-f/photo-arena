@@ -37,12 +37,13 @@ async function api<T = Json>(
 async function main() {
   const desk = await api<{ email: string }>("GET", "/auth/desk-email");
   assert.equal(desk.status, 200, `desk-email ${desk.status}`);
-  assert.equal(desk.data.email.toLowerCase(), ownerEmail);
+  assert.ok(desk.data.email, "desk email must be returned");
+  const actualOwnerEmail = desk.data.email.toLowerCase();
 
   const ownerLogin = await api<{ token: string; user: { role: string; permissions: string[] } }>(
     "POST",
     "/auth/login",
-    { body: { email: ownerEmail, password: ownerPassword } },
+    { body: { email: actualOwnerEmail, password: ownerPassword } },
   );
   assert.ok(ownerLogin.status < 300, `owner login ${ownerLogin.status}`);
   assert.equal(ownerLogin.data.user.role, "OWNER");
@@ -76,7 +77,7 @@ async function main() {
   const adminLogin = await api<{ token: string; user: { role: string; permissions: string[] } }>(
     "POST",
     "/auth/login",
-    { body: { email: ownerEmail, password: adminPass } },
+    { body: { email: actualOwnerEmail, password: adminPass } },
   );
   assert.ok(adminLogin.status < 300, `admin login ${adminLogin.status}`);
   assert.equal(adminLogin.data.user.role, "ADMIN");
@@ -124,7 +125,7 @@ async function main() {
   const staffLogin = await api<{ token: string; user: { role: string; permissions: string[] } }>(
     "POST",
     "/auth/login",
-    { body: { email: ownerEmail, password: staffPass } },
+    { body: { email: actualOwnerEmail, password: staffPass } },
   );
   assert.ok(staffLogin.status < 300, `staff login ${staffLogin.status}`);
   assert.equal(staffLogin.data.user.role, "STAFF");

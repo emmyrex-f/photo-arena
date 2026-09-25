@@ -20,7 +20,6 @@ import {
 import { blockingWhere } from "../src/bookings/blocking";
 
 const API_BASE = (process.env.API_BASE ?? "http://localhost:3001/api").replace(/\/$/, "");
-const ownerEmail = (process.env.SEED_OWNER_EMAIL ?? "owner@photoarenang.com").trim().toLowerCase();
 const ownerPassword = process.env.SEED_OWNER_PASSWORD ?? "changeme";
 const prisma = new PrismaClient();
 
@@ -249,8 +248,10 @@ async function main() {
     console.log("active hold blocks availability ✓");
 
     // Admin range sees the hold on correct Lagos day
+    const desk = await api<{ email: string }>("GET", "/auth/desk-email", { ip: "10.255.20.4" });
+    assert.equal(desk.status, 200, `desk-email ${desk.status}`);
     const login = await api<{ token: string }>("POST", "/auth/login", {
-      body: { email: ownerEmail, password: ownerPassword },
+      body: { email: desk.data.email, password: ownerPassword },
       ip: "10.255.20.5",
     });
     assert.ok(login.status < 300 && login.data.token, `login ${login.status}`);

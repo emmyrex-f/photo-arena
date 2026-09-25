@@ -55,9 +55,16 @@ async function main() {
     const totalDueKobo = pkg.priceKobo;
     console.log(`✓ Step 2: Found package: ${pkg.name} (₦${(totalDueKobo / 100).toLocaleString()})`);
 
-    // 3. Create Admin Walk-in Booking
+    // 3. Create Admin Walk-in Booking on a free slot
     const stamp = Date.now();
-    const bookingDate = "2026-10-15T10:00:00.000Z";
+    const avail = await api<{ slots: string[] }>(
+      "GET",
+      `/admin/availability?date=2026-10-15&durationMinutes=${pkg.durationMinutes}`,
+      { token: ownerToken },
+    );
+    assert.equal(avail.status, 200, `availability ${avail.status}`);
+    assert.ok(avail.data.slots?.length, "Need a free slot for payments blockers test");
+    const bookingDate = avail.data.slots[0];
     const adminBooking = await api<{ id: string; status: string; customer: { name: string } }>(
       "POST",
       "/admin/bookings",
@@ -65,8 +72,8 @@ async function main() {
         token: ownerToken,
         body: {
           customerName: `Walkin Cust ${stamp}`,
-          customerPhone: "+2348012345678",
-          customerEmail: `walkin-${stamp}@example.com`,
+          customerPhone: `+23480${String(stamp).slice(-8)}`,
+          customerEmail: `walkin-${stamp}@dammy-ray.com.ng`,
           packageId: pkg.id,
           startTime: bookingDate,
           source: "WALK_IN",
@@ -171,6 +178,7 @@ async function main() {
         source: "ONLINE",
         reference: webhookPaymentRef,
         amountKobo: 5000000,
+        contactEmail: "client@example.com",
       },
     });
 

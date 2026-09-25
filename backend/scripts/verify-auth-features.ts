@@ -40,7 +40,9 @@ async function main() {
   const prisma = new PrismaClient();
 
   try {
-    const ownerEmail = (process.env.SEED_OWNER_EMAIL ?? "owner@photoarenang.com").trim().toLowerCase();
+    const desk = await api<{ email: string }>("GET", "/auth/desk-email");
+    assert.equal(desk.status, 200, `desk-email ${desk.status}`);
+    const ownerEmail = desk.data.email.trim().toLowerCase();
     const ownerPassword = process.env.SEED_OWNER_PASSWORD ?? "changeme";
 
     // 1. Initial Login

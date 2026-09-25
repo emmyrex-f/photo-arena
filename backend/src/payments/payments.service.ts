@@ -10,6 +10,7 @@ import {
 import { ConfigService } from "@nestjs/config";
 import { BookingStatus, PaymentStatus } from "@prisma/client";
 import { NotificationsService } from "../notifications/notifications.service";
+import { bookingNotifyEmail } from "../common/booking-contact";
 import { PrismaService } from "../prisma/prisma.service";
 import { BookingsService } from "../bookings/bookings.service";
 import { isPaymentsMockEnabled } from "../common/payments-mock";
@@ -113,7 +114,8 @@ export class PaymentsService {
     }
     const amountKobo = booking.amountKobo ?? booking.package.priceKobo;
     const paymentReference = booking.reference;
-    const email = booking.customer.email ?? "guest@photoarenang.com";
+    const email = bookingNotifyEmail(booking);
+    if (!email) throw new BadRequestException("Booking contact email is required for checkout");
     const remainingHoldMinutes = Math.max(
       1,
       Math.ceil((booking.holdExpiresAt.getTime() - Date.now()) / 60_000),
@@ -196,13 +198,16 @@ export class PaymentsService {
     });
     if (!booking) throw new NotFoundException("Booking not found");
 
-    // Verify customer ownership
+    // Verify customer ownership (booking contact email OR CRM email OR phone)
     const input = (emailOrPhone ?? "").trim().toLowerCase();
     const phoneDigits = input.replace(/\D/g, "");
+    const contactEmail = bookingNotifyEmail(booking);
     const custEmail = (booking.customer.email ?? "").toLowerCase();
     const custPhone = booking.customer.phone.replace(/\D/g, "");
 
-    const matchesEmail = Boolean(custEmail && input === custEmail);
+    const matchesEmail = Boolean(
+      (contactEmail && input === contactEmail) || (custEmail && input === custEmail),
+    );
     const matchesPhone = Boolean(phoneDigits && custPhone && (custPhone.endsWith(phoneDigits) || phoneDigits.endsWith(custPhone)));
 
     if (!matchesEmail && !matchesPhone) {
@@ -244,11 +249,13 @@ export class PaymentsService {
     const reusable = processingOnline.find((p) => p.amountKobo === totalOutstanding && totalOutstanding > 0)
       ?? (totalOutstanding <= 0 ? processingOnline[0] : undefined);
     if (reusable) {
+      const reuseEmail = bookingNotifyEmail(booking);
+      if (!reuseEmail) throw new BadRequestException("Booking contact email is required for checkout");
       const session = await this.provider.createCheckoutSession({
         reference: reusable.reference,
         amountKobo: reusable.amountKobo,
         currency: "NGN",
-        customerEmail: booking.customer.email ?? "guest@photoarenang.com",
+        customerEmail: reuseEmail,
         customerName: booking.customer.name,
         customerPhone: booking.customer.phone,
         returnUrl: safeReturn,
@@ -275,11 +282,13 @@ export class PaymentsService {
     }
 
     const checkoutRef = `bal_${booking.reference ?? booking.id}_${Date.now()}`;
+    const balanceEmail = bookingNotifyEmail(booking);
+    if (!balanceEmail) throw new BadRequestException("Booking contact email is required for checkout");
     const session = await this.provider.createCheckoutSession({
       reference: checkoutRef,
       amountKobo: totalOutstanding,
       currency: "NGN",
-      customerEmail: booking.customer.email ?? "guest@photoarenang.com",
+      customerEmail: balanceEmail,
       customerName: booking.customer.name,
       customerPhone: booking.customer.phone,
       returnUrl: safeReturn,
@@ -485,7 +494,7 @@ export class PaymentsService {
 
     const b = payment.booking;
     const publicRef = payment.reference;
-    const customerEmail = [b.customer.email ?? ""].filter(Boolean);
+    const customerEmail = [bookingNotifyEmail(b)].filter(Boolean);
 
     void this.notifications.notifyEvent(
       "payment_received",
@@ -658,7 +667,7 @@ export class PaymentsService {
           startTime: payment.booking.startTime.toISOString(),
           details: `Checkout incomplete (${event.rawType}). The temporary booking hold has been released.`,
         },
-        [payment.booking.customer.email ?? ""].filter(Boolean),
+        [bookingNotifyEmail(payment.booking)].filter(Boolean),
       );
 
       await this.audit.log({

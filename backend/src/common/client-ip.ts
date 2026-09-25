@@ -12,8 +12,14 @@ export function trustProxyEnabled(env: NodeJS.ProcessEnv = process.env): boolean
  * unless a reverse proxy has already replaced the header.
  */
 export function getClientIp(req: Request, env: NodeJS.ProcessEnv = process.env): string {
-  if (trustProxyEnabled(env) && req.ip) {
-    return req.ip;
+  if (trustProxyEnabled(env)) {
+    const xff = req.headers?.["x-forwarded-for"];
+    if (typeof xff === "string" && xff.trim()) {
+      return xff.split(",")[0].trim();
+    }
+    if (req.ip) {
+      return req.ip;
+    }
   }
   return req.socket?.remoteAddress || req.ip || "unknown";
 }

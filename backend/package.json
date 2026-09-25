@@ -20,7 +20,8 @@
     "verify:storage": "tsx scripts/verify-storage.ts",
     "verify:notifications": "tsx scripts/verify-notifications.ts",
     "verify:admin-booking": "tsx scripts/verify-admin-booking.ts",
-    "verify:auth": "tsx scripts/verify-auth-features.ts"
+    "verify:auth": "tsx scripts/verify-auth-features.ts",
+    "test:system": "tsx scripts/run-complete-system-test.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

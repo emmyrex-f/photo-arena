@@ -1,6 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
-  Calendar as CalendarIcon,
   Check,
   Clock,
   CreditCard,
@@ -90,7 +89,6 @@ export function CreateBookingDialog({
   const [phone, setPhone] = useState("");
   const [phoneError, setPhoneError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
-  const [source, setSource] = useState<"WALK_IN" | "ADMIN">("WALK_IN");
   const [notes, setNotes] = useState("");
 
   // Optional Immediate Payment state
@@ -176,7 +174,6 @@ export function CreateBookingDialog({
       setPhone("");
       setPhoneError(null);
       setEmail("");
-      setSource("WALK_IN");
       setNotes("");
       setCollectPayment(false);
       setChannel("POS");
@@ -205,6 +202,10 @@ export function CreateBookingDialog({
       toast.error(pErr);
       return;
     }
+    if (!email.trim()) {
+      toast.error("Customer email is required for reminders and receipts");
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -212,10 +213,10 @@ export function CreateBookingDialog({
       const created = await api.bookings.create({
         customerName: name.trim(),
         customerPhone: phone.trim(),
-        customerEmail: email.trim() || undefined,
+        customerEmail: email.trim(),
         packageId: selectedPackage.id,
         startTime: selectedSlot,
-        source,
+        source: "WALK_IN",
         notes: notes.trim() || undefined,
       });
 
@@ -229,7 +230,7 @@ export function CreateBookingDialog({
               amountKobo: payKobo,
               channel,
               reference: paymentRef.trim() || undefined,
-              note: paymentNote.trim() || `Studio payment collected at creation (${source})`,
+              note: paymentNote.trim() || "Studio payment collected at creation (WALK_IN)",
             });
             toast.success(
               `Booking ${created.reference ?? created.id} created & ₦${payNaira.toLocaleString()} ${channel} payment recorded!`,
@@ -311,38 +312,17 @@ export function CreateBookingDialog({
             </div>
 
             {/* Step 2: Date & Slot Selection */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="create-booking-date">Date *</Label>
-                <div className="relative">
-                  <Input
-                    id="create-booking-date"
-                    type="date"
-                    min={lagosToday()}
-                    value={date}
-                    onChange={(e) => setDate(e.target.value)}
-                    className="pl-9"
-                    required
-                  />
-                  <CalendarIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Booking Source</Label>
-                <Select
-                  value={source}
-                  onValueChange={(v: "WALK_IN" | "ADMIN") => setSource(v)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="WALK_IN">Walk-in Customer (At Studio)</SelectItem>
-                    <SelectItem value="ADMIN">Staff Desk (Phone / WhatsApp)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="create-booking-date">Date *</Label>
+              <Input
+                id="create-booking-date"
+                type="date"
+                min={lagosToday()}
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="max-w-xs"
+                required
+              />
             </div>
 
             {/* Time Slot Picker */}
@@ -434,7 +414,7 @@ export function CreateBookingDialog({
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label htmlFor="create-booking-email">
-                    Email Address <span className="text-xs text-muted-foreground">(Optional)</span>
+                    Email Address <span className="text-destructive">*</span>
                   </Label>
                   <Input
                     id="create-booking-email"
@@ -442,6 +422,7 @@ export function CreateBookingDialog({
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="customer@example.com"
+                    required
                   />
                 </div>
 

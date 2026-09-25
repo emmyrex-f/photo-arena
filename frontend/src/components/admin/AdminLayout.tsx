@@ -84,6 +84,7 @@ function NavItems({
               const link = (
                 <NavLink
                   to={item.to}
+                  end={itemPath === "/admin"}
                   onClick={onNavigate}
                   className={cn(
                     "pa-admin-nav-item group relative flex cursor-pointer items-center",

@@ -71,8 +71,13 @@ async function main() {
   console.log("╚══════════════════════════════════════════════════════╝\n");
 
   // Step 0: Authenticate as owner (admin routes are not IP-rate-limited)
+  const desk = await api<{ email: string }>("GET", "/auth/desk-email");
+  assert.equal(desk.status, 200, `desk-email ${desk.status}`);
   const login = await api<{ token: string }>("POST", "/auth/login", {
-    body: { email: "saviorisrael@gmail.com", password: "changeme" },
+    body: {
+      email: desk.data.email,
+      password: process.env.SEED_OWNER_PASSWORD ?? "changeme",
+    },
   });
   assert.ok(login.status === 200 || login.status === 201, `Login failed: ${login.status}`);
   const token = login.data.token;
@@ -153,7 +158,7 @@ async function main() {
     assert.ok(
       successes.length <= 1,
       `🚨 RACE CONDITION DETECTED! ${successes.length} bookings created for the SAME slot!\n` +
-        `Successful indices: ${successes.map((s) => s.index).join(", ")}`,
+      `Successful indices: ${successes.map((s) => s.index).join(", ")}`,
     );
 
     if (successes.length === 1) {

@@ -19,9 +19,8 @@ export class CreateAdminBookingDto {
   customerPhone!: string;
 
 
-  @IsOptional()
   @IsEmail()
-  customerEmail?: string;
+  customerEmail!: string;
 
   @IsString()
   packageId!: string;

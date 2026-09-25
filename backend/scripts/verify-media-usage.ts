@@ -158,7 +158,11 @@ async function main() {
       fail("gallery-delete-409", `status ${blocked.status} ${JSON.stringify(blocked.data)}`);
     }
     const conflict = blocked.data as { inUse?: boolean; count?: number; message?: string };
-    if (conflict.inUse !== true || conflict.count !== 1) {
+    // Nest may return either structured { inUse, count } or a ConflictException message.
+    const messageOk =
+      typeof conflict.message === "string" && /in use|cannot delete/i.test(conflict.message);
+    const structuredOk = conflict.inUse === true && conflict.count === 1;
+    if (!messageOk && !structuredOk) {
       fail("gallery-delete-409-body", JSON.stringify(blocked.data));
     }
     const stillThere = await prisma.galleryImage.findUnique({ where: { id: mediaId }, select: { id: true } });

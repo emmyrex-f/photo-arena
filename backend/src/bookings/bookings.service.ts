@@ -29,6 +29,7 @@ import type {
   CustomerRescheduleBookingDto,
 } from "./dto/customer-self-service.dto";
 import { HOLD_ACTIVE_PER_PHONE } from "../common/rate-limit";
+import { bookingNotifyEmail } from "../common/booking-contact";
 
 function maskEmail(email: string | null | undefined): string | null {
   if (!email) return null;
@@ -44,6 +45,23 @@ function maskPhone(phone: string | null | undefined): string | null {
   const digits = phone.replace(/\s+/g, "");
   if (digits.length <= 4) return digits;
   return `${digits.slice(0, 4)}****${digits.slice(-3)}`;
+}
+
+function requireNotifyEmail(booking: {
+  contactEmail?: string | null;
+  customer: { email: string | null };
+}): string {
+  const email = bookingNotifyEmail(booking);
+  if (!email) {
+    throw new BadRequestException("This booking has no contact email for messaging");
+  }
+  return email;
+}
+
+function normalizeRequiredEmail(raw: string | undefined | null, label = "Email"): string {
+  const email = (raw ?? "").trim().toLowerCase();
+  if (!email) throw new BadRequestException(`${label} is required`);
+  return email;
 }
 
 const bookingInclude = {
@@ -233,11 +251,16 @@ export class BookingsService {
       }
 
 
-      const email = input.customerEmail.trim().toLowerCase();
+      const email = normalizeRequiredEmail(input.customerEmail, "Customer email");
       const name = input.customerName.trim();
+      // Phone is the CRM key. Never overwrite an existing profile email — the typed address
+      // is stored on the booking as contactEmail and used for reminders/receipts.
       const existingCustomer = await tx.customer.findUnique({ where: { phone } });
       const customer = existingCustomer
-        ? existingCustomer
+        ? await tx.customer.update({
+            where: { id: existingCustomer.id },
+            data: { name },
+          })
         : await tx.customer.create({
             data: { name, phone, email },
           });
@@ -255,6 +278,7 @@ export class BookingsService {
             holdExpiresAt,
             amountKobo: payableKobo,
             reference,
+            contactEmail: email,
           },
           include: { package: true, customer: true },
         });
@@ -271,7 +295,7 @@ export class BookingsService {
         reference,
         details: `Hold until ${holdExpiresAt.toISOString()}`,
       },
-      [booking.customer.email ?? ""],
+      [requireNotifyEmail(booking)],
     );
 
     return {
@@ -373,15 +397,16 @@ export class BookingsService {
       }
 
       const phone = dto.customerPhone.trim();
-      const email = dto.customerEmail?.trim().toLowerCase() || null;
-      const customer = await tx.customer.upsert({
-        where: { phone },
-        create: { name: dto.customerName.trim(), phone, email },
-        update: {
-          name: dto.customerName.trim(),
-          email: email ?? undefined,
-        },
-      });
+      const email = normalizeRequiredEmail(dto.customerEmail, "Customer email");
+      const existingCustomer = await tx.customer.findUnique({ where: { phone } });
+      const customer = existingCustomer
+        ? await tx.customer.update({
+            where: { id: existingCustomer.id },
+            data: { name: dto.customerName.trim() },
+          })
+        : await tx.customer.create({
+            data: { name: dto.customerName.trim(), phone, email },
+          });
 
       try {
         return await tx.booking.create({
@@ -396,6 +421,7 @@ export class BookingsService {
             notes: dto.notes?.trim() || null,
             amountKobo,
             reference,
+            contactEmail: email,
           },
           include: bookingInclude,
         });
@@ -404,12 +430,16 @@ export class BookingsService {
       }
     });
 
-    void this.notifications.notifyEvent("booking_created", {
-      customerName: booking.customer.name,
-      startTime: booking.startTime.toISOString(),
-      reference,
-      details: `Admin booking (${dto.source})`,
-    });
+    void this.notifications.notifyEvent(
+      "booking_created",
+      {
+        customerName: booking.customer.name,
+        startTime: booking.startTime.toISOString(),
+        reference,
+        details: `Admin booking (${dto.source})`,
+      },
+      [requireNotifyEmail(booking)],
+    );
 
     return booking;
   }
@@ -517,7 +547,7 @@ export class BookingsService {
           amount: `₦${(amountKobo / 100).toLocaleString("en-NG")}`,
           startTime: booking.startTime.toISOString(),
         },
-        [booking.customer.email ?? ""].filter(Boolean),
+        [requireNotifyEmail(booking)],
       );
       void this.notifications.notifyEvent(
         "booking_confirmed",
@@ -526,7 +556,7 @@ export class BookingsService {
           reference: booking.reference ?? booking.id,
           startTime: booking.startTime.toISOString(),
         },
-        [booking.customer.email ?? ""].filter(Boolean),
+        [requireNotifyEmail(booking)],
       );
 
       return { booking: updated, amountKobo };
@@ -584,6 +614,7 @@ export class BookingsService {
           notes: `Reschedule snapshot of ${booking.id}`,
           amountKobo: booking.amountKobo,
           reference: `${booking.reference ?? booking.id}-SNAP-${Date.now()}`,
+          contactEmail: booking.contactEmail,
         },
       });
 
@@ -622,23 +653,26 @@ export class BookingsService {
         startTime: updated.startTime.toISOString(),
         details: fee > 0 ? `Reschedule fee pending: ₦${(fee / 100).toLocaleString()}` : "",
       },
-      [updated.customer.email ?? ""].filter(Boolean),
+      [requireNotifyEmail(updated)],
     );
 
     return updated;
   }
 
   private verifyCustomerMatch(
-    customer: { email: string | null; phone: string },
+    booking: { contactEmail?: string | null; customer: { email: string | null; phone: string } },
     emailOrPhone?: string,
   ): boolean {
     if (!emailOrPhone) return true;
     const input = emailOrPhone.trim().toLowerCase();
     const phoneDigits = input.replace(/\D/g, "");
-    const custEmail = (customer.email ?? "").toLowerCase();
-    const custPhone = customer.phone.replace(/\D/g, "");
+    const contact = (booking.contactEmail ?? "").toLowerCase();
+    const custEmail = (booking.customer.email ?? "").toLowerCase();
+    const custPhone = booking.customer.phone.replace(/\D/g, "");
 
-    const emailMatches = Boolean(custEmail && input === custEmail);
+    const emailMatches = Boolean(
+      (contact && input === contact) || (custEmail && input === custEmail),
+    );
     const phoneMatches = Boolean(
       phoneDigits && custPhone && (custPhone.endsWith(phoneDigits) || phoneDigits.endsWith(custPhone)),
     );
@@ -692,7 +726,7 @@ export class BookingsService {
     }
 
     const isVerified = emailOrPhone
-      ? this.verifyCustomerMatch(booking.customer, emailOrPhone)
+      ? this.verifyCustomerMatch(booking, emailOrPhone)
       : false;
 
     if (emailOrPhone && !isVerified) {
@@ -753,7 +787,7 @@ export class BookingsService {
       },
       customer: {
         name: booking.customer.name,
-        maskedEmail: maskEmail(booking.customer.email),
+        maskedEmail: maskEmail(booking.contactEmail ?? booking.customer.email),
         maskedPhone: maskPhone(booking.customer.phone),
         isVerified,
       },
@@ -806,7 +840,7 @@ export class BookingsService {
 
     if (!booking) throw new NotFoundException("Booking not found");
 
-    if (!this.verifyCustomerMatch(booking.customer, dto.emailOrPhone)) {
+    if (!this.verifyCustomerMatch(booking, dto.emailOrPhone)) {
       throw new ForbiddenException("Customer email or phone does not match this booking record");
     }
 
@@ -851,7 +885,7 @@ export class BookingsService {
         startTime: booking.startTime.toISOString(),
         details: `Cancellation Reason: ${reasonText}. Studio Policy: Strict no refund (deposit forfeited). Total paid: ₦${(totalPaidKobo / 100).toLocaleString()}.`,
       },
-      [booking.customer.email ?? ""].filter(Boolean),
+      [requireNotifyEmail(booking)],
     );
 
     return {
@@ -877,7 +911,7 @@ export class BookingsService {
 
     if (!booking) throw new NotFoundException("Booking not found");
 
-    if (!this.verifyCustomerMatch(booking.customer, dto.emailOrPhone)) {
+    if (!this.verifyCustomerMatch(booking, dto.emailOrPhone)) {
       throw new ForbiddenException("Customer email or phone does not match this booking record");
     }
 
@@ -922,6 +956,7 @@ export class BookingsService {
           notes: `Customer reschedule snapshot of ${booking.id}. Reason: ${dto.reason ?? "Online self-service"}`,
           amountKobo: booking.amountKobo,
           reference: `${booking.reference ?? booking.id}-SNAP-${Date.now()}`,
+          contactEmail: booking.contactEmail,
         },
       });
 
@@ -965,7 +1000,7 @@ export class BookingsService {
         startTime: updated.startTime.toISOString(),
         details: fee > 0 ? `Reschedule fee pending: ₦${(fee / 100).toLocaleString()}` : "",
       },
-      [updated.customer.email ?? ""].filter(Boolean),
+      [requireNotifyEmail(updated)],
     );
 
     return {
@@ -1008,7 +1043,7 @@ export class BookingsService {
           reference: booking.reference ?? booking.id,
           startTime: booking.startTime.toISOString(),
         },
-        [booking.customer.email ?? ""].filter(Boolean),
+        [requireNotifyEmail(booking)],
       );
     }
 

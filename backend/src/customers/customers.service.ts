@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { BookingStatus, PaymentStatus, Prisma } from "@prisma/client";
 import { parsePage, parsePageSize, paginate } from "../common/pagination";
 import { toCsv } from "../common/utils";
@@ -238,7 +238,15 @@ export class CustomersService {
       where: { id },
       data: {
         ...(data.name !== undefined ? { name: data.name.trim() } : {}),
-        ...(data.email !== undefined ? { email: data.email?.trim().toLowerCase() || null } : {}),
+        ...(data.email !== undefined
+          ? {
+              email: (() => {
+                const next = data.email.trim().toLowerCase();
+                if (!next) throw new BadRequestException("Customer email is required");
+                return next;
+              })(),
+            }
+          : {}),
         ...(data.notes !== undefined ? { notes: data.notes || null } : {}),
         ...(data.tags !== undefined ? { tags: data.tags } : {}),
       },

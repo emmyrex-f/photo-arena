@@ -8,15 +8,33 @@ export type CalendarBooking = {
   package: { name: string; durationMinutes: number };
 };
 
+export type CalendarContact = {
+  email?: string;
+  phone?: string;
+};
+
 function icsEscape(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\\;");
 }
 
-export function buildIcs(booking: CalendarBooking, location: string): string {
+/** Shared body for Google Calendar + ICS so the desk contact is easy to find. */
+export function calendarEventDetails(booking: CalendarBooking, contact?: CalendarContact): string {
+  const lines = [
+    `Booking ${booking.reference ?? booking.id}`,
+    "Photo Arena, Port Harcourt",
+  ];
+  const email = contact?.email?.trim();
+  const phone = contact?.phone?.trim();
+  if (email) lines.push(email);
+  if (phone) lines.push(phone);
+  return lines.join("\n");
+}
+
+export function buildIcs(booking: CalendarBooking, location: string, contact?: CalendarContact): string {
   const uid = `${booking.reference ?? booking.id}@photoarenang.com`;
   const summary = icsEscape(`Photo Arena — ${booking.package.name}`);
   const description = icsEscape(
-    `Booking ${booking.reference ?? booking.id}. Photo Arena, Port Harcourt. Bring this reference.`,
+    `${calendarEventDetails(booking, contact)}\nBring this reference when you visit.`,
   );
   const loc = icsEscape(location);
   return [
@@ -48,20 +66,24 @@ export function buildIcs(booking: CalendarBooking, location: string): string {
   ].join("\r\n");
 }
 
-export function googleCalendarUrl(booking: CalendarBooking, location: string): string {
+export function googleCalendarUrl(
+  booking: CalendarBooking,
+  location: string,
+  contact?: CalendarContact,
+): string {
   const dates = `${toIcsUtc(booking.startTime)}/${toIcsUtc(booking.endTime)}`;
   const params = new URLSearchParams({
     action: "TEMPLATE",
     text: `Photo Arena — ${booking.package.name}`,
     dates,
-    details: `Booking ${booking.reference ?? booking.id}\nPhoto Arena, Port Harcourt`,
+    details: calendarEventDetails(booking, contact),
     location,
   });
   return `https://calendar.google.com/calendar/render?${params.toString()}`;
 }
 
-export function downloadIcs(booking: CalendarBooking, location: string) {
-  const blob = new Blob([buildIcs(booking, location)], { type: "text/calendar;charset=utf-8" });
+export function downloadIcs(booking: CalendarBooking, location: string, contact?: CalendarContact) {
+  const blob = new Blob([buildIcs(booking, location, contact)], { type: "text/calendar;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;

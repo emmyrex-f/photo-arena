@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { BookingStatus } from "@prisma/client";
+import { bookingNotifyEmail } from "../common/booking-contact";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "./notifications.service";
 
@@ -50,22 +51,28 @@ export class ReminderScheduler {
       // 24h reminder: eligible from (24h + 15m) down to 2h before session
       if (enable24 && msUntil <= 24 * 60 * 60_000 + windowMs && msUntil >= 2 * 60 * 60_000) {
         if (!(await this.notifications.hasReminderBeenSent(booking.id, "24h"))) {
-          await this.notifications.notifyEvent("booking_reminder", vars, [
-            booking.customer.email ?? "",
-          ].filter(Boolean));
-          await this.notifications.markReminder(booking.id, "24h", recipients);
-          this.logger.log(`Sent 24h reminder for booking ${booking.id} (${booking.customer.name})`);
+          const to = bookingNotifyEmail(booking);
+          if (!to) {
+            this.logger.warn(`Skip 24h reminder for ${booking.id}: missing contact email`);
+          } else {
+            await this.notifications.notifyEvent("booking_reminder", vars, [to]);
+            await this.notifications.markReminder(booking.id, "24h", recipients);
+            this.logger.log(`Sent 24h reminder for booking ${booking.id} (${booking.customer.name})`);
+          }
         }
       }
 
       // 2h reminder: eligible from (2h + 15m) down to shoot start
       if (enable2 && msUntil <= 2 * 60 * 60_000 + windowMs && msUntil > 0) {
         if (!(await this.notifications.hasReminderBeenSent(booking.id, "2h"))) {
-          await this.notifications.notifyEvent("booking_reminder", vars, [
-            booking.customer.email ?? "",
-          ].filter(Boolean));
-          await this.notifications.markReminder(booking.id, "2h", recipients);
-          this.logger.log(`Sent 2h reminder for booking ${booking.id} (${booking.customer.name})`);
+          const to = bookingNotifyEmail(booking);
+          if (!to) {
+            this.logger.warn(`Skip 2h reminder for ${booking.id}: missing contact email`);
+          } else {
+            await this.notifications.notifyEvent("booking_reminder", vars, [to]);
+            await this.notifications.markReminder(booking.id, "2h", recipients);
+            this.logger.log(`Sent 2h reminder for booking ${booking.id} (${booking.customer.name})`);
+          }
         }
       }
     }

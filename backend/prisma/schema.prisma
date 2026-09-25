@@ -48,7 +48,8 @@ model Customer {
   id        String    @id @default(cuid())
   name      String
   phone     String    @unique
-  email     String?
+  /// Required — reminders and payment receipts go here. Never silently overwritten on phone match.
+  email     String
   createdAt DateTime  @default(now())
   notes     String?
   tags      String[]  @default([])
@@ -112,6 +113,8 @@ model Booking {
   reference         String?        @unique
   /// Snapshot booking (CANCELLED) that holds the previous slot after a reschedule.
   rescheduledFromId String?
+  /// Email typed for this booking — used for reminders/receipts. Independent of CRM profile email.
+  contactEmail      String
   customer          Customer       @relation(fields: [customerId], references: [id])
   package           Package        @relation(fields: [packageId], references: [id])
   resource          StudioResource @relation(fields: [resourceId], references: [id])

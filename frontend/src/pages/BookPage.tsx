@@ -532,7 +532,7 @@ export function BookPage() {
                 </div>
                 <div>
                   <label htmlFor="email" className="pa-label">
-                    Email
+                    Email <span className="text-error">*</span>
                   </label>
                   <input
                     id="email"
@@ -541,7 +541,11 @@ export function BookPage() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="pa-input"
+                    autoComplete="email"
                   />
+                  <p className="mt-1 text-xs text-text-muted">
+                    Required for booking confirmation and shoot reminders.
+                  </p>
                 </div>
                 {holdError ? <p className="text-sm text-error">{holdError}</p> : null}
                 <div className="flex flex-wrap gap-control">

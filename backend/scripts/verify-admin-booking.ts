@@ -32,22 +32,27 @@ async function main() {
   const pkg = packages[0];
   console.log(`✓ Step 2: Fetched ${packages.length} active packages (using: ${pkg.name})`);
 
-  // 3. Fetch availability for next Monday
-  const nextMonday = new Date();
-  nextMonday.setDate(nextMonday.getDate() + ((1 + 7 - nextMonday.getDay()) % 7 || 7));
-  const ymd = nextMonday.toISOString().slice(0, 10);
-
-  const availRes = await fetch(
-    `${API_URL}/admin/availability?date=${ymd}&durationMinutes=${pkg.durationMinutes}`,
-    {
-      headers: { Authorization: `Bearer ${token}` },
-    },
-  );
-  assert.strictEqual(availRes.status, 200);
-  const avail = await availRes.json();
-  assert.ok(Array.isArray(avail.slots) && avail.slots.length > 0, "Must have available slots");
-  const slot = avail.slots[0];
-  console.log(`✓ Step 3: Availability check returned ${avail.slots.length} slots for ${ymd} (selected: ${slot})`);
+  // 3. Fetch availability — scan upcoming weekdays for free slots
+  let ymd = "";
+  let slot = "";
+  for (let add = 1; add <= 14; add += 1) {
+    const d = new Date();
+    d.setDate(d.getDate() + ((1 + 7 - d.getDay()) % 7 || 7) + (add - 1));
+    const candidate = d.toISOString().slice(0, 10);
+    const availRes = await fetch(
+      `${API_URL}/admin/availability?date=${candidate}&durationMinutes=${pkg.durationMinutes}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    assert.strictEqual(availRes.status, 200);
+    const avail = await availRes.json();
+    if (Array.isArray(avail.slots) && avail.slots.length > 0) {
+      ymd = candidate;
+      slot = avail.slots[0];
+      break;
+    }
+  }
+  assert.ok(ymd && slot, "Must have available slots in the next two weeks");
+  console.log(`✓ Step 3: Availability check found slots for ${ymd} (selected: ${slot})`);
 
   // 4. Create admin walk-in booking
   const testPhone = "08039998877";

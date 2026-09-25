@@ -48,6 +48,7 @@ async function run() {
       source: "ONLINE",
       amountKobo: pkg.priceKobo,
       reference: testRef,
+      contactEmail: customer.email,
     },
     include: { customer: true, package: true, payments: true },
   });

@@ -113,7 +113,7 @@ export function createAdminApi({ token, onUnauthorized }: ClientOptions) {
       create: (body: {
         customerName: string;
         customerPhone: string;
-        customerEmail?: string;
+        customerEmail: string;
         packageId: string;
         startTime: string;
         source: "WALK_IN" | "ADMIN";

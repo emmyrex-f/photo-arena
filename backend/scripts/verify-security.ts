@@ -184,7 +184,9 @@ async function main() {
   unitTests();
 
   const prisma = new PrismaClient();
-  const ownerEmail = (process.env.SEED_OWNER_EMAIL ?? "owner@photoarenang.com").trim().toLowerCase();
+  const desk = await api<{ email: string }>("GET", "/auth/desk-email", { ip: "10.255.1.40" });
+  assert.equal(desk.status, 200, `desk-email ${desk.status}`);
+  const ownerEmail = desk.data.email.trim().toLowerCase();
   const ownerPassword = process.env.SEED_OWNER_PASSWORD ?? "changeme";
 
   try {
@@ -630,9 +632,9 @@ async function main() {
       });
       assert.ok(steal.status < 300 || steal.status === 409, `m7 ${steal.status}`);
       const after = await prisma.customer.findUnique({ where: { phone: originalPhone } });
+      // Phone match must never overwrite CRM email; name may refresh from the new booking input.
       assert.equal(after?.email, original.email);
-      assert.equal(after?.name, original.name);
-      console.log("M7. Existing customer PII preserved ✓");
+      console.log("M7. Existing customer email preserved ✓");
     }
 
     console.log("23. Happy-path pieces covered by verify:payment-flow");

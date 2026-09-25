@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
@@ -8,10 +9,12 @@ import { randomUUID } from "crypto";
 import sharp from "sharp";
 import { parsePage, parsePageSize, paginate } from "../common/pagination";
 import { parseMediaKind } from "../common/upload-path";
+import { MediaUsageService } from "../media-usage/media-usage.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
 
 const ALLOWED_FORMATS = new Set(["jpeg", "png", "webp"]);
+const USAGE_TYPE = "portfolio";
 
 export type GalleryListInput = {
   kind?: string;
@@ -28,6 +31,7 @@ export class GalleryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
+    private readonly mediaUsage: MediaUsageService,
   ) {}
 
   async list(input?: string | GalleryListInput) {
@@ -67,8 +71,9 @@ export class GalleryService {
       this.prisma.galleryImage.count({ where: { ...where, featured: true } }),
     ]);
 
+    const decorated = await this.withMedia(items);
     return {
-      ...paginate(items, total, page, pageSize),
+      ...paginate(decorated, total, page, pageSize),
       counts: {
         active,
         featured,
@@ -156,6 +161,29 @@ export class GalleryService {
     return this.storage.getIntegrationStatus();
   }
 
+  private async withMedia<T extends { id: string }>(items: T[]) {
+    const mediaMap = await this.mediaUsage.primariesForEntities(
+      USAGE_TYPE,
+      items.map((row) => row.id),
+    );
+    return items.map((item) => {
+      const media = mediaMap.get(item.id);
+      return {
+        ...item,
+        media: media
+          ? {
+              id: media.id,
+              url: media.url,
+              thumbUrl: media.thumbUrl ?? media.url,
+              alt: media.alt,
+              filename: media.filename ?? null,
+              isActive: media.isActive ?? true,
+            }
+          : null,
+      };
+    });
+  }
+
   async update(
     id: string,
     input: Partial<{
@@ -164,14 +192,47 @@ export class GalleryService {
       featured: boolean;
       isActive: boolean;
       sortOrder: number;
+      mediaId?: string | null;
     }>,
   ) {
     await this.require(id);
-    return this.prisma.galleryImage.update({ where: { id }, data: input });
+    const data: {
+      alt?: string;
+      category?: string;
+      featured?: boolean;
+      isActive?: boolean;
+      sortOrder?: number;
+    } = {};
+    if (input.alt !== undefined) data.alt = input.alt;
+    if (input.category !== undefined) data.category = input.category;
+    if (input.featured !== undefined) data.featured = input.featured;
+    if (input.isActive !== undefined) data.isActive = input.isActive;
+    if (input.sortOrder !== undefined) data.sortOrder = input.sortOrder;
+
+    const updated =
+      Object.keys(data).length > 0
+        ? await this.prisma.galleryImage.update({ where: { id }, data })
+        : await this.require(id);
+
+    if (input.mediaId !== undefined) {
+      await this.mediaUsage.setPrimary({
+        usageType: USAGE_TYPE,
+        entityId: id,
+        mediaId: input.mediaId,
+      });
+    }
+    const decorated = await this.withMedia([updated]);
+    return decorated[0]!;
   }
 
   async remove(id: string) {
     const row = await this.require(id);
+    const usages = await this.prisma.mediaUsage.count({ where: { mediaId: id } });
+    if (usages > 0) {
+      throw new ConflictException(
+        `Cannot delete media: image is currently in use across ${usages} entity/entities`,
+      );
+    }
     await this.prisma.galleryImage.delete({ where: { id } });
     await this.storage.delete(row.url, row.thumbUrl);
     return { ok: true as const };
