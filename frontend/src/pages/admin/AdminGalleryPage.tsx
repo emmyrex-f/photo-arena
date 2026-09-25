@@ -1,7 +1,9 @@
-import { useCallback, useMemo, useRef, useState, type DragEvent, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from "react";
 import {
   ArrowDown,
   ArrowUp,
+  ChevronLeft,
+  ChevronRight,
   ImageIcon,
   MoreHorizontal,
   Pencil,
@@ -52,6 +54,7 @@ import { mediaUrl } from "../../lib/publicApi";
 
 const MAX_BYTES = 15 * 1024 * 1024;
 const MAX_FILES = 10;
+const PAGE_SIZE = 24;
 const ACCEPT = "image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp";
 
 const KIND_OPTIONS: Array<{ value: MediaKind; label: string }> = [
@@ -111,6 +114,8 @@ export function AdminGalleryPage() {
   const [statusFilter, setStatusFilter] = useState<"ALL" | "active" | "inactive">("ALL");
   const [categoryFilter, setCategoryFilter] = useState("ALL");
   const [query, setQuery] = useState("");
+  const [debouncedQ, setDebouncedQ] = useState("");
+  const [page, setPage] = useState(1);
   const [uploadKind, setUploadKind] = useState<MediaKind>("GALLERY");
   const [uploadCategory, setUploadCategory] = useState("general");
   const [progress, setProgress] = useState<number | null>(null);
@@ -120,17 +125,34 @@ export function AdminGalleryPage() {
   const [editForm, setEditForm] = useState<EditForm | null>(null);
   const [editSaving, setEditSaving] = useState(false);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedQ(query.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [kindFilter, statusFilter, categoryFilter, debouncedQ]);
+
   const listQuery = useQuery(
     () =>
       api.gallery.list({
+        page,
+        pageSize: PAGE_SIZE,
         ...(kindFilter !== "ALL" ? { kind: kindFilter } : {}),
         ...(statusFilter === "active" ? { isActive: true } : {}),
         ...(statusFilter === "inactive" ? { isActive: false } : {}),
+        ...(categoryFilter !== "ALL" ? { category: categoryFilter } : {}),
+        ...(debouncedQ ? { q: debouncedQ } : {}),
       }),
-    [kindFilter, statusFilter],
+    [kindFilter, statusFilter, categoryFilter, debouncedQ, page],
   );
 
-  const images = listQuery.data ?? [];
+  const pageData = listQuery.data;
+  const images = pageData?.items ?? [];
+  const total = pageData?.total ?? 0;
+  const counts = pageData?.counts ?? { active: 0, featured: 0, inactive: 0 };
+  const pageCount = Math.max(1, Math.ceil(total / (pageData?.pageSize ?? PAGE_SIZE)));
 
   const categories = useMemo(() => {
     const set = new Set<string>(SUGGESTED_CATEGORIES);
@@ -140,31 +162,10 @@ export function AdminGalleryPage() {
     return [...set].sort((a, b) => a.localeCompare(b));
   }, [images]);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return images.filter((image) => {
-      if (categoryFilter !== "ALL" && image.category.toLowerCase() !== categoryFilter) return false;
-      if (!q) return true;
-      return (
-        image.alt.toLowerCase().includes(q) ||
-        (image.filename ?? "").toLowerCase().includes(q) ||
-        image.category.toLowerCase().includes(q)
-      );
-    });
-  }, [images, categoryFilter, query]);
-
   const orderedIds = useMemo(
     () => [...images].sort((a, b) => a.sortOrder - b.sortOrder).map((row) => row.id),
     [images],
   );
-
-  const stats = useMemo(() => {
-    const total = images.length;
-    const active = images.filter((row) => row.isActive).length;
-    const featured = images.filter((row) => row.featured).length;
-    const inactive = total - active;
-    return { total, active, featured, inactive };
-  }, [images]);
 
   const openEdit = useCallback((image: GalleryImage) => {
     setEditing(image);
@@ -209,10 +210,8 @@ export function AdminGalleryPage() {
       setProgress(0);
       try {
         const rows = await api.gallery.upload(form, setProgress);
-        listQuery.setData((current) => {
-          const next = current ? [...rows, ...current.filter((row) => !rows.some((r) => r.id === row.id))] : rows;
-          return next.sort((a, b) => a.sortOrder - b.sortOrder);
-        });
+        setPage(1);
+        await listQuery.refetch();
         toast.success(rows.length === 1 ? "Image uploaded" : `${rows.length} images uploaded`);
       } catch (err) {
         toast.error(errorMessage(err, "Upload failed"));
@@ -244,7 +243,12 @@ export function AdminGalleryPage() {
         isActive: editForm.isActive,
       });
       listQuery.setData((current) =>
-        current ? current.map((row) => (row.id === updated.id ? { ...row, ...updated } : row)) : [updated],
+        current
+          ? {
+              ...current,
+              items: current.items.map((row) => (row.id === updated.id ? { ...row, ...updated } : row)),
+            }
+          : current,
       );
       toast.success("Image updated");
       closeEdit();
@@ -259,8 +263,14 @@ export function AdminGalleryPage() {
     try {
       const updated = await api.gallery.update(image.id, patch);
       listQuery.setData((current) =>
-        current ? current.map((row) => (row.id === updated.id ? { ...row, ...updated } : row)) : [updated],
+        current
+          ? {
+              ...current,
+              items: current.items.map((row) => (row.id === updated.id ? { ...row, ...updated } : row)),
+            }
+          : current,
       );
+      await listQuery.refetch();
     } catch (err) {
       toast.error(errorMessage(err, "Could not update image"));
     } finally {
@@ -275,9 +285,10 @@ export function AdminGalleryPage() {
     setBusyId(image.id);
     try {
       await api.gallery.remove(image.id);
-      listQuery.setData((current) => (current ? current.filter((row) => row.id !== image.id) : []));
       if (editing?.id === image.id) closeEdit();
       toast.success("Image deleted");
+      if (images.length <= 1 && page > 1) setPage((p) => p - 1);
+      else await listQuery.refetch();
     } catch (err) {
       const conflict = mediaInUseFromError(err);
       if (conflict) {
@@ -304,20 +315,15 @@ export function AdminGalleryPage() {
     const swapIndex = index + direction;
     if (index < 0 || swapIndex < 0 || swapIndex >= ordered.length) return;
 
-    const next = [...ordered];
-    const [removed] = next.splice(index, 1);
-    next.splice(swapIndex, 0, removed);
-    const ids = next.map((row) => row.id);
-
+    const a = ordered[index];
+    const b = ordered[swapIndex];
     setBusyId(image.id);
     try {
-      await api.gallery.reorder(ids);
-      listQuery.setData(
-        next.map((row, sortOrder) => ({
-          ...row,
-          sortOrder,
-        })),
-      );
+      await Promise.all([
+        api.gallery.update(a.id, { sortOrder: b.sortOrder }),
+        api.gallery.update(b.id, { sortOrder: a.sortOrder }),
+      ]);
+      await listQuery.refetch();
     } catch (err) {
       toast.error(errorMessage(err, "Could not reorder"));
       await listQuery.refetch();
@@ -362,10 +368,10 @@ export function AdminGalleryPage() {
       <ErrorBanner message={listQuery.error} onRetry={() => void listQuery.refetch()} retrying={listQuery.fetching} />
 
       <section className="grid gap-admin-gap sm:grid-cols-2 xl:grid-cols-4" aria-label="Library metrics">
-        <StatCard label="Total assets" icon={ImageIcon} tone="primary" loading={listQuery.loading} value={stats.total} />
-        <StatCard label="Active" icon={ImageIcon} loading={listQuery.loading} value={stats.active} />
-        <StatCard label="Featured" icon={Star} tone="primary" loading={listQuery.loading} value={stats.featured} />
-        <StatCard label="Inactive" icon={ImageIcon} loading={listQuery.loading} value={stats.inactive} />
+        <StatCard label="Total assets" icon={ImageIcon} tone="primary" loading={listQuery.loading} value={total} />
+        <StatCard label="Active" icon={ImageIcon} loading={listQuery.loading} value={counts.active} />
+        <StatCard label="Featured" icon={Star} tone="primary" loading={listQuery.loading} value={counts.featured} />
+        <StatCard label="Inactive" icon={ImageIcon} loading={listQuery.loading} value={counts.inactive} />
       </section>
 
       <section
@@ -480,17 +486,17 @@ export function AdminGalleryPage() {
             <Skeleton key={index} className="aspect-[4/5] w-full rounded-xl" />
           ))}
         </div>
-      ) : filtered.length === 0 ? (
+      ) : images.length === 0 ? (
         <EmptyState
           icon={ImageIcon}
-          title={images.length ? "No matches" : "No images yet"}
+          title={total || debouncedQ || categoryFilter !== "ALL" ? "No matches" : "No images yet"}
           description={
-            images.length
+            total || debouncedQ || categoryFilter !== "ALL"
               ? "Try a different search or filter."
               : "Upload JPEG, PNG, or WebP files to start building the library."
           }
           action={
-            !images.length ? (
+            !total && !debouncedQ && categoryFilter === "ALL" ? (
               <Button type="button" onClick={() => fileRef.current?.click()}>
                 <Upload strokeWidth={1.5} />
                 Upload images
@@ -499,8 +505,9 @@ export function AdminGalleryPage() {
           }
         />
       ) : (
+        <>
         <ul className="grid grid-cols-2 gap-admin-gap md:grid-cols-3 xl:grid-cols-4">
-          {filtered.map((image) => {
+          {images.map((image) => {
             const src = mediaUrl(image.thumbUrl || image.url);
             const busy = busyId === image.id;
             const orderIndex = orderedIds.indexOf(image.id);
@@ -610,6 +617,36 @@ export function AdminGalleryPage() {
             );
           })}
         </ul>
+
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs text-muted-foreground">
+            Page {page} of {pageCount}
+            {total ? ` · ${total} asset${total === 1 ? "" : "s"}` : ""}
+          </p>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={page <= 1 || listQuery.fetching}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Prev
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={page >= pageCount || listQuery.fetching}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+        </>
       )}
 
       <Dialog open={Boolean(editing && editForm)} onOpenChange={(open) => !open && closeEdit()}>

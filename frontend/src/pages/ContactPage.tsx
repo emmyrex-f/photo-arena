@@ -44,7 +44,7 @@ export function ContactPage() {
               </ul>
             </div>
             <div className="space-y-3">
-              <div className="relative h-64 overflow-hidden border border-elevated">
+              <div className="relative h-64 overflow-hidden rounded-xl border border-border">
                 <iframe
                   title="Photo Arena location map"
                   src={info.mapEmbed}

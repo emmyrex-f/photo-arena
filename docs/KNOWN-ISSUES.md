@@ -15,9 +15,10 @@ Do not hide failures. Update when fixed.
 | SEC-C1b | HIGH | Public mock complete if tunneled with `PAYMENTS_MOCK` | **Fixed** — loopback-only |
 | SEC-SEED | HIGH | Seed resets OWNER password and discount bps | **Fixed** |
 | CMS-1 | HIGH | Pricing rule PATCH requires `bps`; UI sends only `isActive` | **Fixed** — optional DTO + percent editor |
-| CMS-2 | MEDIUM | Opening hours in CMS do not drive `availability.ts` | Open at audit |
-| MED-1 | HIGH | No S3/R2; uploads are container-local | Open at audit |
+| CMS-2 | MEDIUM | Opening hours in CMS do not drive `availability.ts` | **Fixed** — CMS hours (`site.hours.weekday`, `site.hours.sunday`, closed states, custom ranges) drive availability slots & slotFits booking guard |
+| MED-1 | HIGH | No S3/R2; uploads are container-local | **Fixed** — Swappable `StorageService` with Cloudflare R2 (`@aws-sdk/client-s3`) and local disk providers |
 | MED-2 | MEDIUM | `temp-audit-imgs` not in workspace | Blocked |
+
 | SOC-1 | LOW | Official TikTok not confidently verified — left empty | Blocked on client |
 | DEP-1 | HIGH | No Nginx/app Docker; Hostinger plan unverified | Open |
 

@@ -3,6 +3,8 @@ import { Toaster } from "./components/ui/toaster";
 import { AdminThemeProvider } from "./lib/theme";
 import { AdminLayout } from "../components/admin/AdminLayout";
 import { AdminLoginPage } from "../pages/admin/AdminLoginPage";
+import { AdminForgotPasswordPage } from "../pages/admin/AdminForgotPasswordPage";
+import { AdminResetPasswordPage } from "../pages/admin/AdminResetPasswordPage";
 import { AdminAuditPage } from "../pages/admin/AdminAuditPage";
 import { AdminBlogEditorPage } from "../pages/admin/AdminBlogEditorPage";
 import { AdminBlogPage } from "../pages/admin/AdminBlogPage";
@@ -35,8 +37,11 @@ export function AdminApp() {
     <AdminThemeProvider>
       <Routes>
         <Route path="login" element={<AdminLoginPage />} />
+        <Route path="forgot-password" element={<AdminForgotPasswordPage />} />
+        <Route path="reset-password" element={<AdminResetPasswordPage />} />
         <Route element={<AdminLayout />}>
           <Route index element={<AdminDashboardPage />} />
+          <Route path="dashboard" element={<Navigate to="/admin" replace />} />
           <Route path="bookings" element={<AdminBookingsPage />} />
           <Route path="calendar" element={<Navigate to="/admin/bookings" replace />} />
           <Route path="customers" element={<AdminCustomersPage />} />

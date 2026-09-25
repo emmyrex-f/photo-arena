@@ -5,13 +5,17 @@ export type NotificationEvent =
   | "booking_reminder"
   | "booking_rescheduled"
   | "booking_cancelled"
-  | "payment_failed";
+  | "payment_failed"
+  | "checkout_abandoned"
+  | "password_reset"
+  | "manual_notice";
 
 export type NotificationMessage = {
   event: NotificationEvent;
   to: string[];
   subject: string;
   body: string;
+  html?: string;
 };
 
 export interface NotificationChannel {

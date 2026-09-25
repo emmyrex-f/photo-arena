@@ -10,9 +10,12 @@ import {
   Menu,
   Monitor,
   Moon,
+  ShieldAlert,
   Sun,
+  User,
 } from "lucide-react";
 import { Button } from "../../admin/components/ui/button";
+import { toast } from "../../admin/components/ui/toaster";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,6 +38,7 @@ import { cn } from "../../lib/cn";
 import { useAuth } from "../../lib/auth";
 import { CameraSpinner } from "../ui/CameraSpinner";
 import { ChangePasswordDialog } from "./ChangePasswordDialog";
+import { EditProfileDialog } from "./EditProfileDialog";
 
 const SIDEBAR_KEY = "pa_admin_sidebar_collapsed";
 
@@ -52,7 +56,11 @@ function NavItems({
   onNavigate?: () => void;
 }) {
   const { user } = useAuth();
+  const location = useLocation();
   const sections = navSectionsForUser(user);
+
+  // Normalize current pathname to ensure robust active state highlighting
+  const currentPath = (location.pathname.replace(/\/+$/, "") || "/").toLowerCase();
 
   return (
     <nav className="pa-admin-nav-sections flex flex-col" aria-label="Admin">
@@ -66,23 +74,25 @@ function NavItems({
           ) : null}
           <div className="pa-admin-nav-list flex flex-col">
             {section.items.map((item) => {
-              const end = item.to === "/admin";
+              const itemPath = item.to.replace(/\/+$/, "").toLowerCase();
+              const isActive =
+                itemPath === "/admin"
+                  ? currentPath === "/admin"
+                  : currentPath === itemPath || currentPath.startsWith(itemPath + "/");
+
               const badgeVisible = showBadge(item.badge);
               const link = (
                 <NavLink
                   to={item.to}
-                  end={end}
                   onClick={onNavigate}
-                  className={({ isActive }) =>
-                    cn(
-                      "pa-admin-nav-item group relative flex cursor-pointer items-center",
-                      collapsed && "pa-admin-nav-collapsed justify-center",
-                      isActive && "pa-admin-nav-item--active",
-                    )
-                  }
+                  className={cn(
+                    "pa-admin-nav-item group relative flex cursor-pointer items-center",
+                    collapsed && "pa-admin-nav-collapsed justify-center",
+                    isActive && "pa-admin-nav-item--active",
+                  )}
                 >
                   <span className="pa-admin-nav-icon relative shrink-0">
-                    <item.icon strokeWidth={1.5} aria-hidden />
+                    <item.icon strokeWidth={1.75} aria-hidden />
                     {badgeVisible && collapsed ? (
                       <span
                         className="pa-admin-nav-badge pa-admin-nav-badge--float"
@@ -110,7 +120,9 @@ function NavItems({
               return (
                 <Tooltip key={item.to} delayDuration={0}>
                   <TooltipTrigger asChild>{link}</TooltipTrigger>
-                  <TooltipContent side="right">{item.label}</TooltipContent>
+                  <TooltipContent side="right" className="font-medium">
+                    {item.label}
+                  </TooltipContent>
                 </Tooltip>
               );
             })}
@@ -123,21 +135,52 @@ function NavItems({
 
 function SidebarBrand({ collapsed, homeTo }: { collapsed?: boolean; homeTo: string }) {
   const { resolved } = useAdminTheme();
+
+  if (collapsed) {
+    return (
+      <div className="pa-admin-header-brand pa-admin-header-brand--collapsed">
+        <Tooltip delayDuration={0}>
+          <TooltipTrigger asChild>
+            <Link
+              to={homeTo}
+              className="pa-admin-brand-mark-link--collapsed"
+              aria-label="Photo Arena desk home"
+            >
+              <img
+                src="/apple-touch-icon.png"
+                alt="Photo Arena"
+                className="pa-admin-brand-mark--collapsed"
+                width={36}
+                height={36}
+                draggable={false}
+              />
+            </Link>
+          </TooltipTrigger>
+          <TooltipContent side="right" className="font-medium">
+            Photo Arena Home
+          </TooltipContent>
+        </Tooltip>
+      </div>
+    );
+  }
+
   return (
-    <Link
-      to={homeTo}
-      className={cn("pa-admin-header-brand", collapsed && "pa-admin-header-brand--collapsed")}
-      aria-label="Photo Arena desk home"
-    >
-      <img
-        src={resolved === "dark" ? "/admin-logo.png?v=2" : "/admin-logo-on-light.png?v=2"}
-        alt="Photo Arena"
-        className={cn("pa-admin-brand-mark", collapsed && "pa-admin-brand-mark--collapsed")}
-        width={collapsed ? 32 : 200}
-        height={collapsed ? 18 : 112}
-        draggable={false}
-      />
-    </Link>
+    <div className="pa-admin-header-brand">
+      <Link
+        to={homeTo}
+        className="flex items-center justify-center transition-opacity hover:opacity-90"
+        aria-label="Photo Arena desk home"
+      >
+        <img
+          src={resolved === "dark" ? "/admin-logo.png?v=2" : "/admin-logo-on-light.png?v=2"}
+          alt="Photo Arena"
+          className="pa-admin-brand-mark"
+          width={150}
+          height={38}
+          draggable={false}
+        />
+      </Link>
+    </div>
   );
 }
 
@@ -192,7 +235,7 @@ function roleLabel(role: string | undefined) {
 }
 
 export function AdminLayout() {
-  const { ready, user, logout } = useAuth();
+  const { ready, user, logout, logoutAll } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(() => {
@@ -204,6 +247,7 @@ export function AdminLayout() {
   });
   const [mobileOpen, setMobileOpen] = useState(false);
   const [passwordOpen, setPasswordOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   useEffect(() => {
     try {
@@ -249,16 +293,35 @@ export function AdminLayout() {
           </ScrollArea>
           {!collapsed ? <SidebarPromo /> : null}
           <div className="pa-admin-sidebar-foot">
-            <Button
-              variant="ghost"
-              size={collapsed ? "icon-sm" : "sm"}
-              className={cn("pa-admin-collapse-btn", !collapsed && "justify-start")}
-              onClick={() => setCollapsed((v) => !v)}
-              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            >
-              {collapsed ? <ChevronsRight strokeWidth={1.5} /> : <ChevronsLeft strokeWidth={1.5} />}
-              {!collapsed ? <span>Collapse</span> : null}
-            </Button>
+            {collapsed ? (
+              <Tooltip delayDuration={0}>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="pa-admin-collapse-btn pa-admin-collapse-btn--collapsed"
+                    onClick={() => setCollapsed(false)}
+                    aria-label="Expand sidebar"
+                  >
+                    <ChevronsRight className="h-4 w-4" strokeWidth={1.75} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="right" className="font-medium">
+                  Expand sidebar
+                </TooltipContent>
+              </Tooltip>
+            ) : (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="pa-admin-collapse-btn pa-admin-collapse-btn--expanded"
+                onClick={() => setCollapsed(true)}
+                aria-label="Collapse sidebar"
+              >
+                <ChevronsLeft className="h-4 w-4" strokeWidth={1.75} />
+                <span className="text-xs font-medium">Collapse</span>
+              </Button>
+            )}
           </div>
         </aside>
 
@@ -343,9 +406,25 @@ export function AdminLayout() {
                     <p className="truncate text-xs text-muted-foreground">{user.email}</p>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setProfileOpen(true)}>
+                    <User strokeWidth={1.5} />
+                    Edit profile
+                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setPasswordOpen(true)}>
                     <KeyRound strokeWidth={1.5} />
                     Change password
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={async () => {
+                      if (window.confirm("Sign out of all devices? This will invalidate all your active sessions.")) {
+                        await logoutAll();
+                        toast.info("All active sessions revoked");
+                      }
+                    }}
+                    className="text-amber-500 focus:text-amber-500"
+                  >
+                    <ShieldAlert strokeWidth={1.5} />
+                    Sign out all devices
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={logout} className="text-destructive focus:text-destructive">
                     <LogOut strokeWidth={1.5} />
@@ -364,6 +443,7 @@ export function AdminLayout() {
         </div>
 
         <ChangePasswordDialog open={passwordOpen} onOpenChange={setPasswordOpen} />
+        <EditProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
       </div>
     </TooltipProvider>
   );

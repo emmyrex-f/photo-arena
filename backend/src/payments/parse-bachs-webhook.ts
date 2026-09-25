@@ -34,12 +34,11 @@ const SUCCESS_TYPES = new Set(["collection.succeeded"]);
  */
 const CHECKOUT_COMPLETED_TYPE = "checkout.completed";
 const FAILED_TYPES = new Set(["collection.failed"]);
-/** Acknowledge-only. (`collection.abandoned` is kept for local scripts; Bachs does not emit it.) */
+/** Abandoned / incomplete / expired checkout events that release temporary holds and notify customer and admin. */
 const ABANDONED_TYPES = new Set([
   "collection.abandoned",
   "collection.underpaid",
   "checkout.expired",
-  "refund.paid",
 ]);
 
 function asDecimalString(value: string | number | null | undefined): string | undefined {

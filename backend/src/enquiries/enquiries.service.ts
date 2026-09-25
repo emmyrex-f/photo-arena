@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { EnquiryStatus, Prisma } from "@prisma/client";
 import { parsePage, parsePageSize, paginate } from "../common/pagination";
 import { PrismaService } from "../prisma/prisma.service";
@@ -17,9 +17,14 @@ function parseStatus(raw?: string): EnquiryStatus | undefined {
   return undefined;
 }
 
+import { NotificationsService } from "../notifications/notifications.service";
+
 @Injectable()
 export class EnquiriesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   async summary() {
     const now = new Date();
@@ -127,6 +132,45 @@ export class EnquiriesService {
       data: {
         ...(data.status !== undefined ? { status: data.status } : {}),
         ...(data.internalNote !== undefined ? { internalNote: data.internalNote || null } : {}),
+      },
+    });
+  }
+
+  async reply(
+    id: string,
+    replyMessage: string,
+    senderEmail?: string,
+    subject?: string,
+  ) {
+    const row = await this.get(id);
+    const msg = replyMessage?.trim();
+    if (!msg) {
+      throw new BadRequestException("Reply message cannot be empty");
+    }
+    if (!row.email || !row.email.includes("@")) {
+      throw new BadRequestException("This enquiry does not have a valid customer email address");
+    }
+
+    const emailSubject = subject?.trim() || "Response from Photo Arena Studio";
+
+    await this.notifications.sendManualNotification({
+      to: row.email,
+      customerName: row.name,
+      subject: emailSubject,
+      message: msg,
+      senderEmail,
+    });
+
+    const replyEntry = `[Email Reply sent on ${new Date().toISOString()}${senderEmail ? ` by ${senderEmail}` : ""}]\n${msg}`;
+    const updatedNote = row.internalNote
+      ? `${row.internalNote}\n\n${replyEntry}`
+      : replyEntry;
+
+    return this.prisma.enquiry.update({
+      where: { id },
+      data: {
+        status: EnquiryStatus.REPLIED,
+        internalNote: updatedNote,
       },
     });
   }

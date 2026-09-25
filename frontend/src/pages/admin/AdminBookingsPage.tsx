@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { useSearchParams } from "react-router-dom";
 import {
   AlertTriangle,
+  Banknote,
   Calendar as CalendarIcon,
   CalendarPlus,
   ChevronLeft,
@@ -10,6 +11,7 @@ import {
   MapPin,
   MoreHorizontal,
   Phone,
+  Plus,
 } from "lucide-react";
 import { addDays, format, getDaysInMonth, startOfMonth } from "date-fns";
 import { Avatar, AvatarFallback } from "../../admin/components/ui/avatar";
@@ -17,6 +19,8 @@ import { Badge } from "../../admin/components/ui/badge";
 import { Button } from "../../admin/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../admin/components/ui/card";
 import { ConfirmDialog } from "../../admin/components/ui/confirm-dialog";
+import { CreateBookingDialog } from "../../components/admin/CreateBookingDialog";
+import { RecordPaymentDialog } from "../../components/admin/RecordPaymentDialog";
 import { EmptyState } from "../../admin/components/ui/empty-state";
 import { ErrorBanner } from "../../admin/components/ui/error-banner";
 import { Skeleton } from "../../admin/components/ui/skeleton";
@@ -97,14 +101,14 @@ function revenueHint(deltaPct: number | null, deltaKobo: number): string {
 }
 
 function paidSuccessKobo(booking: BookingRecord): number {
-  return booking.payments
+  return (booking.payments ?? [])
     .filter((p) => p.status === "SUCCESS")
     .reduce((sum, p) => sum + p.amountKobo, 0);
 }
 
 function amountDueKobo(booking: BookingRecord): number {
   if (booking.amountKobo != null && booking.amountKobo > 0) return booking.amountKobo;
-  return booking.package.priceKobo;
+  return booking.package?.priceKobo ?? 0;
 }
 
 function paymentDisplay(booking: BookingRecord): DashboardPaymentStatus {
@@ -221,7 +225,8 @@ function packageMeta(pkg: BookingRecord["package"]): string {
 }
 
 /** Reference table package line: "1 outfit, 15 min". */
-function packageBoardMeta(pkg: BookingRecord["package"]): string {
+function packageBoardMeta(pkg: BookingRecord["package"] | null | undefined): string {
+  if (!pkg) return "—";
   const parts: string[] = [];
   if (pkg.outfitCount) {
     parts.push(`${pkg.outfitCount} outfit${pkg.outfitCount === 1 ? "" : "s"}`);
@@ -259,6 +264,7 @@ export function AdminBookingsPage() {
   const [editingNotes, setEditingNotes] = useState(false);
   const [markPaidOpen, setMarkPaidOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
+  const [createBookingOpen, setCreateBookingOpen] = useState(false);
 
   const canMutate = hasDeskPermission(user, "bookings") && (user?.role === "OWNER" || user?.role === "ADMIN");
 
@@ -295,9 +301,31 @@ export function AdminBookingsPage() {
         }),
         api.bookings.packages(),
       ]);
-      setStats(statsRes);
-      setRows(listRes);
-      setPackages(pkgs);
+      // Normalize older API shapes that lack totalAll so the page never crashes on render.
+      const normalized: BookingsDeskStats = {
+        totalAll: {
+          count: statsRes.totalAll?.count ?? statsRes.totalLast30?.count ?? 0,
+        },
+        totalLast30: {
+          count: statsRes.totalLast30?.count ?? 0,
+          deltaPct: statsRes.totalLast30?.deltaPct ?? null,
+        },
+        today: {
+          count: statsRes.today?.count ?? 0,
+          delta: statsRes.today?.delta ?? 0,
+        },
+        todayRevenue: {
+          totalKobo: statsRes.todayRevenue?.totalKobo ?? 0,
+          deltaPct: statsRes.todayRevenue?.deltaPct ?? null,
+          deltaKobo: statsRes.todayRevenue?.deltaKobo ?? 0,
+        },
+        unpaid: {
+          count: statsRes.unpaid?.count ?? 0,
+        },
+      };
+      setStats(normalized);
+      setRows(Array.isArray(listRes) ? listRes : []);
+      setPackages(Array.isArray(pkgs) ? pkgs : []);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) return;
       setError(errorMessage(err));
@@ -403,13 +431,6 @@ export function AdminBookingsPage() {
     await loadList();
   }
 
-  async function confirmMarkPaid() {
-    if (!detail) return;
-    const updated = await api.bookings.recordPayment(detail.id);
-    setDetail(updated);
-    await loadList();
-  }
-
   async function confirmCancel() {
     if (!detail) return;
     const updated = await api.bookings.setStatus(detail.id, "CANCELLED");
@@ -419,7 +440,11 @@ export function AdminBookingsPage() {
 
   const monthLabel = format(parseYmd(monthStart), "MMMM yyyy");
   const canMarkPaid =
-    canMutate && detail?.status === "PENDING" && paymentDisplay(detail) !== "PAID";
+    canMutate &&
+    Boolean(detail) &&
+    detail?.status !== "CANCELLED" &&
+    detail?.status !== "COMPLETED" &&
+    paymentDisplay(detail!) !== "PAID";
 
   return (
     <div className="pa-bookings space-y-admin-stack">
@@ -432,6 +457,16 @@ export function AdminBookingsPage() {
             Manage all studio bookings, view details, and update statuses.
           </p>
         </div>
+        {canMutate && (
+          <Button
+            type="button"
+            onClick={() => setCreateBookingOpen(true)}
+            className="gap-2 shrink-0 font-medium shadow-sm"
+          >
+            <Plus className="h-4 w-4" />
+            New Booking
+          </Button>
+        )}
       </header>
 
       <ErrorBanner message={error} onRetry={() => void loadList()} retrying={loading} />
@@ -442,10 +477,13 @@ export function AdminBookingsPage() {
           icon={CalendarPlus}
           tone="primary"
           loading={loading}
-          value={stats?.totalLast30.count ?? "—"}
+          value={stats?.totalAll?.count ?? stats?.totalLast30?.count ?? "—"}
           hint={
             stats
-              ? pctHint(stats.totalLast30.deltaPct, `${stats.totalLast30.count} in last 30 days`)
+              ? pctHint(
+                  stats.totalLast30?.deltaPct ?? null,
+                  `${stats.totalLast30?.count ?? 0} in last 30 days`,
+                )
               : undefined
           }
         />
@@ -453,16 +491,21 @@ export function AdminBookingsPage() {
           label="Today's Bookings"
           icon={CalendarIcon}
           loading={loading}
-          value={stats?.today.count ?? "—"}
-          hint={stats ? `${signedDelta(stats.today.delta)} from yesterday` : undefined}
+          value={stats?.today?.count ?? "—"}
+          hint={stats?.today ? `${signedDelta(stats.today.delta)} from yesterday` : undefined}
         />
         <StatCard
           label="Today's Revenue"
+          icon={Banknote}
           tone="success"
           loading={loading}
-          value={stats ? formatNairaFromKobo(stats.todayRevenue.totalKobo) : "—"}
+          value={
+            stats?.todayRevenue != null
+              ? formatNairaFromKobo(stats.todayRevenue.totalKobo)
+              : "—"
+          }
           hint={
-            stats
+            stats?.todayRevenue
               ? revenueHint(stats.todayRevenue.deltaPct, stats.todayRevenue.deltaKobo)
               : undefined
           }
@@ -472,8 +515,14 @@ export function AdminBookingsPage() {
           icon={AlertTriangle}
           tone="warning"
           loading={loading}
-          value={stats?.unpaid.count ?? "—"}
-          hint="Needs attention"
+          value={stats?.unpaid?.count ?? "—"}
+          hint={
+            stats?.unpaid
+              ? stats.unpaid.count === 0
+                ? "All clear"
+                : `${stats.unpaid.count} need${stats.unpaid.count === 1 ? "s" : ""} attention`
+              : "Needs attention"
+          }
         />
       </section>
 
@@ -811,24 +860,25 @@ export function AdminBookingsPage() {
         ) : null}
       </div>
 
-      <ConfirmDialog
+      <CreateBookingDialog
+        open={createBookingOpen}
+        onOpenChange={setCreateBookingOpen}
+        defaultDate={selectedDate}
+        onSuccess={(created) => {
+          setDetail(created);
+          void loadList();
+          setParam({ id: created.id, date: lagosYmd(created.startTime) });
+        }}
+      />
+
+      <RecordPaymentDialog
         open={markPaidOpen}
         onOpenChange={setMarkPaidOpen}
-        title="Mark booking paid"
-        description={
-          detail ? (
-            <>
-              Record a studio payment of{" "}
-              <strong>
-                {formatNairaFromKobo(Math.max(0, amountDueKobo(detail) - paidSuccessKobo(detail)))}
-              </strong>{" "}
-              for {detail.customer.name}? This confirms the pending reservation.
-            </>
-          ) : null
-        }
-        confirmLabel="Mark Paid"
-        successMessage="Payment recorded"
-        onConfirm={confirmMarkPaid}
+        booking={detail}
+        onSuccess={(updated) => {
+          setDetail(updated);
+          void loadList();
+        }}
       />
 
       <ConfirmDialog
@@ -1026,7 +1076,7 @@ function BookingDetailPanel({
           ) : null}
           {canMarkPaid ? (
             <Button type="button" size="sm" onClick={onMarkPaid}>
-              Mark Paid
+              Record Payment
             </Button>
           ) : null}
         </div>

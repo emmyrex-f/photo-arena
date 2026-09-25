@@ -5,13 +5,18 @@ import { useSiteInfo } from "../../lib/settings";
 export function WhatsAppFab() {
   const { whatsapp } = useSiteInfo();
   if (!whatsapp) return null;
+  const href = whatsapp.includes("text=")
+    ? whatsapp
+    : `${whatsapp}${whatsapp.includes("?") ? "&" : "?"}text=${encodeURIComponent(
+        "Hello Photo Arena, I would like to enquire about a studio session.",
+      )}`;
   return (
     <a
-      href={whatsapp}
+      href={href}
       target="_blank"
       rel="noreferrer"
       className="pa-fab-anchor fixed right-[var(--pa-gutter)] z-50 inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#25D366] text-white shadow-lg hover:brightness-110"
-      aria-label="Chat on WhatsApp"
+      aria-label="Chat with Photo Arena on WhatsApp"
     >
       <WhatsAppIcon className="h-6 w-6" />
     </a>

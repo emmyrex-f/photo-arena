@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, Req } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Param, Post, Query, Req, forwardRef } from "@nestjs/common";
 import type { Request } from "express";
 import { getClientIp } from "../common/client-ip";
 import {
@@ -11,10 +11,21 @@ import {
 } from "../common/rate-limit";
 import { BookingsService } from "./bookings.service";
 import { HoldBookingDto } from "./dto/hold-checkout.dto";
+import {
+  CustomerCancelBookingDto,
+  CustomerCheckoutDto,
+  CustomerRescheduleBookingDto,
+  LookupBookingDto,
+} from "./dto/customer-self-service.dto";
+import { PaymentsService } from "../payments/payments.service";
 
 @Controller("bookings")
 export class BookingsController {
-  constructor(private readonly bookings: BookingsService) {}
+  constructor(
+    private readonly bookings: BookingsService,
+    @Inject(forwardRef(() => PaymentsService))
+    private readonly payments: PaymentsService,
+  ) {}
 
   @Get("availability")
   availability(
@@ -43,6 +54,62 @@ export class BookingsController {
       tooManyRequests();
     }
     return this.bookings.hold(body);
+  }
+
+  @Get("lookup")
+  lookupGet(
+    @Query("reference") reference: string,
+    @Query("emailOrPhone") emailOrPhone?: string,
+    @Req() req?: Request,
+  ) {
+    if (req) {
+      const ip = getClientIp(req);
+      if (!rateLimiter.hit(`lookup:ip:${ip}`, 30, RATE_WINDOW_MS)) {
+        tooManyRequests();
+      }
+    }
+    return this.bookings.customerLookup(reference, emailOrPhone);
+  }
+
+  @Post("lookup")
+  lookupPost(@Body() body: LookupBookingDto, @Req() req: Request) {
+    const ip = getClientIp(req);
+    if (!rateLimiter.hit(`lookup:ip:${ip}`, 30, RATE_WINDOW_MS)) {
+      tooManyRequests();
+    }
+    return this.bookings.customerLookup(body.reference, body.emailOrPhone);
+  }
+
+  @Post("customer-cancel")
+  customerCancel(@Body() body: CustomerCancelBookingDto, @Req() req: Request) {
+    const ip = getClientIp(req);
+    if (!rateLimiter.hit(`cancel:ip:${ip}`, 10, RATE_WINDOW_MS)) {
+      tooManyRequests();
+    }
+    return this.bookings.customerCancel(body);
+  }
+
+  @Post("customer-reschedule")
+  customerReschedule(@Body() body: CustomerRescheduleBookingDto, @Req() req: Request) {
+    const ip = getClientIp(req);
+    if (!rateLimiter.hit(`reschedule:ip:${ip}`, 10, RATE_WINDOW_MS)) {
+      tooManyRequests();
+    }
+    return this.bookings.customerReschedule(body);
+  }
+
+  @Post("customer-checkout")
+  customerCheckout(@Body() body: CustomerCheckoutDto, @Req() req: Request) {
+    const ip = getClientIp(req);
+    if (!rateLimiter.hit(`checkout:ip:${ip}`, 20, RATE_WINDOW_MS)) {
+      tooManyRequests();
+    }
+    return this.payments.customerBalanceCheckout(
+      body.reference,
+      body.emailOrPhone,
+      body.returnUrl,
+      body.cancelUrl,
+    );
   }
 
   @Get(":id/status")

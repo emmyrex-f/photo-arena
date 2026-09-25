@@ -60,15 +60,15 @@ export function ContactForm() {
   return (
     <form onSubmit={onSubmit} className="space-y-form">
       <input type="text" name="botcheck" className="hidden" tabIndex={-1} autoComplete="off" />
-      <div>
-        <label htmlFor="name" className="pa-label">
+      <div className="space-y-1.5">
+        <label htmlFor="name" className="pa-label !mb-0">
           Name
         </label>
-        <input id="name" name="name" required className="pa-input" />
+        <input id="name" name="name" required autoComplete="name" className="pa-input" />
       </div>
       <div className="grid gap-form sm:grid-cols-2">
-        <div>
-          <label htmlFor="email" className="pa-label">
+        <div className="space-y-1.5">
+          <label htmlFor="email" className="pa-label !mb-0">
             Email
           </label>
           <input
@@ -76,18 +76,19 @@ export function ContactForm() {
             name="email"
             type="email"
             required
+            autoComplete="email"
             className="pa-input"
           />
         </div>
-        <div>
-          <label htmlFor="phone" className="pa-label">
+        <div className="space-y-1.5">
+          <label htmlFor="phone" className="pa-label !mb-0">
             Phone
           </label>
-          <input id="phone" name="phone" type="tel" className="pa-input" />
+          <input id="phone" name="phone" type="tel" autoComplete="tel" className="pa-input" />
         </div>
       </div>
-      <div>
-        <label htmlFor="sessionType" className="pa-label">
+      <div className="space-y-1.5">
+        <label htmlFor="sessionType" className="pa-label !mb-0">
           What would you like to book?
         </label>
         <select id="sessionType" name="sessionType" className="pa-input">
@@ -104,24 +105,24 @@ export function ContactForm() {
           <option value="General Enquiry">General Enquiry</option>
         </select>
       </div>
-      <div>
-        <label htmlFor="message" className="pa-label">
+      <div className="space-y-1.5">
+        <label htmlFor="message" className="pa-label !mb-0">
           Message
         </label>
-        <textarea
-          id="message"
-          name="message"
-          required
-          rows={5}
-          className="pa-input py-3"
-        />
+        <textarea id="message" name="message" required rows={5} className="pa-input" />
       </div>
-      <Button type="submit" disabled={status === "sending"}>
-        {status === "sending" ? "Sending…" : "Send message"}
-      </Button>
-      {status === "sent" ? <p className="text-sm text-success">Message sent. We will reply shortly.</p> : null}
+      <div className="pt-1">
+        <Button type="submit" disabled={status === "sending"}>
+          {status === "sending" ? "Sending…" : "Send message"}
+        </Button>
+      </div>
+      {status === "sent" ? (
+        <p className="text-sm text-success">Message sent. We will reply shortly.</p>
+      ) : null}
       {status === "error" ? (
-        <p className="text-sm text-error">The message could not be sent. Please call or email the studio.</p>
+        <p className="text-sm text-error">
+          The message could not be sent. Please call or email the studio.
+        </p>
       ) : null}
     </form>
   );

@@ -1,4 +1,13 @@
-import { IsEmail, IsIn, IsISO8601, IsOptional, IsString, MinLength } from "class-validator";
+import {
+  IsEmail,
+  IsIn,
+  IsISO8601,
+  IsOptional,
+  IsString,
+  MinLength,
+  Validate,
+} from "class-validator";
+import { IsValidPhoneConstraint } from "./hold-checkout.dto";
 
 export class CreateAdminBookingDto {
   @IsString()
@@ -6,8 +15,9 @@ export class CreateAdminBookingDto {
   customerName!: string;
 
   @IsString()
-  @MinLength(7)
+  @Validate(IsValidPhoneConstraint)
   customerPhone!: string;
+
 
   @IsOptional()
   @IsEmail()

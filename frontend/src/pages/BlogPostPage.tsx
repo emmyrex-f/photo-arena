@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Link, useParams } from "react-router-dom";
-import { PageHeader } from "../components/layout/PageHeader";
+import { ArrowLeft } from "lucide-react";
 import { Container } from "../components/ui/Container";
 import { CameraSpinner } from "../components/ui/CameraSpinner";
 import { Section } from "../components/ui/Section";
@@ -64,30 +65,81 @@ export function BlogPostPage() {
     );
   }
 
+  const coverSrc = mediaUrl(post.coverImageUrl) || mediaUrl(post.ogImageUrl) || undefined;
+  const published = post.publishedAt ? formatPublishDate(post.publishedAt) : undefined;
+
   return (
     <>
       <Seo
-        title={post.title}
-        description={post.excerpt}
+        title={post.metaTitle?.trim() || post.title}
+        description={post.metaDescription?.trim() || post.excerpt}
         path={`/blog/${post.slug}`}
-        image={post.coverImageUrl ?? undefined}
+        image={post.ogImageUrl?.trim() || post.coverImageUrl || undefined}
         type="article"
         publishedTime={post.publishedAt ?? undefined}
       />
       <article>
-        <PageHeader
-          eyebrow="Journal"
-          title={post.title}
-          description={post.publishedAt ? formatPublishDate(post.publishedAt) : undefined}
-        />
-        {post.coverImageUrl ? (
-          <Container className="max-w-4xl pt-stack-xl">
-            <img src={mediaUrl(post.coverImageUrl)} alt="" className="w-full object-cover" />
-          </Container>
-        ) : null}
-        <Section>
-          <Container className="prose-pa max-w-2xl">
-            <ReactMarkdown>{post.content}</ReactMarkdown>
+        {/* Feature/cover image only — never path-based gallery fallbacks from PageHeader. */}
+        {coverSrc ? (
+          <header className="relative w-full bg-ink shadow-[0_0_0_100vmax_var(--pa-ink)] [clip-path:inset(0_-100vmax)]">
+            <div className="relative isolate min-h-[min(48vh,26rem)] w-full overflow-hidden sm:min-h-[min(52vh,30rem)]">
+              <img
+                src={coverSrc}
+                alt=""
+                decoding="async"
+                className="pointer-events-none absolute inset-0 size-full object-cover"
+                style={{ objectPosition: "center 30%" }}
+              />
+              <Container className="relative z-[1] flex min-h-[min(48vh,26rem)] max-w-none flex-col justify-end pb-10 pt-10 sm:min-h-[min(52vh,30rem)] sm:pb-14 sm:pt-12">
+                <div className="pa-banner-copy">
+                  <p className="font-subtitle mb-eyebrow text-xs uppercase tracking-[0.2em] text-accent">
+                    Journal
+                  </p>
+                  <h1 className="font-display text-4xl leading-tight text-white sm:text-5xl md:text-6xl">
+                    {post.title}
+                  </h1>
+                  {published ? (
+                    <p className="font-body mt-stack text-base leading-relaxed text-white/90 sm:text-lg">
+                      {published}
+                    </p>
+                  ) : null}
+                </div>
+              </Container>
+            </div>
+          </header>
+        ) : (
+          <header className="border-b border-elevated bg-gradient-to-b from-surface to-bg py-header-y">
+            <Container className="max-w-3xl">
+              <p className="font-subtitle mb-eyebrow text-xs uppercase tracking-[0.18em] text-accent">
+                Journal
+              </p>
+              <h1 className="font-display text-4xl text-text sm:text-5xl">{post.title}</h1>
+              {published ? (
+                <p className="font-body mt-stack max-w-xl text-base leading-relaxed text-text-secondary">
+                  {published}
+                </p>
+              ) : null}
+            </Container>
+          </header>
+        )}
+
+        <Section className="pt-stack-xl">
+          <Container className="max-w-3xl">
+            <Link
+              to="/blog"
+              className="mb-stack-lg inline-flex items-center gap-2 text-sm text-text-muted transition-colors hover:text-accent"
+            >
+              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+              Back to journal
+            </Link>
+            {post.excerpt ? (
+              <p className="mb-stack-xl border-b border-border pb-stack-lg text-lg leading-relaxed text-text-secondary">
+                {post.excerpt}
+              </p>
+            ) : null}
+            <div className="prose-pa prose-pa-article">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{post.content}</ReactMarkdown>
+            </div>
           </Container>
         </Section>
       </article>

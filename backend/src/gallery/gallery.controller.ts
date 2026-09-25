@@ -102,16 +102,27 @@ export class GalleryController {
     private readonly audit: AuditService,
   ) {}
 
+  @Get("storage")
+  storageStatus() {
+    return this.gallery.getStorageStatus();
+  }
+
   @Get()
   list(
     @Query("kind") kind?: string,
     @Query("isActive") isActiveRaw?: string,
+    @Query("featured") featuredRaw?: string,
+    @Query("category") category?: string,
+    @Query("q") q?: string,
     @Query("page") page?: string,
     @Query("pageSize") pageSize?: string,
   ) {
     return this.gallery.list({
       kind,
       isActive: parseOptionalBoolean(isActiveRaw),
+      featured: parseOptionalBoolean(featuredRaw),
+      category,
+      q,
       page,
       pageSize,
     });

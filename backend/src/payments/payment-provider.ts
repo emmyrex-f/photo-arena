@@ -46,6 +46,8 @@ export type PaymentWebhookEvent = {
   failed: boolean;
   /** Abandoned / expired / underpaid — leave booking unpaid/pending. */
   abandoned: boolean;
+  /** Explicit refund event (e.g. refund.paid). */
+  refunded?: boolean;
   transactionId?: string;
   providerSessionId?: string;
   /** data.amount as a decimal string (e.g. "57000.00"), when present in the event. */

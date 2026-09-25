@@ -2,8 +2,8 @@
   "name": "photo-arena-backend",
   "private": true,
   "engines": {
-  "node": "24.x"
-},
+    "node": "24.x"
+  },
   "version": "0.1.0",
   "scripts": {
     "start:dev": "nest start --watch",
@@ -16,12 +16,17 @@
     "verify:calendar": "tsx scripts/verify-calendar.ts",
     "verify:bachs-webhook": "tsx scripts/verify-bachs-webhook.ts",
     "verify:payment-flow": "tsx scripts/verify-payment-flow.ts",
-    "verify:security": "tsx scripts/verify-security.ts"
+    "verify:security": "tsx scripts/verify-security.ts",
+    "verify:storage": "tsx scripts/verify-storage.ts",
+    "verify:notifications": "tsx scripts/verify-notifications.ts",
+    "verify:admin-booking": "tsx scripts/verify-admin-booking.ts",
+    "verify:auth": "tsx scripts/verify-auth-features.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1140.0",
     "@nestjs/common": "^11.1.6",
     "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^11.1.6",
@@ -35,6 +40,7 @@
     "multer": "^2.3.0",
     "nodemailer": "^10.0.9",
     "reflect-metadata": "^0.2.2",
+    "resend": "^6.29.0",
     "rxjs": "^7.8.2",
     "sharp": "^0.35.4"
   },

@@ -24,13 +24,13 @@ export class ReminderScheduler {
     if (!enable24 && !enable2) return;
 
     const now = Date.now();
-    const windowMs = 5 * 60_000;
+    const windowMs = 15 * 60_000; // 15-minute lead buffer for scheduler restarts
     const bookings = await this.prisma.booking.findMany({
       where: {
         status: BookingStatus.CONFIRMED,
         startTime: {
-          gte: new Date(now + 90 * 60_000),
-          lte: new Date(now + 25 * 60 * 60_000),
+          gte: new Date(now),
+          lte: new Date(now + 26 * 60 * 60_000),
         },
       },
       include: { customer: true, package: true },
@@ -47,23 +47,25 @@ export class ReminderScheduler {
         details: `Package: ${booking.package.name}`,
       };
 
-      if (enable24 && msUntil <= 24 * 60 * 60_000 + windowMs && msUntil >= 24 * 60 * 60_000 - windowMs) {
+      // 24h reminder: eligible from (24h + 15m) down to 2h before session
+      if (enable24 && msUntil <= 24 * 60 * 60_000 + windowMs && msUntil >= 2 * 60 * 60_000) {
         if (!(await this.notifications.hasReminderBeenSent(booking.id, "24h"))) {
           await this.notifications.notifyEvent("booking_reminder", vars, [
             booking.customer.email ?? "",
           ].filter(Boolean));
           await this.notifications.markReminder(booking.id, "24h", recipients);
-          this.logger.log(`Sent 24h reminder for ${booking.id}`);
+          this.logger.log(`Sent 24h reminder for booking ${booking.id} (${booking.customer.name})`);
         }
       }
 
-      if (enable2 && msUntil <= 2 * 60 * 60_000 + windowMs && msUntil >= 2 * 60 * 60_000 - windowMs) {
+      // 2h reminder: eligible from (2h + 15m) down to shoot start
+      if (enable2 && msUntil <= 2 * 60 * 60_000 + windowMs && msUntil > 0) {
         if (!(await this.notifications.hasReminderBeenSent(booking.id, "2h"))) {
           await this.notifications.notifyEvent("booking_reminder", vars, [
             booking.customer.email ?? "",
           ].filter(Boolean));
           await this.notifications.markReminder(booking.id, "2h", recipients);
-          this.logger.log(`Sent 2h reminder for ${booking.id}`);
+          this.logger.log(`Sent 2h reminder for booking ${booking.id} (${booking.customer.name})`);
         }
       }
     }

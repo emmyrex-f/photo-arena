@@ -13,7 +13,6 @@ import {
   ImagePlus,
   Inbox,
   LayoutGrid,
-  MessageSquareQuote,
   Plus,
   ShieldAlert,
   UserRound,
@@ -58,6 +57,7 @@ import type {
   DashboardWeeklyRevenue,
 } from "../../admin/lib/types";
 import { ApiError, errorMessage } from "../../lib/api";
+import { CreateBookingDialog } from "../../components/admin/CreateBookingDialog";
 import { addDaysToKey, formatDateKey, lagosDateKey, LAGOS } from "../../lib/datetime";
 import { useSetting } from "../../lib/settings";
 import { cn } from "../../lib/cn";
@@ -105,10 +105,9 @@ const ATTENTION_ROWS: AttentionRowDef[] = [
 ];
 
 const QUICK_ACTIONS: Array<{ label: string; to: string; icon: LucideIcon }> = [
-  { label: "View Bookings", to: "/admin/bookings", icon: CalendarPlus },
+  { label: "View Bookings", to: "/admin/bookings", icon: Calendar },
   { label: "Add Service", to: "/admin/services", icon: Plus },
   { label: "Upload Media", to: "/admin/gallery", icon: ImagePlus },
-  { label: "New Testimonial", to: "/admin/testimonials", icon: MessageSquareQuote },
 ];
 
 function formatLongLagosDate(date = new Date()): string {
@@ -242,6 +241,7 @@ export function AdminDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [chartLoading, setChartLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [createBookingOpen, setCreateBookingOpen] = useState(false);
 
   const load = useCallback(
     async (weekStart?: string) => {
@@ -314,16 +314,26 @@ export function AdminDashboardPage() {
         <div className="pa-dash-hero-veil" aria-hidden />
         <div className="pa-dash-hero-front relative z-[1] flex flex-col gap-admin-stack px-[var(--admin-gutter)] pb-admin-stack pt-5 sm:pt-6">
           <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-            <h1
-              className="pa-dash-hero-title flex items-center text-[30px] font-bold leading-none tracking-tight text-white"
-              aria-label={siteName}
+            <div>
+              <h1
+                className="pa-dash-hero-title flex items-center text-[30px] font-bold leading-none tracking-tight text-white"
+                aria-label={siteName}
+              >
+                <SiteBrandTitle name={siteName} />
+              </h1>
+              <p className="pa-dash-hero-date mt-1.5 flex shrink-0 items-center gap-2 text-sm text-white/80">
+                <Calendar className="h-4 w-4" strokeWidth={1.5} aria-hidden />
+                <time dateTime={lagosYmd(new Date())}>{formatLongLagosDate()}</time>
+              </p>
+            </div>
+            <Button
+              type="button"
+              onClick={() => setCreateBookingOpen(true)}
+              className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90 shadow-md font-medium shrink-0"
             >
-              <SiteBrandTitle name={siteName} />
-            </h1>
-            <p className="pa-dash-hero-date flex shrink-0 items-center gap-2 text-sm text-white">
-              <Calendar className="h-4 w-4" strokeWidth={1.5} aria-hidden />
-              <time dateTime={lagosYmd(new Date())}>{formatLongLagosDate()}</time>
-            </p>
+              <Plus className="h-4 w-4" />
+              Book Session
+            </Button>
           </header>
 
           <ErrorBanner
@@ -588,6 +598,14 @@ export function AdminDashboardPage() {
               <CardTitle className="font-display text-lg font-normal">Quick Actions</CardTitle>
             </CardHeader>
             <CardContent className="grid grid-cols-2 gap-admin-gap p-admin-card-sm pt-0 sm:grid-cols-4">
+              <button
+                type="button"
+                onClick={() => setCreateBookingOpen(true)}
+                className="pa-dash-action flex min-h-[5.5rem] flex-col items-center justify-center gap-2 rounded-xl border border-primary/40 bg-primary/10 px-3 py-4 text-center transition-colors hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring text-primary group"
+              >
+                <CalendarPlus className="h-5 w-5 text-primary group-hover:scale-110 transition-transform" strokeWidth={1.75} aria-hidden />
+                <span className="text-xs font-semibold text-foreground">Book Walk-in</span>
+              </button>
               {QUICK_ACTIONS.map((action) => (
                 <Link
                   key={action.label}
@@ -719,6 +737,12 @@ export function AdminDashboardPage() {
         </aside>
       </div>
       </div>
+
+      <CreateBookingDialog
+        open={createBookingOpen}
+        onOpenChange={setCreateBookingOpen}
+        onSuccess={() => void load(weeklyRevenue?.weekStart)}
+      />
     </div>
   );
 }

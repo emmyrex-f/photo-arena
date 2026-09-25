@@ -18,10 +18,12 @@ type AuthContextValue = {
   token: string | null;
   user: StaffUser | null;
   ready: boolean;
-  /** ISO timestamp of the current session's sign-in (persisted for this tab). */
+  /** ISO timestamp of the current session's sign-in. */
   lastLoginAt: string | null;
-  login: (email: string, password: string) => Promise<StaffUser>;
+  login: (email: string, password: string, rememberMe?: boolean) => Promise<StaffUser>;
   logout: () => void;
+  /** Revoke all active sessions across devices and sign out locally. */
+  logoutAll: () => Promise<void>;
   /** Apply a fresh token after the owner updates login details. */
   applyAccount: (user: StaffUser, token?: string) => void;
   /** Re-fetch `/auth/me` (after name/role changes). */
@@ -34,26 +36,84 @@ type AuthContextValue = {
 const TOKEN_KEY = "pa_admin_token";
 const USER_KEY = "pa_admin_user";
 const LAST_LOGIN_KEY = "pa_admin_last_login";
+const REMEMBER_KEY = "pa_admin_remember";
+
+function getStoredItem(key: string): string | null {
+  try {
+    return sessionStorage.getItem(key) ?? localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function setStoredSession(token: string, user: StaffUser, lastLoginAt: string, remember: boolean) {
+  try {
+    if (remember) {
+      localStorage.setItem(TOKEN_KEY, token);
+      localStorage.setItem(USER_KEY, JSON.stringify(user));
+      localStorage.setItem(LAST_LOGIN_KEY, lastLoginAt);
+      localStorage.setItem(REMEMBER_KEY, "true");
+      sessionStorage.removeItem(TOKEN_KEY);
+      sessionStorage.removeItem(USER_KEY);
+      sessionStorage.removeItem(LAST_LOGIN_KEY);
+    } else {
+      sessionStorage.setItem(TOKEN_KEY, token);
+      sessionStorage.setItem(USER_KEY, JSON.stringify(user));
+      sessionStorage.setItem(LAST_LOGIN_KEY, lastLoginAt);
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(USER_KEY);
+      localStorage.removeItem(LAST_LOGIN_KEY);
+      localStorage.removeItem(REMEMBER_KEY);
+    }
+  } catch {
+    // Ignore storage quota/permission exceptions
+  }
+}
+
+function updateStoredUser(user: StaffUser, token?: string) {
+  try {
+    const isRemembered = localStorage.getItem(REMEMBER_KEY) === "true" || !!localStorage.getItem(TOKEN_KEY);
+    const storage = isRemembered ? localStorage : sessionStorage;
+    storage.setItem(USER_KEY, JSON.stringify(user));
+    if (token) {
+      storage.setItem(TOKEN_KEY, token);
+    }
+  } catch {
+    // Ignore storage quota/permission exceptions
+  }
+}
+
+function clearAllStoredSessions() {
+  try {
+    sessionStorage.removeItem(TOKEN_KEY);
+    sessionStorage.removeItem(USER_KEY);
+    sessionStorage.removeItem(LAST_LOGIN_KEY);
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+    localStorage.removeItem(LAST_LOGIN_KEY);
+    localStorage.removeItem(REMEMBER_KEY);
+  } catch {
+    // Ignore storage quota/permission exceptions
+  }
+}
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string | null>(() => sessionStorage.getItem(TOKEN_KEY));
+  const [token, setToken] = useState<string | null>(() => getStoredItem(TOKEN_KEY));
   const [user, setUser] = useState<StaffUser | null>(() => {
-    const raw = sessionStorage.getItem(USER_KEY);
+    const raw = getStoredItem(USER_KEY);
     try {
       return raw ? (JSON.parse(raw) as StaffUser) : null;
     } catch {
       return null;
     }
   });
-  const [lastLoginAt, setLastLoginAt] = useState<string | null>(() => sessionStorage.getItem(LAST_LOGIN_KEY));
+  const [lastLoginAt, setLastLoginAt] = useState<string | null>(() => getStoredItem(LAST_LOGIN_KEY));
   const [ready, setReady] = useState(false);
 
   const clearSession = useCallback(() => {
-    sessionStorage.removeItem(TOKEN_KEY);
-    sessionStorage.removeItem(USER_KEY);
-    sessionStorage.removeItem(LAST_LOGIN_KEY);
+    clearAllStoredSessions();
     setToken(null);
     setUser(null);
     setLastLoginAt(null);
@@ -70,7 +130,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const me = await api<StaffUser>("/auth/me", { token });
         if (!cancelled) {
           setUser(me);
-          sessionStorage.setItem(USER_KEY, JSON.stringify(me));
+          updateStoredUser(me);
         }
       } catch (err) {
         // Only drop the session when the token is actually rejected; keep it on network failure.
@@ -94,15 +154,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       ready,
       lastLoginAt,
-      async login(email, password) {
+      async login(email, password, rememberMe = false) {
         const result = await api<{ token: string; user: StaffUser }>("/auth/login", {
           method: "POST",
           body: JSON.stringify({ email, password }),
         });
         const now = new Date().toISOString();
-        sessionStorage.setItem(TOKEN_KEY, result.token);
-        sessionStorage.setItem(USER_KEY, JSON.stringify(result.user));
-        sessionStorage.setItem(LAST_LOGIN_KEY, now);
+        setStoredSession(result.token, result.user, now, rememberMe);
         setToken(result.token);
         setUser(result.user);
         setLastLoginAt(now);
@@ -111,19 +169,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout() {
         clearSession();
       },
+      async logoutAll() {
+        if (token) {
+          try {
+            await api<{ ok: true }>("/auth/revoke-sessions", { method: "POST", token });
+          } catch {
+            // Even if network drops, clear local session
+          }
+        }
+        clearSession();
+      },
       applyAccount(nextUser, nextToken) {
+        updateStoredUser(nextUser, nextToken);
         if (nextToken) {
-          sessionStorage.setItem(TOKEN_KEY, nextToken);
           setToken(nextToken);
         }
-        sessionStorage.setItem(USER_KEY, JSON.stringify(nextUser));
         setUser(nextUser);
       },
       async refreshUser() {
         if (!token) return;
         const me = await api<StaffUser>("/auth/me", { token });
         setUser(me);
-        sessionStorage.setItem(USER_KEY, JSON.stringify(me));
+        updateStoredUser(me);
       },
       hasRole(...roles) {
         return !!user && roles.includes(user.role);

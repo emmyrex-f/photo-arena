@@ -55,6 +55,8 @@ const paymentVariant: Record<PaymentStatus, NonNullable<BadgeProps["variant"]>> 
   PROCESSING: "info",
   SUCCESS: "success",
   FAILED: "destructive",
+  REFUNDED: "muted",
+  PARTIALLY_REFUNDED: "violet",
 };
 
 function PaymentStatusBadge({ status, className }: { status: PaymentStatus; className?: string }) {

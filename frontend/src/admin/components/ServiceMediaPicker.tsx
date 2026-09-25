@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import { Upload, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Upload, X } from "lucide-react";
 import { Button } from "./ui/button";
 import { ErrorBanner } from "./ui/error-banner";
 import { Skeleton } from "./ui/skeleton";
@@ -12,6 +12,7 @@ import { useAuth } from "../../lib/auth";
 import { cn } from "../../lib/cn";
 
 const MAX_BYTES = 15 * 1024 * 1024;
+const PAGE_SIZE = 16;
 const ACCEPT = "image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp";
 
 export type SelectedServiceMedia = {
@@ -58,12 +59,17 @@ export function ServiceMediaPicker({ enabled, value, onChange, previewAlt }: Pro
   const fileRef = useRef<HTMLInputElement>(null);
   const [progress, setProgress] = useState<number | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
 
   const query = useQuery(
-    () => api.gallery.list({ isActive: true }),
-    [enabled],
+    () => api.gallery.list({ isActive: true, page, pageSize: PAGE_SIZE }),
+    [enabled, page],
     { enabled: enabled && canLibrary },
   );
+
+  const images = query.data?.items ?? [];
+  const total = query.data?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const uploadFile = useCallback(
     async (file: File) => {
@@ -85,7 +91,8 @@ export function ServiceMediaPicker({ enabled, value, onChange, previewAlt }: Pro
         const uploaded = rows[0];
         if (uploaded) {
           onChange(toSelected(uploaded));
-          query.setData((current) => (current ? [uploaded, ...current.filter((row) => row.id !== uploaded.id)] : [uploaded]));
+          setPage(1);
+          await query.refetch();
         }
       } catch (err) {
         setUploadError(errorMessage(err));
@@ -153,28 +160,59 @@ export function ServiceMediaPicker({ enabled, value, onChange, previewAlt }: Pro
                 <Skeleton key={i} className="aspect-square w-full" />
               ))}
             </div>
-          ) : !(query.data?.length) ? (
+          ) : images.length === 0 ? (
             <p className="text-xs text-muted-foreground">No active images in the library yet.</p>
           ) : (
-            <div className="grid max-h-56 grid-cols-3 gap-2 overflow-y-auto sm:grid-cols-4">
-              {query.data.map((image) => {
-                const selected = value?.id === image.id;
-                return (
-                  <button
-                    key={image.id}
-                    type="button"
-                    className={cn(
-                      "overflow-hidden rounded-md border bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                      selected ? "border-primary ring-2 ring-primary/40" : "border-border hover:border-primary/40",
-                    )}
-                    onClick={() => onChange(toSelected(image))}
-                    aria-pressed={selected}
-                    aria-label={image.alt || image.filename || "Select image"}
-                  >
-                    <img src={image.thumbUrl || image.url} alt="" className="aspect-square w-full object-cover" />
-                  </button>
-                );
-              })}
+            <div className="space-y-2">
+              <div className="grid max-h-56 grid-cols-3 gap-2 overflow-y-auto sm:grid-cols-4">
+                {images.map((image) => {
+                  const selected = value?.id === image.id;
+                  return (
+                    <button
+                      key={image.id}
+                      type="button"
+                      className={cn(
+                        "overflow-hidden rounded-md border bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        selected ? "border-primary ring-2 ring-primary/40" : "border-border hover:border-primary/40",
+                      )}
+                      onClick={() => onChange(toSelected(image))}
+                      aria-pressed={selected}
+                      aria-label={image.alt || image.filename || "Select image"}
+                    >
+                      <img src={image.thumbUrl || image.url} alt="" className="aspect-square w-full object-cover" />
+                    </button>
+                  );
+                })}
+              </div>
+              {pageCount > 1 ? (
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[11px] text-muted-foreground">
+                    Page {page} of {pageCount}
+                  </p>
+                  <div className="flex gap-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-2"
+                      disabled={page <= 1 || query.fetching}
+                      onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    >
+                      <ChevronLeft className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-2"
+                      disabled={page >= pageCount || query.fetching}
+                      onClick={() => setPage((p) => p + 1)}
+                    >
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
             </div>
           )}
         </>

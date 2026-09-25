@@ -1,8 +1,10 @@
-import { useCallback, useMemo, useRef, useState, type DragEvent, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowDown,
   ArrowUp,
+  ChevronLeft,
+  ChevronRight,
   ExternalLink,
   Images,
   MoreHorizontal,
@@ -54,6 +56,7 @@ import { mediaUrl } from "../../lib/publicApi";
 
 const MAX_BYTES = 15 * 1024 * 1024;
 const MAX_FILES = 10;
+const PAGE_SIZE = 24;
 const ACCEPT = "image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp";
 const SUGGESTED_CATEGORIES = ["birthdays", "portraits", "corporate", "kids", "general"] as const;
 
@@ -108,6 +111,8 @@ export function AdminPortfolioPage() {
   const [statusFilter, setStatusFilter] = useState<"ALL" | "active" | "inactive" | "featured">("ALL");
   const [categoryFilter, setCategoryFilter] = useState("ALL");
   const [query, setQuery] = useState("");
+  const [debouncedQ, setDebouncedQ] = useState("");
+  const [page, setPage] = useState(1);
   const [uploadCategory, setUploadCategory] = useState("general");
   const [progress, setProgress] = useState<number | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -116,9 +121,35 @@ export function AdminPortfolioPage() {
   const [editForm, setEditForm] = useState<EditForm | null>(null);
   const [editSaving, setEditSaving] = useState(false);
 
-  const listQuery = useQuery(() => api.gallery.list({ kind: "GALLERY" }), []);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedQ(query.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [query]);
 
-  const images = listQuery.data ?? [];
+  useEffect(() => {
+    setPage(1);
+  }, [statusFilter, categoryFilter, debouncedQ]);
+
+  const listQuery = useQuery(
+    () =>
+      api.gallery.list({
+        kind: "GALLERY",
+        page,
+        pageSize: PAGE_SIZE,
+        ...(statusFilter === "active" ? { isActive: true } : {}),
+        ...(statusFilter === "inactive" ? { isActive: false } : {}),
+        ...(statusFilter === "featured" ? { featured: true, isActive: true } : {}),
+        ...(categoryFilter !== "ALL" ? { category: categoryFilter } : {}),
+        ...(debouncedQ ? { q: debouncedQ } : {}),
+      }),
+    [statusFilter, categoryFilter, debouncedQ, page],
+  );
+
+  const pageData = listQuery.data;
+  const images = pageData?.items ?? [];
+  const total = pageData?.total ?? 0;
+  const counts = pageData?.counts ?? { active: 0, featured: 0, inactive: 0 };
+  const pageCount = Math.max(1, Math.ceil(total / (pageData?.pageSize ?? PAGE_SIZE)));
 
   const categories = useMemo(() => {
     const set = new Set<string>(SUGGESTED_CATEGORIES);
@@ -133,29 +164,15 @@ export function AdminPortfolioPage() {
     [images],
   );
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return images.filter((image) => {
-      if (categoryFilter !== "ALL" && image.category.toLowerCase() !== categoryFilter) return false;
-      if (statusFilter === "active" && !image.isActive) return false;
-      if (statusFilter === "inactive" && image.isActive) return false;
-      if (statusFilter === "featured" && !image.featured) return false;
-      if (!q) return true;
-      return (
-        image.alt.toLowerCase().includes(q) ||
-        (image.filename ?? "").toLowerCase().includes(q) ||
-        image.category.toLowerCase().includes(q)
-      );
-    });
-  }, [images, categoryFilter, statusFilter, query]);
-
-  const stats = useMemo(() => {
-    const total = images.length;
-    const live = images.filter((row) => row.isActive && isPublicSized(row)).length;
-    const featured = images.filter((row) => row.featured && row.isActive).length;
-    const hidden = total - images.filter((row) => row.isActive).length;
-    return { total, live, featured, hidden };
-  }, [images]);
+  const stats = useMemo(
+    () => ({
+      total,
+      live: counts.active,
+      featured: counts.featured,
+      hidden: counts.inactive,
+    }),
+    [total, counts],
+  );
 
   const openEdit = useCallback((image: GalleryImage) => {
     setEditing(image);
@@ -200,12 +217,8 @@ export function AdminPortfolioPage() {
       setProgress(0);
       try {
         const rows = await api.gallery.upload(form, setProgress);
-        listQuery.setData((current) => {
-          const next = current
-            ? [...rows, ...current.filter((row) => !rows.some((r) => r.id === row.id))]
-            : rows;
-          return next.sort((a, b) => a.sortOrder - b.sortOrder);
-        });
+        setPage(1);
+        await listQuery.refetch();
         toast.success(rows.length === 1 ? "Portfolio image added" : `${rows.length} portfolio images added`);
       } catch (err) {
         toast.error(errorMessage(err, "Upload failed"));
@@ -237,10 +250,16 @@ export function AdminPortfolioPage() {
         isActive: editForm.isActive,
       });
       listQuery.setData((current) =>
-        current ? current.map((row) => (row.id === updated.id ? { ...row, ...updated } : row)) : [updated],
+        current
+          ? {
+              ...current,
+              items: current.items.map((row) => (row.id === updated.id ? { ...row, ...updated } : row)),
+            }
+          : current,
       );
       toast.success("Portfolio item updated");
       closeEdit();
+      await listQuery.refetch();
     } catch (err) {
       toast.error(errorMessage(err, "Could not update item"));
       setEditSaving(false);
@@ -252,8 +271,14 @@ export function AdminPortfolioPage() {
     try {
       const updated = await api.gallery.update(image.id, patch);
       listQuery.setData((current) =>
-        current ? current.map((row) => (row.id === updated.id ? { ...row, ...updated } : row)) : [updated],
+        current
+          ? {
+              ...current,
+              items: current.items.map((row) => (row.id === updated.id ? { ...row, ...updated } : row)),
+            }
+          : current,
       );
+      await listQuery.refetch();
     } catch (err) {
       toast.error(errorMessage(err, "Could not update item"));
     } finally {
@@ -268,9 +293,10 @@ export function AdminPortfolioPage() {
     setBusyId(image.id);
     try {
       await api.gallery.remove(image.id);
-      listQuery.setData((current) => (current ? current.filter((row) => row.id !== image.id) : []));
       if (editing?.id === image.id) closeEdit();
       toast.success("Removed from portfolio");
+      if (images.length <= 1 && page > 1) setPage((p) => p - 1);
+      else await listQuery.refetch();
     } catch (err) {
       const conflict = mediaInUseFromError(err);
       if (conflict) {
@@ -293,15 +319,15 @@ export function AdminPortfolioPage() {
     const swapIndex = index + direction;
     if (index < 0 || swapIndex < 0 || swapIndex >= ordered.length) return;
 
-    const next = [...ordered];
-    const [removed] = next.splice(index, 1);
-    next.splice(swapIndex, 0, removed);
-    const ids = next.map((row) => row.id);
-
+    const a = ordered[index];
+    const b = ordered[swapIndex];
     setBusyId(image.id);
     try {
-      await api.gallery.reorder(ids);
-      listQuery.setData(next.map((row, sortOrder) => ({ ...row, sortOrder })));
+      await Promise.all([
+        api.gallery.update(a.id, { sortOrder: b.sortOrder }),
+        api.gallery.update(b.id, { sortOrder: a.sortOrder }),
+      ]);
+      await listQuery.refetch();
     } catch (err) {
       toast.error(errorMessage(err, "Could not reorder"));
       await listQuery.refetch();
@@ -446,17 +472,17 @@ export function AdminPortfolioPage() {
             <Skeleton key={index} className="aspect-[4/5] w-full rounded-xl" />
           ))}
         </div>
-      ) : filtered.length === 0 ? (
+      ) : images.length === 0 ? (
         <EmptyState
           icon={Images}
-          title={images.length ? "No matches" : "Portfolio is empty"}
+          title={total || debouncedQ || categoryFilter !== "ALL" || statusFilter !== "ALL" ? "No matches" : "Portfolio is empty"}
           description={
-            images.length
+            total || debouncedQ || categoryFilter !== "ALL" || statusFilter !== "ALL"
               ? "Try a different search or filter."
               : "Add Gallery-kind photos to publish on the public portfolio page."
           }
           action={
-            !images.length ? (
+            !total && !debouncedQ && categoryFilter === "ALL" && statusFilter === "ALL" ? (
               <Button type="button" onClick={() => fileRef.current?.click()}>
                 <Upload strokeWidth={1.5} />
                 Add photos
@@ -465,8 +491,9 @@ export function AdminPortfolioPage() {
           }
         />
       ) : (
+        <>
         <ul className="grid grid-cols-2 gap-admin-gap md:grid-cols-3 xl:grid-cols-4">
-          {filtered.map((image) => {
+          {images.map((image) => {
             const src = mediaUrl(image.thumbUrl || image.url);
             const busy = busyId === image.id;
             const orderIndex = orderedIds.indexOf(image.id);
@@ -573,6 +600,36 @@ export function AdminPortfolioPage() {
             );
           })}
         </ul>
+
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs text-muted-foreground">
+            Page {page} of {pageCount}
+            {total ? ` · ${total} item${total === 1 ? "" : "s"}` : ""}
+          </p>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={page <= 1 || listQuery.fetching}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Prev
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={page >= pageCount || listQuery.fetching}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+        </>
       )}
 
       <Dialog open={Boolean(editing && editForm)} onOpenChange={(open) => !open && closeEdit()}>

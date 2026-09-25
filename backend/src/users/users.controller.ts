@@ -55,6 +55,10 @@ class CreateUserDto {
 
 class UpdateUserDto {
   @IsOptional()
+  @IsEmail()
+  email?: string;
+
+  @IsOptional()
   @IsString()
   name?: string;
 
@@ -113,13 +117,13 @@ export class UsersController {
   }
 
   @Patch(":id")
-  @Roles(Role.OWNER)
+  @Roles(Role.OWNER, Role.ADMIN)
   async update(
     @Param("id") id: string,
     @Body() body: UpdateUserDto,
     @CurrentUser() user: AuthUser,
   ) {
-    const row = await this.users.update(id, user.id, body);
+    const row = await this.users.update(id, user.id, body, user.role);
     await this.audit.log({
       userId: user.id,
       userEmail: user.email,
@@ -149,10 +153,24 @@ export class UsersController {
     return row;
   }
 
-  @Delete(":id")
+  @Post(":id/revoke-sessions")
   @Roles(Role.OWNER)
+  async revokeSessions(@Param("id") id: string, @CurrentUser() user: AuthUser) {
+    const row = await this.users.revokeSessions(id);
+    await this.audit.log({
+      userId: user.id,
+      userEmail: user.email,
+      action: "user.revoke_sessions",
+      entity: "user",
+      entityId: id,
+    });
+    return row;
+  }
+
+  @Delete(":id")
+  @Roles(Role.OWNER, Role.ADMIN)
   async remove(@Param("id") id: string, @CurrentUser() user: AuthUser) {
-    const row = await this.users.remove(id, user.id);
+    const row = await this.users.remove(id, user.id, user.role);
     await this.audit.log({
       userId: user.id,
       userEmail: user.email,

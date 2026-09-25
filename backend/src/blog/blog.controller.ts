@@ -49,6 +49,18 @@ class CreateBlogDto {
   coverImageUrl?: string;
 
   @IsOptional()
+  @IsString()
+  metaTitle?: string;
+
+  @IsOptional()
+  @IsString()
+  metaDescription?: string;
+
+  @IsOptional()
+  @IsString()
+  ogImageUrl?: string;
+
+  @IsOptional()
   @IsArray()
   @IsString({ each: true })
   tags?: string[];
@@ -78,6 +90,18 @@ class UpdateBlogDto {
   @IsOptional()
   @IsString()
   coverImageUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  metaTitle?: string;
+
+  @IsOptional()
+  @IsString()
+  metaDescription?: string;
+
+  @IsOptional()
+  @IsString()
+  ogImageUrl?: string;
 
   @IsOptional()
   @IsArray()
@@ -141,6 +165,9 @@ export class BlogController {
         excerpt: body.excerpt,
         content: body.content,
         coverImageUrl: body.coverImageUrl ?? null,
+        metaTitle: body.metaTitle?.trim() || null,
+        metaDescription: body.metaDescription?.trim() || null,
+        ogImageUrl: body.ogImageUrl?.trim() || null,
         tags: body.tags ?? [],
         isPublished,
         publishedAt: isPublished ? new Date() : null,
@@ -177,6 +204,9 @@ export class BlogController {
         ...(body.excerpt !== undefined ? { excerpt: body.excerpt } : {}),
         ...(body.content !== undefined ? { content: body.content } : {}),
         ...(body.coverImageUrl !== undefined ? { coverImageUrl: body.coverImageUrl } : {}),
+        ...(body.metaTitle !== undefined ? { metaTitle: body.metaTitle?.trim() || null } : {}),
+        ...(body.metaDescription !== undefined ? { metaDescription: body.metaDescription?.trim() || null } : {}),
+        ...(body.ogImageUrl !== undefined ? { ogImageUrl: body.ogImageUrl?.trim() || null } : {}),
         ...(body.tags !== undefined ? { tags: body.tags } : {}),
         ...(isPublished !== undefined
           ? {

@@ -171,18 +171,18 @@ async function main() {
   });
   assert.equal(abandoned.abandoned, true);
 
-  const refundPayload = JSON.stringify({
-    id: "evt_refund",
-    type: "refund.paid",
-    data: { checkout_id: "chk_rf", reference: "PA-RF" },
+  const expiredPayload = JSON.stringify({
+    id: "evt_expired",
+    type: "checkout.expired",
+    data: { checkout_id: "chk_exp", reference: "PA-EXP" },
   });
-  const refundSigned = signBachsWebhookForTest(refundPayload, secret, now);
-  const refund = await provider.parseWebhook({
-    rawBody: refundPayload,
-    signatureV2: refundSigned.signatureV2,
+  const expiredSigned = signBachsWebhookForTest(expiredPayload, secret, now);
+  const expired = await provider.parseWebhook({
+    rawBody: expiredPayload,
+    signatureV2: expiredSigned.signatureV2,
   });
-  assert.equal(refund.abandoned, true);
-  assert.equal(refund.success, false);
+  assert.equal(expired.abandoned, true);
+  assert.equal(expired.success, false);
 
   try {
     await provider.parseWebhook({

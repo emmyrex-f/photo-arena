@@ -8,7 +8,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { Role } from "@prisma/client";
-import { IsArray, IsBoolean, IsEmail } from "class-validator";
+import { IsArray, IsBoolean, IsEmail, IsOptional, IsString, MinLength } from "class-validator";
 import { AuditService } from "../audit/audit.service";
 import type { AuthUser } from "../auth/auth.types";
 import { CurrentUser } from "../auth/current-user.decorator";
@@ -30,6 +30,23 @@ class UpdateNotificationSettingsDto {
 
   @IsBoolean()
   reminder2h!: boolean;
+}
+
+class SendManualNotificationDto {
+  @IsEmail()
+  to!: string;
+
+  @IsString()
+  @MinLength(1)
+  subject!: string;
+
+  @IsString()
+  @MinLength(1)
+  message!: string;
+
+  @IsOptional()
+  @IsString()
+  customerName?: string;
 }
 
 @Controller("admin/notifications")
@@ -54,6 +71,8 @@ export class AdminNotificationsController {
       reminder24h: (map["notifications.reminder24h"] ?? "true") === "true",
       reminder2h: (map["notifications.reminder2h"] ?? "true") === "true",
       smtpConfigured: this.notifications.smtpConfigured(),
+      emailConfigured: this.notifications.isConfigured(),
+      provider: this.notifications.emailProvider(),
       fromAddress: this.notifications.fromAddress(),
     };
   }
@@ -115,6 +134,29 @@ export class AdminNotificationsController {
       userEmail: user.email,
       action: "notifications.test",
       entity: "notification",
+    });
+    return { ok: true as const };
+  }
+
+  @Post("send-manual")
+  @Roles(Role.OWNER, Role.ADMIN)
+  async sendManual(
+    @Body() body: SendManualNotificationDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    await this.notifications.sendManualNotification({
+      to: body.to,
+      subject: body.subject,
+      message: body.message,
+      customerName: body.customerName,
+      senderEmail: user.email,
+    });
+    await this.audit.log({
+      userId: user.id,
+      userEmail: user.email,
+      action: "notifications.send_manual",
+      entity: "notification",
+      meta: { to: body.to, subject: body.subject },
     });
     return { ok: true as const };
   }

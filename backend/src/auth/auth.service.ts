@@ -1,14 +1,19 @@
+import { createHash, randomBytes } from "node:crypto";
 import {
   BadRequestException,
   ForbiddenException,
+  forwardRef,
+  Inject,
   Injectable,
   NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
 import { Role } from "@prisma/client";
+import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import { compare, hash } from "bcryptjs";
 import { PrismaService } from "../prisma/prisma.service";
+import { NotificationsService } from "../notifications/notifications.service";
 import { toAuthUser } from "./auth.types";
 import type { UpdateAccountDto } from "./dto/update-account.dto";
 
@@ -17,6 +22,8 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
+    private readonly config: ConfigService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async deskEmail() {
@@ -135,9 +142,6 @@ export class AuthService {
     if (!user || !user.isActive) {
       throw new UnauthorizedException("Account not found");
     }
-    if (user.role !== Role.OWNER) {
-      throw new ForbiddenException("Only the owner can change desk login details");
-    }
     if (!(await compare(body.currentPassword, user.passwordHash))) {
       throw new ForbiddenException("Current password is incorrect");
     }
@@ -177,9 +181,6 @@ export class AuthService {
         },
       });
       const authUser = toAuthUser(updated);
-      if (!newPassword) {
-        return { user: authUser };
-      }
       const token = await this.signToken(updated.id, updated.tokenVersion);
       return { user: authUser, token };
     } catch (error) {
@@ -188,6 +189,142 @@ export class AuthService {
       }
       throw error;
     }
+  }
+
+  async forgotPassword(email: string, requestOrigin?: string) {
+    const normalized = email.trim().toLowerCase();
+    const user = await this.prisma.user.findFirst({
+      where: { email: normalized, isActive: true },
+    });
+
+    if (user) {
+      // Clean up any existing unredeemed tokens for this user
+      await this.prisma.passwordResetToken.deleteMany({
+        where: { userId: user.id, usedAt: null },
+      });
+
+      const rawToken = randomBytes(32).toString("hex");
+      const tokenHash = createHash("sha256").update(rawToken).digest("hex");
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+      await this.prisma.passwordResetToken.create({
+        data: {
+          userId: user.id,
+          tokenHash,
+          expiresAt,
+        },
+      });
+
+      const base = this.getSiteOrigin(requestOrigin);
+      const resetUrl = `${base}/admin/reset-password?token=${rawToken}`;
+      await this.notifications.sendPasswordResetEmail(user.email, user.name, resetUrl);
+    }
+
+    // Always return success message to prevent user enumeration
+    return {
+      ok: true as const,
+      message: "If an active account exists for that email, a password reset link has been sent.",
+    };
+  }
+
+  async verifyResetToken(rawToken: string) {
+    if (!rawToken || typeof rawToken !== "string") {
+      return { valid: false, message: "A reset token is required." };
+    }
+    const tokenHash = createHash("sha256").update(rawToken.trim()).digest("hex");
+    const record = await this.prisma.passwordResetToken.findUnique({
+      where: { tokenHash },
+      include: { user: { select: { email: true, name: true, isActive: true } } },
+    });
+
+    if (!record || record.usedAt !== null || record.expiresAt < new Date() || !record.user?.isActive) {
+      return { valid: false, message: "This reset link is invalid or has expired." };
+    }
+
+    return {
+      valid: true,
+      email: this.maskEmail(record.user.email),
+    };
+  }
+
+  async resetPasswordWithToken(rawToken: string, newPassword: string) {
+    if (!rawToken || typeof rawToken !== "string") {
+      throw new BadRequestException("Reset token is required");
+    }
+    if (!newPassword || newPassword.length < 8) {
+      throw new BadRequestException("Password must be at least 8 characters");
+    }
+
+    const tokenHash = createHash("sha256").update(rawToken.trim()).digest("hex");
+    const record = await this.prisma.passwordResetToken.findUnique({
+      where: { tokenHash },
+      include: { user: { select: { id: true, email: true, isActive: true } } },
+    });
+
+    if (!record || record.usedAt !== null || record.expiresAt < new Date() || !record.user?.isActive) {
+      throw new BadRequestException("This reset link is invalid or has expired. Please request a new one.");
+    }
+
+    await this.assertPasswordUnused(newPassword, record.userId);
+
+    await this.prisma.user.update({
+      where: { id: record.userId },
+      data: {
+        passwordHash: await hash(newPassword, 10),
+        tokenVersion: { increment: 1 }, // Invalidates all existing active sessions
+      },
+    });
+
+    await this.prisma.passwordResetToken.update({
+      where: { id: record.id },
+      data: { usedAt: new Date() },
+    });
+
+    return {
+      ok: true as const,
+      message: "Password reset successfully. You can now sign in with your new password.",
+    };
+  }
+
+  async revokeAllSessions(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user || !user.isActive) {
+      throw new UnauthorizedException("Account not found");
+    }
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { tokenVersion: { increment: 1 } },
+    });
+    return { ok: true as const };
+  }
+
+  private getSiteOrigin(requestOrigin?: string): string {
+    if (requestOrigin) {
+      const allowed = (this.config.get<string>("PUBLIC_SITE_ORIGINS") || "")
+        .split(",")
+        .map((s) => s.trim().replace(/\/$/, ""))
+        .filter(Boolean);
+      const cleaned = requestOrigin.trim().replace(/\/$/, "");
+      if (
+        allowed.includes(cleaned) ||
+        cleaned.startsWith("http://localhost:") ||
+        cleaned.startsWith("http://127.0.0.1:")
+      ) {
+        return cleaned;
+      }
+    }
+    const origins = (this.config.get<string>("PUBLIC_SITE_ORIGINS") || "http://localhost:5173")
+      .split(",")
+      .map((s) => s.trim().replace(/\/$/, ""))
+      .filter(Boolean);
+    return origins[0] || "http://localhost:5173";
+  }
+
+  private maskEmail(email: string): string {
+    const [name, domain] = email.split("@");
+    if (!name || !domain) return email;
+    const visible = name.slice(0, 2);
+    return `${visible}***@${domain}`;
   }
 
   private signToken(userId: string, tokenVersion: number) {

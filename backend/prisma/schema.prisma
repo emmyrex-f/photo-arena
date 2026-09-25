@@ -20,7 +20,21 @@ model User {
   /// ADMIN/STAFF desk areas. `"*"` = full desk access. OWNER ignores (always full). Default empty — never grant "*" by omission.
   permissions  String[]  @default([])
   /// Incremented on deactivate, role change, password change/reset. JWT `ver` must match.
-  tokenVersion Int       @default(0)
+  tokenVersion        Int                  @default(0)
+  passwordResetTokens PasswordResetToken[]
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
 }
 
 model StudioResource {
@@ -121,6 +135,10 @@ model Payment {
   createdAt         DateTime      @default(now())
   /// Bachs checkout_id (chk_…) used for verify + webhook correlation.
   providerSessionId String?
+  refundedAmountKobo Int           @default(0)
+  refundReason       String?
+  channel            String?
+  refundedAt         DateTime?
   booking           Booking       @relation(fields: [bookingId], references: [id])
 
   @@index([status, createdAt])
@@ -243,6 +261,9 @@ model BlogPost {
   /// Markdown.
   content       String
   coverImageUrl String?
+  metaTitle     String?
+  metaDescription String?
+  ogImageUrl    String?
   tags          String[]  @default([])
   isPublished   Boolean   @default(false)
   publishedAt   DateTime?
@@ -312,6 +333,8 @@ enum PaymentStatus {
   PROCESSING
   SUCCESS
   FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
 }
 
 enum PaymentMethod {

@@ -159,16 +159,17 @@ async function main() {
     b = createdB.data;
     createdIds.push(b.id);
 
-    const gallery = await api<Array<{ id: string; isActive?: boolean; url: string }>>(
+    const gallery = await api<{ items: Array<{ id: string; isActive?: boolean; url: string }> }>(
       "GET",
-      "/admin/gallery?isActive=true",
+      "/admin/gallery?isActive=true&pageSize=50",
       { token },
     );
-    if (gallery.status !== 200 || !Array.isArray(gallery.data) || gallery.data.length < 2) {
+    const galleryItems = gallery.data?.items ?? [];
+    if (gallery.status !== 200 || galleryItems.length < 2) {
       fail("gallery", `need two active images, got ${gallery.status}`);
     }
-    const image1 = gallery.data[0]!;
-    const image2 = gallery.data[1]!;
+    const image1 = galleryItems[0]!;
+    const image2 = galleryItems[1]!;
 
     const attach = await api<TestimonialRow>("PATCH", `/admin/testimonials/${a.id}`, {
       token,

@@ -6,7 +6,7 @@
 export type Role = "OWNER" | "ADMIN" | "STAFF";
 export type BookingStatus = "TEMPORARY_HOLD" | "PENDING" | "CONFIRMED" | "COMPLETED" | "CANCELLED" | "NO_SHOW";
 export type BookingSource = "ONLINE" | "WALK_IN" | "ADMIN";
-export type PaymentStatus = "PENDING" | "PROCESSING" | "SUCCESS" | "FAILED";
+export type PaymentStatus = "PENDING" | "PROCESSING" | "SUCCESS" | "FAILED" | "REFUNDED" | "PARTIALLY_REFUNDED";
 export type PaymentMethod = "ONLINE_BACHS" | "STUDIO";
 export type ServiceKind = "SESSION" | "SET" | "BOOTH" | "BACKDROP" | "RENTAL";
 export type EnquiryStatus = "NEW" | "REPLIED" | "CLOSED";
@@ -22,7 +22,7 @@ export const BOOKING_STATUSES: BookingStatus[] = [
 ];
 export const SERVICE_KINDS: ServiceKind[] = ["SESSION", "SET", "BOOTH", "BACKDROP", "RENTAL"];
 export const ENQUIRY_STATUSES: EnquiryStatus[] = ["NEW", "REPLIED", "CLOSED"];
-export const PAYMENT_STATUSES: PaymentStatus[] = ["PENDING", "PROCESSING", "SUCCESS", "FAILED"];
+export const PAYMENT_STATUSES: PaymentStatus[] = ["PENDING", "PROCESSING", "SUCCESS", "FAILED", "REFUNDED", "PARTIALLY_REFUNDED"];
 export const PAYMENT_METHODS: PaymentMethod[] = ["STUDIO", "ONLINE_BACHS"];
 export const ROLES: Role[] = ["OWNER", "ADMIN", "STAFF"];
 
@@ -114,6 +114,10 @@ export type Payment = {
   reference: string;
   transactionId?: string | null;
   paidAt: string | null;
+  refundedAmountKobo?: number;
+  refundReason?: string | null;
+  channel?: string | null;
+  refundedAt?: string | null;
   createdAt: string;
   updatedAt?: string;
   booking?: {
@@ -245,6 +249,9 @@ export type BlogPost = {
   excerpt: string;
   content: string;
   coverImageUrl?: string | null;
+  metaTitle?: string | null;
+  metaDescription?: string | null;
+  ogImageUrl?: string | null;
   tags: string[];
   isPublished: boolean;
   publishedAt?: string | null;
@@ -295,8 +302,11 @@ export type NotificationSettings = {
   reminder24h: boolean;
   reminder2h: boolean;
   smtpConfigured: boolean;
+  emailConfigured?: boolean;
+  provider?: "resend" | "smtp" | "dry-run";
   fromAddress?: string | null;
 };
+
 
 export type NotificationLog = {
   id: string;
@@ -314,6 +324,8 @@ export type NotificationTemplate = {
 };
 
 export type BookingsDeskStats = {
+  /** All-time floor bookings (PENDING + CONFIRMED + COMPLETED). */
+  totalAll?: { count: number };
   totalLast30: { count: number; deltaPct: number | null };
   today: { count: number; delta: number };
   todayRevenue: { totalKobo: number; deltaPct: number | null; deltaKobo: number };

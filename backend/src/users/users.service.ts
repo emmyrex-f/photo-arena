@@ -52,32 +52,66 @@ export class UsersService {
       permissions: input.permissions,
     });
 
-    return this.prisma.user.create({
-      data: {
-        email,
-        name: input.name.trim(),
-        role: input.role,
-        passwordHash: await hash(input.password, 10),
-        isActive: true,
-        permissions,
-      },
-      select: userSelect,
-    });
+    try {
+      return await this.prisma.user.create({
+        data: {
+          email,
+          name: input.name.trim(),
+          role: input.role,
+          passwordHash: await hash(input.password, 10),
+          isActive: true,
+          permissions,
+        },
+        select: userSelect,
+      });
+    } catch (error) {
+      if ((error as { code?: string }).code === "P2002") {
+        throw new BadRequestException("A user with this email already exists");
+      }
+      throw error;
+    }
   }
 
   async update(
     id: string,
     actorId: string,
     input: {
+      email?: string;
       name?: string;
       role?: Role;
       isActive?: boolean;
       fullAccess?: boolean;
       permissions?: string[];
     },
+    actorRole?: Role,
   ) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException("User not found");
+
+    if (actorRole && actorRole !== Role.OWNER) {
+      if (user.role === Role.OWNER) {
+        throw new ForbiddenException("Only the owner can modify or delete owner accounts");
+      }
+      if (input.role === Role.OWNER) {
+        throw new ForbiddenException("Only the owner can assign the owner role");
+      }
+      if ((input.fullAccess !== undefined || input.permissions !== undefined) && id !== actorId) {
+        throw new ForbiddenException("Only the owner can modify user permissions");
+      }
+    }
+
+    const email = input.email !== undefined ? input.email.trim().toLowerCase() : undefined;
+    if (email !== undefined) {
+      if (!email) {
+        throw new BadRequestException("Email is required");
+      }
+      if (email !== user.email) {
+        const existing = await this.prisma.user.findUnique({ where: { email } });
+        if (existing && existing.id !== id) {
+          throw new BadRequestException("A user with this email already exists");
+        }
+      }
+    }
 
     if (input.role !== undefined || input.isActive === false) {
       if (user.role === Role.OWNER && (input.role !== Role.OWNER || input.isActive === false)) {
@@ -115,17 +149,25 @@ export class UsersService {
       (nextPermissions !== undefined &&
         JSON.stringify([...nextPermissions].sort()) !== JSON.stringify([...user.permissions].sort()));
 
-    return this.prisma.user.update({
-      where: { id },
-      data: {
-        ...(input.name !== undefined ? { name: input.name.trim() } : {}),
-        ...(input.role !== undefined ? { role: input.role } : {}),
-        ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
-        ...(nextPermissions !== undefined ? { permissions: nextPermissions } : {}),
-        ...(bumpToken ? { tokenVersion: { increment: 1 } } : {}),
-      },
-      select: userSelect,
-    });
+    try {
+      return await this.prisma.user.update({
+        where: { id },
+        data: {
+          ...(email !== undefined ? { email } : {}),
+          ...(input.name !== undefined ? { name: input.name.trim() } : {}),
+          ...(input.role !== undefined ? { role: input.role } : {}),
+          ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
+          ...(nextPermissions !== undefined ? { permissions: nextPermissions } : {}),
+          ...(bumpToken ? { tokenVersion: { increment: 1 } } : {}),
+        },
+        select: userSelect,
+      });
+    } catch (error) {
+      if ((error as { code?: string }).code === "P2002") {
+        throw new BadRequestException("A user with this email already exists");
+      }
+      throw error;
+    }
   }
 
   async resetPassword(id: string, password: string) {
@@ -142,12 +184,22 @@ export class UsersService {
     return { ok: true as const };
   }
 
-  async softDelete(id: string, actorId: string) {
-    return this.update(id, actorId, { isActive: false });
+  async revokeSessions(id: string) {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) throw new NotFoundException("User not found");
+    await this.prisma.user.update({
+      where: { id },
+      data: { tokenVersion: { increment: 1 } },
+    });
+    return { ok: true as const };
   }
 
-  async remove(id: string, actorId: string) {
-    return this.softDelete(id, actorId);
+  async softDelete(id: string, actorId: string, actorRole?: Role) {
+    return this.update(id, actorId, { isActive: false }, actorRole);
+  }
+
+  async remove(id: string, actorId: string, actorRole?: Role) {
+    return this.softDelete(id, actorId, actorRole);
   }
 
   private async assertPasswordUnique(password: string, exceptUserId?: string) {

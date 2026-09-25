@@ -5,11 +5,12 @@ import {
   Get,
   Param,
   Patch,
+  Post,
   Query,
   UseGuards,
 } from "@nestjs/common";
 import { EnquiryStatus, Role } from "@prisma/client";
-import { IsEnum, IsOptional, IsString } from "class-validator";
+import { IsEnum, IsNotEmpty, IsOptional, IsString } from "class-validator";
 import { AuditService } from "../audit/audit.service";
 import type { AuthUser } from "../auth/auth.types";
 import { CurrentUser } from "../auth/current-user.decorator";
@@ -27,6 +28,16 @@ class UpdateEnquiryDto {
   @IsOptional()
   @IsString()
   internalNote?: string;
+}
+
+class ReplyEnquiryDto {
+  @IsString()
+  @IsNotEmpty()
+  replyMessage!: string;
+
+  @IsOptional()
+  @IsString()
+  subject?: string;
 }
 
 @Controller("admin/enquiries")
@@ -73,6 +84,25 @@ export class EnquiriesController {
       entity: "enquiry",
       entityId: id,
       meta: body as object,
+    });
+    return row;
+  }
+
+  @Post(":id/reply")
+  @Roles(Role.OWNER, Role.ADMIN)
+  async reply(
+    @Param("id") id: string,
+    @Body() body: ReplyEnquiryDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const row = await this.enquiries.reply(id, body.replyMessage, user.email, body.subject);
+    await this.audit.log({
+      userId: user.id,
+      userEmail: user.email,
+      action: "enquiry.reply",
+      entity: "enquiry",
+      entityId: id,
+      meta: { to: row.email, subject: body.subject },
     });
     return row;
   }

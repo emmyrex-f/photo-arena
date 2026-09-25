@@ -183,7 +183,7 @@
   /* Logo 40px + vertical padding; 2rem shorter than the previous 80px bar. */
   --pa-nav-h: calc(40px + (var(--pa-eyebrow) * 2));
   --pa-footer-y: 2.5rem;
-  --pa-label: 0.5rem;
+  --pa-label: 0.625rem;
   --pa-eyebrow: 0.25rem;
   --pa-stack-sm: 1rem;
   --pa-stack: 1.25rem;
@@ -191,7 +191,7 @@
   --pa-stack-xl: 3rem;
   --pa-stack-2xl: 3.5rem;
   --pa-control: 0.75rem;
-  --pa-form: 1.25rem;
+  --pa-form: 1.75rem;
   --pa-card-sm: 1rem;
   --pa-card: 1.5rem;
   --pa-card-lg: 2rem;
@@ -677,10 +677,13 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   color: var(--color-text-secondary);
   font-size: 1.0625rem;
   line-height: 1.8;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .prose-pa > * + * {
   margin-top: 1.25em;
 }
+.prose-pa h1,
 .prose-pa h2,
 .prose-pa h3 {
   font-family: var(--font-heading);
@@ -688,6 +691,10 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   color: var(--color-text);
   line-height: 1.2;
   letter-spacing: -0.02em;
+}
+.prose-pa h1 {
+  font-size: 2rem;
+  margin-top: 0;
 }
 .prose-pa h2 {
   font-size: 1.85rem;
@@ -701,6 +708,10 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   font-size: 1.15rem;
   font-family: var(--font-subtitle);
   font-weight: 400;
+  color: var(--color-text);
+}
+.prose-pa p {
+  max-width: 100%;
 }
 .prose-pa p strong {
   color: var(--color-text);
@@ -725,17 +736,24 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   margin-top: 0.5em;
 }
 .prose-pa blockquote {
-  border-left: 1px solid var(--color-accent);
+  border-left: 3px solid var(--color-accent);
   padding-left: 1.25rem;
-  font-family: var(--font-subtitle);
+  font-family: var(--font-body);
+  font-style: italic;
   font-weight: 400;
-  font-size: 1.2rem;
-  line-height: 1.5;
+  font-size: 1.05rem;
+  line-height: 1.7;
   color: var(--color-text);
 }
+.prose-pa blockquote p {
+  margin: 0;
+}
 .prose-pa img {
+  display: block;
   width: 100%;
+  max-width: 100%;
   height: auto;
+  margin-inline: auto;
 }
 .prose-pa hr {
   border: 0;
@@ -743,24 +761,60 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   margin: 3em 0;
 }
 .prose-pa code {
-  font-size: 0.9em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.88em;
   background: var(--color-surface);
-  padding: 0.1em 0.35em;
+  padding: 0.12em 0.4em;
+  border-radius: 0.25rem;
+}
+.prose-pa pre {
+  overflow-x: auto;
+  max-width: 100%;
+  padding: 1rem 1.15rem;
+  border-radius: 0.5rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+.prose-pa pre code {
+  background: transparent;
+  padding: 0;
+  font-size: inherit;
+}
+.prose-pa .table-wrap,
+.prose-pa-article :is(table) {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .prose-pa table {
   width: 100%;
+  min-width: 16rem;
   border-collapse: collapse;
   font-size: 0.95rem;
+  margin: 0;
 }
 .prose-pa th,
 .prose-pa td {
   text-align: left;
-  padding: 0.75rem 0.5rem;
+  padding: 0.75rem 0.65rem;
   border-top: 1px solid var(--color-border);
+  vertical-align: top;
 }
 .prose-pa th {
   color: var(--color-text);
-  font-weight: 500;
+  font-weight: 600;
+  border-bottom: 1px solid var(--color-border);
+}
+.prose-pa tr:last-child td {
+  border-bottom: 1px solid var(--color-border);
+}
+.prose-pa input[type="checkbox"] {
+  margin-right: 0.5rem;
+  vertical-align: middle;
 }
 
 /* Public form controls — same padding as Contact / Book. */
@@ -768,23 +822,54 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   display: block;
   margin-bottom: var(--pa-label);
   font-size: 0.875rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
   color: var(--color-text-secondary);
 }
 .pa-input {
   min-height: 2.75rem;
   width: 100%;
   min-width: 0;
-  border: 1px solid var(--color-elevated);
-  background: var(--color-bg);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 0.75rem;
+  background: #fff;
   padding-left: var(--pa-stack-sm);
   padding-right: var(--pa-stack-sm);
   color: var(--color-text);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+.pa-input::placeholder {
+  color: var(--color-text-muted);
+}
+.pa-input:hover {
+  border-color: var(--color-border);
+}
+.pa-input:focus {
+  outline: none;
+  border-color: var(--color-border);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--pa-amber) 28%, transparent);
+}
+.pa-input:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
 }
 select.pa-input {
   padding-right: 2.75rem;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23573418' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.9rem center;
+  background-size: 1rem;
+}
+textarea.pa-input {
+  min-height: 8rem;
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+  resize: vertical;
 }
 .pa-card {
-  border: 1px solid var(--color-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
   padding: var(--pa-card);
 }
 

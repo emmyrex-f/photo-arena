@@ -8,10 +8,10 @@
 export const BACHS_WEBHOOK_EVENTS = [
   "collection.succeeded",
   "collection.failed",
+  "collection.abandoned",
   "collection.underpaid",
   "checkout.completed",
   "checkout.expired",
-  "refund.paid",
 ] as const;
 
 /**

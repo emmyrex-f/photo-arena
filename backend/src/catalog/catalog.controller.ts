@@ -302,6 +302,36 @@ export class CatalogController {
     return row;
   }
 
+  @Post("services/:id/approve-pricing")
+  @Roles(Role.OWNER, Role.ADMIN)
+  async approveServicePricing(
+    @Param("id") id: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const row = await this.catalog.approveServicePricing(id);
+    await this.audit.log({
+      userId: user.id,
+      userEmail: user.email,
+      action: "service.approve_pricing",
+      entity: "service",
+      entityId: id,
+    });
+    return row;
+  }
+
+  @Post("services/approve-all-pricing")
+  @Roles(Role.OWNER, Role.ADMIN)
+  async approveAllPricing(@CurrentUser() user: AuthUser) {
+    const res = await this.catalog.approveAllPricing();
+    await this.audit.log({
+      userId: user.id,
+      userEmail: user.email,
+      action: "catalog.approve_all_pricing",
+      entity: "catalog",
+    });
+    return res;
+  }
+
   @Delete("services/:id")
   @Roles(Role.OWNER, Role.ADMIN)
   async deleteService(@Param("id") id: string, @CurrentUser() user: AuthUser) {

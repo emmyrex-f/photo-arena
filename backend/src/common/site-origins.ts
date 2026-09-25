@@ -1,6 +1,6 @@
 const DEV_DEFAULT_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"];
-const ALLOWED_PATHS_RETURN = ["/book/confirmation"];
-const ALLOWED_PATHS_CANCEL = ["/book"];
+const ALLOWED_PATHS_RETURN = ["/book/confirmation", "/booking/lookup"];
+const ALLOWED_PATHS_CANCEL = ["/book", "/booking/lookup"];
 
 export function configuredOrigins(env: NodeJS.ProcessEnv = process.env): string[] {
   const raw = (env.PUBLIC_SITE_ORIGINS ?? "").trim();

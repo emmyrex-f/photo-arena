@@ -83,6 +83,15 @@ export function createAdminApi({ token, onUnauthorized }: ClientOptions) {
         newPassword?: string;
       }) =>
         patch<{ user: AdminUser; token?: string }>("/auth/account", body),
+      forgotPassword: (email: string) =>
+        post<{ ok: true; message: string }>("/auth/forgot-password", { email }),
+      verifyResetToken: (token: string) =>
+        get<{ valid: boolean; email?: string; message?: string }>(
+          `/auth/verify-reset-token?token=${encodeURIComponent(token)}`,
+        ),
+      resetPassword: (token: string, newPassword: string) =>
+        post<{ ok: true; message: string }>("/auth/reset-password", { token, newPassword }),
+      revokeAllSessions: () => post<{ ok: true }>("/auth/revoke-sessions"),
     },
 
     dashboard: {
@@ -110,9 +119,16 @@ export function createAdminApi({ token, onUnauthorized }: ClientOptions) {
         source: "WALK_IN" | "ADMIN";
         notes?: string;
       }) => post<BookingRecord>("/admin/bookings", body),
-      /** Studio Mark Paid — server charges full outstanding; optional note only. */
-      recordPayment: (id: string, body?: { note?: string }) =>
-        post<BookingRecord>(`/admin/bookings/${id}/payment`, body ?? {}),
+      /** Studio Mark Paid — records cash/POS/transfer payment for outstanding amount or custom deposit. */
+      recordPayment: (
+        id: string,
+        body?: {
+          amountKobo?: number;
+          channel?: "CASH" | "POS" | "TRANSFER";
+          reference?: string;
+          note?: string;
+        },
+      ) => post<BookingRecord>(`/admin/bookings/${id}/payment`, body ?? {}),
       setStatus: (id: string, status: "COMPLETED" | "NO_SHOW" | "CANCELLED") =>
         patch<BookingRecord>(`/admin/bookings/${id}/status`, { status }),
       update: (id: string, body: { notes?: string }) => patch<BookingRecord>(`/admin/bookings/${id}`, body),
@@ -146,6 +162,8 @@ export function createAdminApi({ token, onUnauthorized }: ClientOptions) {
       get: (id: string) => get<Enquiry>(`/admin/enquiries/${id}`),
       update: (id: string, body: { status?: EnquiryStatus; internalNote?: string }) =>
         patch<Enquiry>(`/admin/enquiries/${id}`, body),
+      reply: (id: string, body: { replyMessage: string; subject?: string }) =>
+        post<Enquiry>(`/admin/enquiries/${id}/reply`, body),
       remove: (id: string) => del<{ ok: true }>(`/admin/enquiries/${id}`),
     },
 
@@ -184,6 +202,8 @@ export function createAdminApi({ token, onUnauthorized }: ClientOptions) {
         patch<Package>(`/admin/packages/${id}`, body),
       removePackage: (id: string) => del<{ ok: true }>(`/admin/packages/${id}`),
       reorderPackages: (ids: string[]) => post<{ ok: true }>("/admin/packages/reorder", { ids }),
+      approvePricing: (id: string) => post<Service>(`/admin/services/${id}/approve-pricing`),
+      approveAllPricing: () => post<{ ok: true }>("/admin/services/approve-all-pricing"),
     },
 
     pricingRules: {
@@ -193,8 +213,18 @@ export function createAdminApi({ token, onUnauthorized }: ClientOptions) {
     },
 
     gallery: {
-      list: (params?: { kind?: MediaKind; isActive?: boolean }) =>
-        get<GalleryImage[]>(`/admin/gallery${qs(params)}`),
+      list: (params?: {
+        kind?: MediaKind;
+        isActive?: boolean;
+        featured?: boolean;
+        category?: string;
+        q?: string;
+        page?: number;
+        pageSize?: number;
+      }) =>
+        get<Paginated<GalleryImage> & { counts?: { active: number; featured: number; inactive: number } }>(
+          `/admin/gallery${qs(params)}`,
+        ),
       upload: (formData: FormData, onProgress?: (percent: number) => void) =>
         apiUpload<GalleryImage[]>("/admin/gallery/upload", formData, token, onProgress),
       update: (
@@ -245,6 +275,9 @@ export function createAdminApi({ token, onUnauthorized }: ClientOptions) {
         excerpt: string;
         content: string;
         coverImageUrl?: string | null;
+        metaTitle?: string | null;
+        metaDescription?: string | null;
+        ogImageUrl?: string | null;
         tags?: string[];
         isPublished?: boolean;
       }) => post<BlogPost>("/admin/blog", body),
@@ -267,6 +300,11 @@ export function createAdminApi({ token, onUnauthorized }: ClientOptions) {
         get<PaymentsSummary>(`/admin/payments/summary${qs(params)}`),
       integration: () => get<PaymentIntegrationStatus>("/admin/payments/integration"),
       exportCsv: (params: { from?: string; to?: string }) => blob(`/admin/payments/export.csv${qs(params)}`),
+      refund: (id: string, body: { amountKobo?: number; reason: string }) =>
+        post<{ payment: Payment; refundedAmountKobo: number; status: PaymentStatus }>(
+          `/admin/payments/${id}/refund`,
+          body,
+        ),
     },
 
     notifications: {
@@ -276,6 +314,12 @@ export function createAdminApi({ token, onUnauthorized }: ClientOptions) {
       logs: (params: { page?: number; pageSize?: number }) =>
         get<Paginated<NotificationLog>>(`/admin/notifications/logs${qs(params)}`),
       test: () => post<{ ok: true; dryRun?: boolean }>("/admin/notifications/test"),
+      sendManual: (body: {
+        to: string;
+        subject: string;
+        message: string;
+        customerName?: string;
+      }) => post<{ ok: true }>("/admin/notifications/send-manual", body),
       templates: () => get<NotificationTemplate[]>("/admin/notifications/templates"),
     },
 
@@ -292,6 +336,7 @@ export function createAdminApi({ token, onUnauthorized }: ClientOptions) {
       update: (
         id: string,
         body: {
+          email?: string;
           name?: string;
           role?: Role;
           isActive?: boolean;
@@ -301,6 +346,7 @@ export function createAdminApi({ token, onUnauthorized }: ClientOptions) {
       ) => patch<AdminUser>(`/admin/users/${id}`, body),
       resetPassword: (id: string, password: string) =>
         post<{ ok: true }>(`/admin/users/${id}/reset-password`, { password }),
+      revokeSessions: (id: string) => post<{ ok: true }>(`/admin/users/${id}/revoke-sessions`),
       remove: (id: string) => del<AdminUser>(`/admin/users/${id}`),
     },
 

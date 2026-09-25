@@ -122,14 +122,17 @@ async function main() {
     }
     pass("existing service with no media");
 
-    const gallery = await api<Array<{ id: string; isActive?: boolean; url: string }>>("GET", "/admin/gallery?isActive=true", {
-      token,
-    });
-    if (gallery.status !== 200 || !Array.isArray(gallery.data) || gallery.data.length < 2) {
-      fail("gallery", `need two active images, got ${gallery.status} count=${Array.isArray(gallery.data) ? gallery.data.length : 0}`);
+    const gallery = await api<{ items: Array<{ id: string; isActive?: boolean; url: string }> }>(
+      "GET",
+      "/admin/gallery?isActive=true&pageSize=50",
+      { token },
+    );
+    const galleryItems = gallery.data?.items ?? [];
+    if (gallery.status !== 200 || galleryItems.length < 2) {
+      fail("gallery", `need two active images, got ${gallery.status} count=${galleryItems.length}`);
     }
-    const image1 = gallery.data[0]!;
-    const image2 = gallery.data[1]!;
+    const image1 = galleryItems[0]!;
+    const image2 = galleryItems[1]!;
 
     const attach = await api<ServiceRow>("PATCH", `/admin/services/${serviceA.id}`, {
       token,

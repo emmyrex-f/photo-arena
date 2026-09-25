@@ -31,6 +31,26 @@ export function slugify(input: string): string {
     .slice(0, 80);
 }
 
+/** Strip markdown to a short plain-text blurb for list cards. */
+export function plainTextPreview(markdown: string, maxLen = 280): string {
+  const plain = markdown
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`[^`]*`/g, " ")
+    .replace(/!\[[^\]]*]\([^)]*\)/g, " ")
+    .replace(/\[([^\]]*)]\([^)]*\)/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^>\s?/gm, "")
+    .replace(/[*_~]+/g, "")
+    .replace(/^\s*[-+*]\s+/gm, "")
+    .replace(/^\s*\d+\.\s+/gm, "")
+    .replace(/\|/g, " ")
+    .replace(/[-*]{3,}/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (plain.length <= maxLen) return plain;
+  return `${plain.slice(0, maxLen).replace(/\s+\S*$/, "").trimEnd()}…`;
+}
+
 export function sha256Hex(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }

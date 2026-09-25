@@ -32,7 +32,12 @@ export function PageHeader({
   const { pathname } = useLocation();
   const usePhoto = photo && !NO_PHOTO_PATHS.has(pathname);
   const still = usePhoto ? headerStillForPath(pathname) : null;
-  const src = usePhoto ? image ?? still?.src : undefined;
+  // Explicit `image` wins; empty string means "no photo" (no path fallback).
+  const src = !usePhoto
+    ? undefined
+    : image !== undefined
+      ? image || undefined
+      : still?.src;
   const position = objectPosition ?? still?.objectPosition ?? "center 24%";
 
   if (!src) {

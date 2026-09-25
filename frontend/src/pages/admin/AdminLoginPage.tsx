@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
+import { Link, Navigate, useNavigate } from "react-router-dom";
 import { Eye, EyeOff } from "lucide-react";
 import { Button } from "../../admin/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../admin/components/ui/card";
@@ -16,6 +16,7 @@ export function AdminLoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -42,7 +43,7 @@ export function AdminLoginPage() {
     setError("");
     setSubmitting(true);
     try {
-      const signedIn = await login(email, password);
+      const signedIn = await login(email, password, rememberMe);
       navigate(firstAllowedAdminPath(signedIn), { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not sign in");
@@ -118,6 +119,23 @@ export function AdminLoginPage() {
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </Button>
                 </div>
+              </div>
+              <div className="flex items-center justify-between text-xs pt-1">
+                <label className="flex items-center gap-2 cursor-pointer select-none text-muted-foreground hover:text-foreground">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="h-4 w-4 rounded border-border accent-accent cursor-pointer"
+                  />
+                  <span>Remember me</span>
+                </label>
+                <Link
+                  to="/admin/forgot-password"
+                  className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline transition-colors"
+                >
+                  Forgot password?
+                </Link>
               </div>
               {error ? <p className="text-sm text-destructive">{error}</p> : null}
               <Button type="submit" className="w-full" loading={submitting}>

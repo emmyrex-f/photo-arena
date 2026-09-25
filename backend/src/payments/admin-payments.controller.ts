@@ -1,23 +1,30 @@
 import {
+  Body,
   Controller,
   Get,
   Header,
+  Param,
+  Post,
   Query,
   UseGuards,
 } from "@nestjs/common";
-import { PaymentMethod, PaymentStatus, Prisma } from "@prisma/client";
+import { PaymentMethod, PaymentStatus, Prisma, Role } from "@prisma/client";
 import {
   addLagosDays,
   startOfLagosDay,
   toLagosYmd,
 } from "../bookings/availability";
+import { CurrentUser } from "../auth/current-user.decorator";
+import type { AuthUser } from "../auth/auth.types";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RequirePermission } from "../auth/permissions.decorator";
+import { Roles } from "../auth/roles.decorator";
 import { RolesGuard } from "../auth/roles.guard";
 import { parsePage, parsePageSize, paginate } from "../common/pagination";
 import { toCsv } from "../common/utils";
 import { PrismaService } from "../prisma/prisma.service";
 import { PaymentsService } from "./payments.service";
+import { RefundPaymentDto } from "./dto/refund-payment.dto";
 
 function pctChange(current: number, previous: number): number | null {
   if (previous === 0) return null;
@@ -36,6 +43,16 @@ export class AdminPaymentsController {
   @Get("integration")
   integration() {
     return this.payments.integrationStatus();
+  }
+
+  @Post(":id/refund")
+  @Roles(Role.OWNER, Role.ADMIN)
+  async refund(
+    @Param("id") id: string,
+    @Body() body: RefundPaymentDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.payments.refundPayment(id, user.id, user.email, body);
   }
 
   @Get("export.csv")

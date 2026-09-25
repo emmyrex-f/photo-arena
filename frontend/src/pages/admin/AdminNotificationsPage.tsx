@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { Bell, ChevronLeft, ChevronRight, Mail, Send } from "lucide-react";
+import { Bell, ChevronLeft, ChevronRight, Mail, MessageSquarePlus, Send } from "lucide-react";
 import { Badge } from "../../admin/components/ui/badge";
 import { Button } from "../../admin/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../admin/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../admin/components/ui/dialog";
 import { EmptyState } from "../../admin/components/ui/empty-state";
 import { ErrorBanner } from "../../admin/components/ui/error-banner";
+import { Input } from "../../admin/components/ui/input";
 import { Label } from "../../admin/components/ui/label";
 import { Skeleton } from "../../admin/components/ui/skeleton";
 import { Switch } from "../../admin/components/ui/switch";
@@ -17,6 +19,7 @@ import {
   TableRow,
 } from "../../admin/components/ui/table";
 import { TagsInput } from "../../admin/components/ui/tags-input";
+import { Textarea } from "../../admin/components/ui/textarea";
 import { toast } from "../../admin/components/ui/toaster";
 import { useAdminApi } from "../../admin/lib/adminApi";
 import { formatLagosDateTime } from "../../admin/lib/format";
@@ -44,6 +47,12 @@ export function AdminNotificationsPage() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualTo, setManualTo] = useState("");
+  const [manualCustomer, setManualCustomer] = useState("");
+  const [manualSubject, setManualSubject] = useState("");
+  const [manualMessage, setManualMessage] = useState("");
+  const [manualSending, setManualSending] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -112,6 +121,47 @@ export function AdminNotificationsPage() {
     }
   }
 
+  async function sendManual(event: FormEvent) {
+    event.preventDefault();
+    const cleanTo = manualTo.trim().toLowerCase();
+    if (!isEmail(cleanTo)) {
+      toast.error("Please enter a valid recipient email");
+      return;
+    }
+    if (!manualSubject.trim()) {
+      toast.error("Please enter a subject line");
+      return;
+    }
+    if (!manualMessage.trim()) {
+      toast.error("Please enter a message body");
+      return;
+    }
+
+    setManualSending(true);
+    try {
+      await api.notifications.sendManual({
+        to: cleanTo,
+        subject: manualSubject.trim(),
+        message: manualMessage.trim(),
+        customerName: manualCustomer.trim() || undefined,
+      });
+      toast.success(`Message sent to ${cleanTo}`);
+      setManualOpen(false);
+      setManualTo("");
+      setManualCustomer("");
+      setManualSubject("");
+      setManualMessage("");
+      const nextLogs = await api.notifications.logs({ page: 1, pageSize: PAGE_SIZE });
+      setLogPage(1);
+      setLogs(nextLogs.items);
+      setLogTotal(nextLogs.total);
+    } catch (err) {
+      toast.error(errorMessage(err, "Failed to send message"));
+    } finally {
+      setManualSending(false);
+    }
+  }
+
   const logPageCount = Math.max(1, Math.ceil(logTotal / PAGE_SIZE));
 
   return (
@@ -122,13 +172,19 @@ export function AdminNotificationsPage() {
             Notifications
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Desk email recipients, booking reminders, and delivery log.
+            Desk alerts, booking reminders, rich HTML templates, and client messaging.
           </p>
         </div>
-        <Button type="button" variant="outline" onClick={() => void sendTest()} loading={testing}>
-          <Send strokeWidth={1.5} />
-          Send test
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" variant="outline" onClick={() => void sendTest()} loading={testing}>
+            <Send strokeWidth={1.5} />
+            Send test
+          </Button>
+          <Button type="button" onClick={() => setManualOpen(true)}>
+            <MessageSquarePlus strokeWidth={1.5} />
+            Manual message
+          </Button>
+        </div>
       </header>
 
       <ErrorBanner message={error} onRetry={() => void load()} retrying={loading} />
@@ -143,11 +199,27 @@ export function AdminNotificationsPage() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-3">
               <CardTitle className="font-display text-lg font-normal">Email settings</CardTitle>
-              <Badge variant={settings?.smtpConfigured ? "success" : "warning"}>
-                {settings?.smtpConfigured ? "SMTP ready" : "SMTP not configured"}
+              <Badge variant={settings?.emailConfigured ? "success" : "warning"}>
+                {settings?.emailConfigured
+                  ? settings.provider === "resend"
+                    ? "Resend active"
+                    : "SMTP active"
+                  : "Email not configured"}
               </Badge>
             </CardHeader>
             <CardContent>
+              {!settings?.emailConfigured ? (
+                <div className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 text-xs leading-relaxed text-amber-950 dark:text-amber-100">
+                  Password resets and booking emails will not leave the server until you set{" "}
+                  <code className="rounded bg-background/60 px-1">RESEND_API_KEY</code> (preferred) or{" "}
+                  <code className="rounded bg-background/60 px-1">SMTP_HOST</code> /{" "}
+                  <code className="rounded bg-background/60 px-1">SMTP_USER</code> /{" "}
+                  <code className="rounded bg-background/60 px-1">SMTP_PASS</code> in{" "}
+                  <code className="rounded bg-background/60 px-1">backend/.env</code>, then restart the API.
+                  While unconfigured, reset links are printed in the Nest console as{" "}
+                  <code className="rounded bg-background/60 px-1">[email:dry-run]</code>.
+                </div>
+              ) : null}
               <form className="space-y-admin-stack-sm" onSubmit={(event) => void saveSettings(event)}>
                 {settings?.fromAddress ? (
                   <p className="text-xs text-muted-foreground">From: {settings.fromAddress}</p>
@@ -274,6 +346,71 @@ export function AdminNotificationsPage() {
           </section>
         </>
       )}
+
+      <Dialog open={manualOpen} onOpenChange={setManualOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Send Manual Notification</DialogTitle>
+            <DialogDescription>
+              Compose and dispatch a branded studio email directly to any customer or desk recipient.
+            </DialogDescription>
+          </DialogHeader>
+          <form className="space-y-admin-stack-sm" onSubmit={(e) => void sendManual(e)}>
+            <div className="space-y-1.5">
+              <Label htmlFor="manual-to">Recipient Email</Label>
+              <Input
+                id="manual-to"
+                type="email"
+                placeholder="customer@example.com"
+                value={manualTo}
+                onChange={(e) => setManualTo(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="manual-customer">Customer Name (optional)</Label>
+              <Input
+                id="manual-customer"
+                type="text"
+                placeholder="e.g. Chioma Okafor"
+                value={manualCustomer}
+                onChange={(e) => setManualCustomer(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="manual-subject">Subject Line</Label>
+              <Input
+                id="manual-subject"
+                type="text"
+                placeholder="e.g. Update regarding your upcoming portrait session"
+                value={manualSubject}
+                onChange={(e) => setManualSubject(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="manual-message">Message Content</Label>
+              <Textarea
+                id="manual-message"
+                rows={5}
+                placeholder="Type your message here..."
+                value={manualMessage}
+                onChange={(e) => setManualMessage(e.target.value)}
+                required
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={() => setManualOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" loading={manualSending}>
+                <Send strokeWidth={1.5} />
+                Send message
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

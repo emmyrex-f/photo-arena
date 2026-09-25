@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { PageHeader } from "../components/layout/PageHeader";
 import { Button } from "../components/ui/Button";
 import { CameraSpinner } from "../components/ui/CameraSpinner";
@@ -80,8 +80,10 @@ export function BookPage() {
   const [slotsError, setSlotsError] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [phoneError, setPhoneError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [hold, setHold] = useState<HoldResponse | null>(null);
+
   const [holdError, setHoldError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
@@ -135,9 +137,35 @@ export function BookPage() {
     return Array.from({ length: 28 }, (_, i) => addDaysToKey(today, i));
   }, []);
 
+  function validateBookingPhone(raw: string): string | null {
+    const trimmed = raw.trim();
+    if (!trimmed) return "Phone number is required.";
+    if (/[a-zA-Z]/.test(trimmed)) return "Phone number cannot contain letters.";
+    const digits = trimmed.replace(/\D/g, "");
+    if (digits.length < 8) return "Phone number must have at least 8 digits.";
+    if (digits.length > 16) return "Phone number cannot exceed 16 digits.";
+
+    if (trimmed.startsWith("0")) {
+      if (digits.length !== 11) {
+        return "Nigerian local numbers (0...) must have exactly 11 digits (e.g. 0803 123 4567).";
+      }
+    } else if (trimmed.startsWith("+234") || trimmed.startsWith("234")) {
+      const localPart = trimmed.startsWith("+234") ? digits.slice(3) : digits.slice(3);
+      if (localPart.length !== 10) {
+        return "Nigerian numbers with +234 must have 10 digits after the country code.";
+      }
+    }
+    return null;
+  }
+
   async function onHold(event: FormEvent) {
     event.preventDefault();
     if (!selected || !slotIso) return;
+    const phoneErr = validateBookingPhone(phone);
+    if (phoneErr) {
+      setPhoneError(phoneErr);
+      return;
+    }
     setSubmitting(true);
     setHoldError(null);
     try {
@@ -204,6 +232,12 @@ export function BookPage() {
       <Section className="pt-0">
         <Container className={showSummary ? "grid min-w-0 gap-grid-lg lg:grid-cols-[1.2fr_0.8fr]" : "min-w-0"}>
           <div className="min-w-0">
+            <p className="mb-stack-md text-sm text-text-muted">
+              Already booked?{" "}
+              <Link to="/booking/lookup" className="text-accent underline-offset-2 hover:underline">
+                Look up or manage your booking
+              </Link>
+            </p>
             <ol className="mb-stack-xl flex flex-wrap gap-x-4 gap-y-2 text-xs uppercase tracking-[0.16em] text-text-muted">
               {(
                 [
@@ -463,15 +497,38 @@ export function BookPage() {
                 </div>
                 <div>
                   <label htmlFor="phone" className="pa-label">
-                    Phone
+                    Phone number
                   </label>
                   <input
                     id="phone"
+                    type="tel"
                     required
                     value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    className="pa-input"
+                    onChange={(e) => {
+                      setPhone(e.target.value);
+                      if (phoneError) {
+                        setPhoneError(validateBookingPhone(e.target.value));
+                      }
+                    }}
+                    onBlur={() => {
+                      if (phone) {
+                        setPhoneError(validateBookingPhone(phone));
+                      }
+                    }}
+                    placeholder="e.g. 0803 123 4567 or +234 803 123 4567"
+                    className={`pa-input ${phoneError ? "border-error focus:border-error" : ""}`}
+                    aria-invalid={Boolean(phoneError)}
+                    aria-describedby={phoneError ? "phone-error" : "phone-hint"}
                   />
+                  {phoneError ? (
+                    <p id="phone-error" className="mt-1 text-xs text-error font-medium">
+                      {phoneError}
+                    </p>
+                  ) : (
+                    <p id="phone-hint" className="mt-1 text-xs text-text-muted">
+                      For booking confirmation & shoot reminders (SMS / WhatsApp).
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label htmlFor="email" className="pa-label">

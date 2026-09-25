@@ -71,7 +71,9 @@ export const navLinks = [
   { to: "/about", label: "About" },
   { to: "/services", label: "Services" },
   { to: "/portfolio", label: "Portfolio" },
+  { to: "/blog", label: "Journal" },
   { to: "/book", label: "Book Now" },
+  { to: "/booking/lookup", label: "My Booking" },
   { to: "/contact", label: "Contact" },
 ] as const;
 
@@ -80,6 +82,7 @@ export const exploreLinks = [
   { to: "/services", label: "Services" },
   { to: "/portfolio", label: "Portfolio" },
   { to: "/book", label: "Book Now" },
+  { to: "/booking/lookup", label: "My Booking" },
   { to: "/blog", label: "Journal" },
   { to: "/contact", label: "Contact" },
   { to: "/faq", label: "FAQ" },
@@ -102,6 +105,7 @@ export const publicRoutes = [
   "/services",
   "/portfolio",
   "/book",
+  "/booking/lookup",
   "/contact",
   "/faq",
   "/blog",

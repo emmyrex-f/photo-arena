@@ -267,6 +267,53 @@ export class CatalogService {
     }));
   }
 
+  async approveServicePricing(serviceId: string) {
+    await this.requireService(serviceId);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.service.update({
+        where: { id: serviceId },
+        data: { isProvisional: false },
+      });
+      await tx.package.updateMany({
+        where: { serviceId },
+        data: { isProvisional: false },
+      });
+      const remainingProvisional = await tx.service.count({
+        where: { isProvisional: true },
+      });
+      if (remainingProvisional === 0) {
+        await tx.businessSettings.upsert({
+          where: { key: "site.pricesProvisional" },
+          create: { key: "site.pricesProvisional", value: "false" },
+          update: { value: "false" },
+        });
+      }
+    });
+    const updated = await this.prisma.service.findUnique({
+      where: { id: serviceId },
+      include: { packages: { orderBy: { sortOrder: "asc" } } },
+    });
+    const decorated = await this.withMedia([updated!]);
+    return decorated[0]!;
+  }
+
+  async approveAllPricing() {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.service.updateMany({
+        data: { isProvisional: false },
+      });
+      await tx.package.updateMany({
+        data: { isProvisional: false },
+      });
+      await tx.businessSettings.upsert({
+        where: { key: "site.pricesProvisional" },
+        create: { key: "site.pricesProvisional", value: "false" },
+        update: { value: "false" },
+      });
+    });
+    return { ok: true as const };
+  }
+
   private async requireService(id: string) {
     const row = await this.prisma.service.findUnique({ where: { id } });
     if (!row) throw new NotFoundException("Service not found");

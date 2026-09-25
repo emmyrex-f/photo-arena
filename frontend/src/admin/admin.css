@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Admin portal theme -- Photo Arena desk (new build series).
  * Scoped to `.admin-root` so the public site tokens stay untouched.
  *
@@ -319,8 +319,10 @@ html:has(.admin-root) #root {
     inset: 0 auto 0 0;
     z-index: 40;
     display: flex;
+    flex-direction: column;
     height: 100vh;
     height: 100dvh;
+    transition: width 0.22s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   .admin-root .pa-admin-sidebar.pa-admin-sidebar--collapsed {
@@ -331,6 +333,7 @@ html:has(.admin-root) #root {
     margin-left: var(--admin-sidebar-w);
     width: calc(100% - var(--admin-sidebar-w));
     max-width: calc(100% - var(--admin-sidebar-w));
+    transition: margin-left 0.22s cubic-bezier(0.4, 0, 0.2, 1), width 0.22s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   .admin-root .pa-admin-main-column.pa-admin-main-column--collapsed {
@@ -342,69 +345,100 @@ html:has(.admin-root) #root {
 
 .admin-root .pa-admin-header-brand {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
-  height: auto;
-  min-height: 0;
-  max-height: none;
-  padding: 0.15rem 0.75rem 0.4rem;
+  height: var(--admin-header-h);
+  min-height: var(--admin-header-h);
+  max-height: var(--admin-header-h);
+  padding: 0 1rem;
+  border-bottom: 1px solid var(--admin-sidebar-border);
   box-sizing: border-box;
+  flex-shrink: 0;
 }
 
 .admin-root .pa-admin-header-brand--collapsed {
-  height: auto;
-  min-height: 0;
-  max-height: none;
-  padding: 0.15rem 0.25rem 0.3rem;
+  padding: 0;
+  width: var(--admin-sidebar-collapsed-w);
 }
 
 .admin-root .pa-admin-brand-mark {
   display: block;
-  width: 50%;
-  max-width: 6.25rem;
+  max-width: 9rem;
+  max-height: 2.25rem;
+  width: auto;
   height: auto;
-  max-height: none;
   object-fit: contain;
-  object-position: top center;
+  object-position: center;
+}
+
+.admin-root .pa-admin-brand-mark-link--collapsed {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.625rem;
   background: transparent;
-  border: 0;
-  box-shadow: none;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.admin-root .pa-admin-brand-mark-link--collapsed:hover {
+  background: var(--admin-nav-hover-bg);
+  transform: scale(1.08);
 }
 
 .admin-root .pa-admin-brand-mark--collapsed {
   width: 2rem;
-  max-width: 2rem;
-  max-height: none;
+  height: 2rem;
   object-fit: contain;
-  object-position: top center;
+  border-radius: 0.375rem;
+  filter: drop-shadow(0 2px 6px rgba(216, 180, 119, 0.4));
 }
 
 .admin-root .pa-admin-sidebar-scroll {
-  padding-top: 0.35rem;
+  padding-top: 0.5rem;
   padding-bottom: 0.75rem;
 }
 
 .admin-root .pa-admin-nav-sections {
   padding-left: 0.75rem;
   padding-right: 0.75rem;
-  gap: 1.35rem;
+  gap: 1.25rem;
+}
+
+.admin-root .pa-admin-sidebar.pa-admin-sidebar--collapsed .pa-admin-sidebar-scroll {
+  padding-top: 0.6rem;
+  padding-bottom: 0.6rem;
+}
+
+.admin-root .pa-admin-sidebar.pa-admin-sidebar--collapsed .pa-admin-nav-sections {
+  padding-left: 0;
+  padding-right: 0;
+  gap: 0.45rem;
+}
+
+.admin-root .pa-admin-sidebar.pa-admin-sidebar--collapsed .pa-admin-nav-list {
+  gap: 0.25rem;
+  align-items: center;
 }
 
 .admin-root .pa-admin-nav-section-label {
   margin: 0 0 0.5rem 0.7rem;
   font-size: 0.6875rem;
   font-family: var(--font-ui);
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--admin-nav-muted);
 }
 
 .admin-root .pa-admin-nav-section-rule {
-  margin: 0.35rem auto 0.55rem;
+  margin: 0.4rem auto;
   height: 1px;
-  width: 1.25rem;
+  width: 1.75rem;
   background: var(--admin-sidebar-border);
+  opacity: 0.7;
+  border-radius: 999px;
 }
 
 .admin-root .pa-admin-nav-list {
@@ -425,7 +459,8 @@ html:has(.admin-root) #root {
   font-weight: 400;
   line-height: 1.25;
   color: var(--admin-nav-idle);
-  transition: background-color 0.18s ease, color 0.18s ease;
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
 }
 
 .admin-root .pa-admin-nav-item:not(.pa-admin-nav-collapsed) {
@@ -433,15 +468,24 @@ html:has(.admin-root) #root {
 }
 
 .admin-root .pa-admin-nav-item.pa-admin-nav-collapsed {
-  width: 2.75rem;
+  width: 2.5rem;
+  height: 2.5rem;
+  min-height: 2.5rem;
+  border-radius: 0.625rem;
   margin-inline: auto;
-  padding-left: 0;
-  padding-right: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .admin-root .pa-admin-nav-item:hover:not(.pa-admin-nav-item--active) {
   background: var(--admin-nav-hover-bg);
   color: var(--admin-nav-hover);
+}
+
+.admin-root .pa-admin-nav-item.pa-admin-nav-collapsed:hover:not(.pa-admin-nav-item--active) {
+  transform: translateY(-1px);
 }
 
 .admin-root .pa-admin-nav-item:focus-visible {
@@ -467,11 +511,16 @@ html:has(.admin-root) #root {
 .admin-root .pa-admin-nav-item.pa-admin-nav-item--active {
   background: var(--admin-nav-active);
   color: var(--admin-nav-active-ink);
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .admin-root .pa-admin-nav-item--active .pa-admin-nav-icon svg {
   stroke: var(--admin-nav-active-ink);
+}
+
+/* Collapsed active item styling: subtle gold glow and left indicator bar */
+.admin-root .pa-admin-nav-item.pa-admin-nav-collapsed.pa-admin-nav-item--active {
+  box-shadow: 0 4px 12px -2px hsl(var(--primary) / 0.45);
 }
 
 .admin-root .pa-admin-nav-badge {
@@ -479,22 +528,28 @@ html:has(.admin-root) #root {
   align-items: center;
   justify-content: center;
   margin-left: auto;
-  height: 1rem;
-  min-width: 1rem;
-  padding: 0 0.28rem;
+  height: 1.125rem;
+  min-width: 1.125rem;
+  padding: 0 0.35rem;
   border-radius: 999px;
-  background: #ff3b30;
+  background: #ef4444;
   color: #ffffff;
-  font-size: 0.5625rem;
+  font-size: 0.625rem;
   font-weight: 700;
   line-height: 1;
 }
 
 .admin-root .pa-admin-nav-badge--float {
   position: absolute;
-  top: -0.35rem;
-  right: -0.4rem;
+  top: 0.15rem;
+  right: 0.15rem;
   margin-left: 0;
+  height: 0.95rem;
+  min-width: 0.95rem;
+  padding: 0 0.25rem;
+  font-size: 0.5625rem;
+  border: 2px solid hsl(var(--sidebar));
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
 }
 
 .admin-root .pa-admin-promo {
@@ -553,21 +608,53 @@ html:has(.admin-root) #root {
 }
 
 .admin-root .pa-admin-sidebar-foot {
-  padding: 0.35rem 0.65rem 0.65rem;
+  padding: 0.5rem;
+  border-top: 1px solid var(--admin-sidebar-border);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 3.5rem;
+  flex-shrink: 0;
 }
 
-.admin-root .pa-admin-collapse-btn {
-  width: 100%;
+.admin-root .pa-admin-collapse-btn--collapsed {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.625rem;
   color: var(--admin-nav-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.16s ease;
 }
 
-.admin-root .pa-admin-collapse-btn:hover {
+.admin-root .pa-admin-collapse-btn--collapsed:hover {
+  background: var(--admin-nav-hover-bg);
+  color: var(--admin-nav-hover);
+  transform: scale(1.06);
+}
+
+.admin-root .pa-admin-collapse-btn--expanded {
+  width: 100%;
+  justify-content: flex-start;
+  gap: 0.75rem;
+  color: var(--admin-nav-muted);
+  border-radius: var(--admin-btn-radius);
+  padding-left: 0.85rem;
+  height: var(--admin-nav-item-h);
+}
+
+.admin-root .pa-admin-collapse-btn--expanded:hover {
   background: var(--admin-nav-hover-bg);
   color: var(--admin-nav-hover);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .admin-root .pa-admin-nav-item {
+  .admin-root .pa-admin-nav-item,
+  .admin-root .pa-admin-sidebar,
+  .admin-root .pa-admin-main-column,
+  .admin-root .pa-admin-brand-mark-link--collapsed {
     transition: none;
   }
 }

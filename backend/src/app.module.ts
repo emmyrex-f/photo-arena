@@ -20,6 +20,7 @@ import { PrismaModule } from "./prisma/prisma.module";
 import { PublicModule } from "./public/public.module";
 import { CatalogModule } from "./catalog/catalog.module";
 import { SettingsModule } from "./settings/settings.module";
+import { StorageModule } from "./storage/storage.module";
 import { TestimonialsModule } from "./testimonials/testimonials.module";
 import { UsersModule } from "./users/users.module";
 
@@ -30,6 +31,7 @@ import { UsersModule } from "./users/users.module";
     PrismaModule,
     AuditModule,
     AuthModule,
+    StorageModule,
     PricingModule,
     PaymentsModule,
     NotificationsModule,

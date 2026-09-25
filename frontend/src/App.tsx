@@ -7,6 +7,7 @@ import { AboutPage } from "./pages/AboutPage";
 import { BlogPage } from "./pages/BlogPage";
 import { BlogPostPage } from "./pages/BlogPostPage";
 import { BookConfirmationPage } from "./pages/BookConfirmationPage";
+import { BookingLookupPage } from "./pages/BookingLookupPage";
 import { BookPage } from "./pages/BookPage";
 import { ContactPage } from "./pages/ContactPage";
 import { CookiesPage } from "./pages/CookiesPage";
@@ -40,6 +41,8 @@ export function App() {
             <Route path="gallery" element={<Navigate to="/portfolio" replace />} />
             <Route path="book" element={<BookPage />} />
             <Route path="book/confirmation" element={<BookConfirmationPage />} />
+            <Route path="booking/lookup" element={<BookingLookupPage />} />
+            <Route path="bookings/lookup" element={<Navigate to="/booking/lookup" replace />} />
             <Route path="bookings" element={<Navigate to="/book" replace />} />
             <Route path="contact" element={<ContactPage />} />
             <Route path="faq" element={<FaqPage />} />

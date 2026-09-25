@@ -31,6 +31,7 @@ model Enquiry         { id, name, email, phone String?, sessionType String?, mes
 model NewsletterSubscriber { id, email @unique, isActive Boolean @default(true), source String?, createdAt }
 model BlogPost        { id, slug @unique, title, excerpt String, content String (markdown), coverImageUrl String?, tags String[] @default([]), isPublished Boolean @default(false), publishedAt DateTime?, authorId String?, createdAt, updatedAt }
 model AuditLog        { id, userId String?, userEmail String, action String, entity String, entityId String?, meta Json?, createdAt }
+model PasswordResetToken { id, userId String, tokenHash String @unique, expiresAt DateTime, usedAt DateTime?, createdAt DateTime @default(now()), user User }
 model BusinessSettings (existing key/value) — used as the settings store. `value` is a string; JSON values are stored as JSON strings.
 ```
 
@@ -109,6 +110,10 @@ Hold expiry: a scheduled job (`@nestjs/schedule`, every minute) sets expired `TE
 |---|---|---|
 | GET | `/auth/desk-email` | public → `{ email }` — the single studio login email |
 | POST | `/auth/login` | `{ email, password }` — `email` must be the studio email; `password` selects OWNER (full access) or that ADMIN’s stored areas |
+| POST | `/auth/forgot-password` | public → `{ email }` → `{ ok: true, message }`. Generates secure 1h token, sends email via Resend, safe against user enumeration. |
+| GET | `/auth/verify-reset-token?token=` | public → validates token, returns `{ valid: boolean, email?: string, message?: string }` with masked email. |
+| POST | `/auth/reset-password` | public → `{ token, newPassword }` → `{ ok: true, message }`. Updates password, marks token used, increments `tokenVersion` (revokes all active sessions). |
+| POST | `/auth/revoke-sessions` | JWT → `{ ok: true }`. Increments `tokenVersion` for caller, terminating all sessions across devices. |
 | GET | `/auth/me` | existing |
 | POST | `/auth/change-password` | body `{ currentPassword, newPassword }` |
 | PATCH | `/auth/account` | OWNER only. Body `{ currentPassword, name?, email?, newPassword? }` → `{ user, token? }`. `email` is the studio desk login. `token` is returned when the password changes. |
@@ -183,7 +188,7 @@ Notes:
 |---|---|---|
 | GET | `/admin/packages` | existing (all active packages with service) |
 | GET | `/admin/availability?date&durationMinutes` | existing |
-| GET | `/admin/bookings/stats` | desk KPI strip: `totalLast30` (count + `deltaPct` vs prior 30d), `today` (count + delta vs yesterday), `todayRevenue` (kobo + `deltaPct`/`deltaKobo`), `unpaid.count`. Lagos day boundaries. Floor statuses exclude `TEMPORARY_HOLD`. |
+| GET | `/admin/bookings/stats` | desk KPI strip from DB: `totalAll.count` (all-time floor), `totalLast30` (count + `deltaPct` vs prior 30d), `today` (count + delta vs yesterday), `todayRevenue` (SUCCESS payments paid today, kobo + `deltaPct`/`deltaKobo`), `unpaid.count` (PENDING/CONFIRMED with outstanding). Lagos day boundaries. Floor statuses: PENDING, CONFIRMED, COMPLETED (excludes `TEMPORARY_HOLD`). |
 | GET | `/admin/bookings?date=` | existing (day) |
 | GET | `/admin/bookings/range?from=YYYY-MM-DD&to=YYYY-MM-DD&status=&q=` | list for calendar views (inclusive dates, Lagos) |
 | GET | `/admin/bookings/:id` | existing |
@@ -227,15 +232,19 @@ Notes:
 | POST | `/admin/packages/reorder` | `{ ids: string[] }` |
 | GET | `/admin/pricing-rules` / `PATCH /admin/pricing-rules/:key` | `{ bps, isActive }` |
 
-### Gallery / media (uploads to local disk)
-Files saved under `backend/uploads/<kind>/<uuid>.<ext>`, served statically at `/uploads/...`. Generate a `thumbUrl` (max 800px) with `sharp`; record `width/height`.
+### Gallery / media (local disk / Cloudflare R2 swappable)
+Files handled via `StorageService` (`STORAGE_PROVIDER=local` or `STORAGE_PROVIDER=r2`).
+- **Local:** Saved under `backend/uploads/<kind>/<uuid>.webp`, served statically at `/uploads/...`.
+- **Cloudflare R2 / S3:** Uploaded to bucket under `<kind>/<uuid>.webp`, served via `R2_PUBLIC_URL` CDN or S3 endpoint.
+- Thumbnails: Generated at max 800×800px via `sharp`; records `width`/`height` in `GalleryImage`.
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/admin/gallery?kind=GALLERY` | all (incl. inactive), ordered |
+| GET | `/admin/gallery/storage` | `{ provider, configuredProvider, isR2Configured, bucket, publicUrl, endpoint, uploadsDir }` OWNER/ADMIN |
+| GET | `/admin/gallery?kind=GALLERY&page=&pageSize=&isActive=&featured=&category=&q=` | paginated `{ items, total, page, pageSize, counts: { active, featured, inactive } }`. Default pageSize 24 (max 100). |
 | POST | `/admin/gallery/upload` | multipart `files[]` (+ fields `kind?`, `category?`, `alt?`) → `GalleryImage[]`. Max 10 files, 15 MB each, image/* only |
 | PATCH | `/admin/gallery/:id` | `{ alt?, category?, featured?, isActive?, sortOrder?, mediaId? }` — `mediaId` on a `kind=GALLERY` item sets one primary MediaUsage (`usageType=portfolio`, `entityId=GalleryImage.id`); `mediaId: null` detaches (does not delete GalleryImage) |
-| DELETE | `/admin/gallery/:id` | removes file(s) too |
+| DELETE | `/admin/gallery/:id` | removes file(s) from active storage (or disk) too |
 | POST | `/admin/gallery/reorder` | `{ ids: string[] }` |
 
 ### Content (CMS)
@@ -280,6 +289,7 @@ Email channel: if `SMTP_HOST` set → nodemailer; else log to `NotificationLog` 
 | POST | `/admin/users` | `{ email, name, role, password, fullAccess?, permissions? }` — ADMIN: `fullAccess: true` (or `permissions: ["*"]`) = entire desk; otherwise `permissions` is the allowed area list |
 | PATCH | `/admin/users/:id` | `{ name?, role?, isActive?, fullAccess?, permissions? }` (cannot demote/deactivate last OWNER or self) |
 | POST | `/admin/users/:id/reset-password` | `{ password }` |
+| POST | `/admin/users/:id/revoke-sessions` | OWNER only → increments `tokenVersion`, immediately invalidating all active JWTs for target user |
 | DELETE | `/admin/users/:id` | permanent delete for ADMIN/STAFF (not last/self OWNER) |
 
 ### Audit log
@@ -303,5 +313,6 @@ Every admin write (bookings, payments, services, packages, gallery, settings, te
 - Public site reads `GET /public/settings` once on load (context `SiteSettingsProvider`) and falls back to `src/lib/site.ts` defaults when a key is missing or the API is down. **The site must render fully with the API offline.**
 - Public services/gallery/testimonials/faqs come from the API with the same offline fallback to `src/data/*`.
 - Cookie consent state stored in `localStorage` key `pa_cookie_consent` = `{ necessary: true, analytics: boolean, marketing: boolean, decidedAt }`. GA4/Meta scripts load only when the respective flag is true and an ID exists in settings.
-- Admin stores JWT in `sessionStorage` (`pa_admin_token`, `pa_admin_user`) — existing `src/lib/auth.tsx`.
+- Admin authentication supports "Remember me" (A3): when enabled on login, JWT and user state persist in `localStorage` (`pa_admin_token`, `pa_admin_user`, `pa_admin_storage="local"`); when disabled, `sessionStorage` is used. On logout or session revocation (A2), both storage engines are swept clean.
 - Admin theme preference in `localStorage` key `pa_admin_theme` = `light | dark | system`.
+

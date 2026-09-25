@@ -217,7 +217,13 @@ export function BookConfirmationPage() {
             {state === "success" && booking ? (
               <>
                 <Button
+                  to={`/booking/lookup?reference=${encodeURIComponent(booking.reference ?? reference ?? "")}`}
+                >
+                  Manage booking
+                </Button>
+                <Button
                   type="button"
+                  variant="secondary"
                   onClick={() =>
                     window.open(
                       googleCalendarUrl(booking, site.address.full),
@@ -235,6 +241,14 @@ export function BookConfirmationPage() {
                 </Button>
               </>
             ) : null}
+            {state !== "success" && reference ? (
+              <Button
+                to={`/booking/lookup?reference=${encodeURIComponent(reference)}`}
+                variant="secondary"
+              >
+                View booking status
+              </Button>
+            ) : null}
             <Button to="/" variant="secondary">
               Home
             </Button>
@@ -246,7 +260,11 @@ export function BookConfirmationPage() {
           </div>
 
           <p className="mt-stack-lg text-sm text-text-muted">
-            Questions?{" "}
+            Save your reference to manage this booking later via{" "}
+            <Link to="/booking/lookup" className="text-accent">
+              My Booking
+            </Link>
+            . Questions?{" "}
             <a href={info.phoneHref} className="text-accent">
               {info.phone}
             </a>{" "}

@@ -49,12 +49,97 @@ export function lagosWeekday(ymd: string): number {
   return map[label] ?? 0;
 }
 
-export function openingHoursForYmd(ymd: string) {
-  return lagosWeekday(ymd) === 0 ? SUNDAY_OPEN : WEEKDAY_OPEN;
+export interface ParsedHours {
+  isOpen: boolean;
+  startHour: number;
+  startMinute: number;
+  endHour: number;
+  endMinute: number;
 }
 
-export function openingHoursFor(date: Date) {
-  return openingHoursForYmd(toLagosYmd(date));
+export function parseOpeningHours(raw?: string | null): ParsedHours | null {
+  if (!raw || typeof raw !== "string") return null;
+  const str = raw.trim();
+  if (!str) return null;
+
+  if (/^(closed|off|none|n\/a)$/i.test(str)) {
+    return { isOpen: false, startHour: 0, startMinute: 0, endHour: 0, endMinute: 0 };
+  }
+
+  // Look for range separators: –, —, -, or 'to'
+  const parts = str.split(/[\–\—\-\~]|(?:\s+to\s+)/i).map((s) => s.trim()).filter(Boolean);
+  if (parts.length < 2) return null;
+
+  function parseTimePart(timeStr: string): { hour: number; minute: number } | null {
+    const match = timeStr.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i);
+    if (!match) return null;
+    let hour = parseInt(match[1]!, 10);
+    const minute = match[2] ? parseInt(match[2], 10) : 0;
+    const ampm = match[3]?.toLowerCase();
+
+    if (ampm === "pm" && hour < 12) hour += 12;
+    if (ampm === "am" && hour === 12) hour = 0;
+    if (hour < 0 || hour > 24 || minute < 0 || minute >= 60) return null;
+    return { hour, minute };
+  }
+
+  const start = parseTimePart(parts[0]!);
+  const end = parseTimePart(parts[1]!);
+  if (!start || !end) return null;
+
+  const startTotalMinutes = start.hour * 60 + start.minute;
+  const endTotalMinutes = end.hour * 60 + end.minute;
+  if (endTotalMinutes <= startTotalMinutes) return null;
+
+  return {
+    isOpen: true,
+    startHour: start.hour,
+    startMinute: start.minute,
+    endHour: end.hour,
+    endMinute: end.minute,
+  };
+}
+
+export function openingHoursForYmd(
+  ymd: string,
+  cmsHours?: { weekday?: string; sunday?: string; [key: string]: string | undefined } | null,
+): {
+  startHour: number;
+  endHour: number;
+  isOpen?: boolean;
+  startMinute?: number;
+  endMinute?: number;
+} {
+  const isSunday = lagosWeekday(ymd) === 0;
+  if (cmsHours) {
+    const raw = isSunday
+      ? (cmsHours["site.hours.sunday"] ?? cmsHours.sunday)
+      : (cmsHours["site.hours.weekday"] ?? cmsHours.weekday);
+    if (raw) {
+      const parsed = parseOpeningHours(raw);
+      if (parsed) {
+        if (!parsed.isOpen) {
+          return { startHour: 0, endHour: 0, isOpen: false, startMinute: 0, endMinute: 0 };
+        }
+        return {
+          startHour: parsed.startHour,
+          endHour: parsed.endHour,
+          isOpen: true,
+          startMinute: parsed.startMinute,
+          endMinute: parsed.endMinute,
+        };
+      }
+    }
+  }
+
+  return isSunday ? { ...SUNDAY_OPEN } : { ...WEEKDAY_OPEN };
+}
+
+export function openingHoursFor(
+  date: Date,
+  cmsHours?: { weekday?: string; sunday?: string; [key: string]: string | undefined } | null,
+) {
+  return openingHoursForYmd(toLagosYmd(date), cmsHours);
 }
 
 export function rangesOverlap(
@@ -66,11 +151,19 @@ export function rangesOverlap(
   return startA < endB && endA > startB;
 }
 
-export function generateCandidateStartsForYmd(ymd: string): Date[] {
-  const hours = openingHoursForYmd(ymd);
+export function generateCandidateStartsForYmd(
+  ymd: string,
+  cmsHours?: Record<string, string> | null,
+): Date[] {
+  const hours = openingHoursForYmd(ymd, cmsHours);
+  if (hours.isOpen === false || (hours.startHour === 0 && hours.endHour === 0)) {
+    return [];
+  }
   const starts: Date[] = [];
-  let minutes = hours.startHour * 60;
-  const closeMinutes = hours.endHour * 60;
+  const startMinute = hours.startMinute ?? 0;
+  const endMinute = hours.endMinute ?? 0;
+  let minutes = hours.startHour * 60 + startMinute;
+  const closeMinutes = hours.endHour * 60 + endMinute;
   while (minutes < closeMinutes) {
     starts.push(lagosDateTime(ymd, Math.floor(minutes / 60), minutes % 60));
     minutes += BOOKING_RULES.slotIncrementMinutes;
@@ -78,8 +171,8 @@ export function generateCandidateStartsForYmd(ymd: string): Date[] {
   return starts;
 }
 
-export function generateCandidateStarts(date: Date): Date[] {
-  return generateCandidateStartsForYmd(toLagosYmd(date));
+export function generateCandidateStarts(date: Date, cmsHours?: Record<string, string> | null): Date[] {
+  return generateCandidateStartsForYmd(toLagosYmd(date), cmsHours);
 }
 
 export function slotFits(
@@ -87,14 +180,20 @@ export function slotFits(
   durationMinutes: number,
   now: Date,
   existing: Array<{ startTime: Date; endTime: Date }>,
-  options?: { requireSameDayNotice?: boolean },
+  options?: { requireSameDayNotice?: boolean; cmsHours?: Record<string, string> | null },
 ): boolean {
   const requireSameDayNotice = options?.requireSameDayNotice ?? true;
   const end = new Date(start.getTime() + durationMinutes * 60_000);
   const ymd = toLagosYmd(start);
-  const hours = openingHoursForYmd(ymd);
-  const close = lagosDateTime(ymd, hours.endHour, 0);
-  if (end > close) return false;
+  const hours = openingHoursForYmd(ymd, options?.cmsHours);
+
+  if (hours.isOpen === false || (hours.startHour === 0 && hours.endHour === 0)) {
+    return false;
+  }
+
+  const open = lagosDateTime(ymd, hours.startHour, hours.startMinute ?? 0);
+  const close = lagosDateTime(ymd, hours.endHour, hours.endMinute ?? 0);
+  if (start < open || end > close) return false;
 
   if (requireSameDayNotice && toLagosYmd(start) === toLagosYmd(now)) {
     const minStart = new Date(now.getTime() + BOOKING_RULES.sameDayMinimumNoticeMinutes * 60_000);
@@ -103,3 +202,4 @@ export function slotFits(
 
   return !existing.some((booking) => rangesOverlap(start, end, booking.startTime, booking.endTime));
 }
+

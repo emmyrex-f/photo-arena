@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { ChevronLeft, ChevronRight, FileText, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileText, ImageIcon, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
 import { Badge } from "../../admin/components/ui/badge";
 import { Button } from "../../admin/components/ui/button";
 import {
@@ -29,6 +29,7 @@ import { formatLagosDate } from "../../admin/lib/format";
 import type { BlogPost } from "../../admin/lib/types";
 import { errorMessage } from "../../lib/api";
 import { cn } from "../../lib/cn";
+import { mediaUrl } from "../../lib/publicApi";
 
 const PAGE_SIZE = 10;
 
@@ -191,13 +192,37 @@ export function AdminBlogPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {items.map((post) => (
+                {items.map((post) => {
+                  const thumb = mediaUrl(post.coverImageUrl);
+                  return (
                   <TableRow key={post.id} className={cn(!post.isPublished && "opacity-80")}>
                     <TableCell>
-                      <Link to={`/admin/blog/${post.id}`} className="font-medium text-foreground hover:underline">
-                        {post.title}
-                      </Link>
-                      <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{post.excerpt}</p>
+                      <div className="flex min-w-0 items-start gap-3">
+                        <Link
+                          to={`/admin/blog/${post.id}`}
+                          className="relative h-12 w-12 shrink-0 overflow-hidden rounded-md border border-border bg-muted"
+                          aria-label={`Edit ${post.title}`}
+                        >
+                          {thumb ? (
+                            <img src={thumb} alt="" className="h-full w-full object-cover" />
+                          ) : (
+                            <span className="flex h-full w-full items-center justify-center text-muted-foreground">
+                              <ImageIcon className="h-4 w-4" aria-hidden="true" />
+                            </span>
+                          )}
+                        </Link>
+                        <div className="min-w-0">
+                          <Link
+                            to={`/admin/blog/${post.id}`}
+                            className="font-medium text-foreground hover:underline"
+                          >
+                            {post.title}
+                          </Link>
+                          <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
+                            {post.excerpt}
+                          </p>
+                        </div>
+                      </div>
                     </TableCell>
                     <TableCell>
                       <Badge variant={post.isPublished ? "success" : "muted"}>
@@ -242,7 +267,8 @@ export function AdminBlogPage() {
                       </DropdownMenu>
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           </div>

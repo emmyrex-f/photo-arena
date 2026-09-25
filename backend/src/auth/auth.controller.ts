@@ -1,9 +1,11 @@
-import { Body, Controller, Get, Patch, Post, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
 import { Role } from "@prisma/client";
 import type { Request } from "express";
 import { AuthService } from "./auth.service";
 import { CurrentUser } from "./current-user.decorator";
 import { ChangePasswordDto } from "./dto/change-password.dto";
+import { ForgotPasswordDto } from "./dto/forgot-password.dto";
+import { ResetPasswordTokenDto } from "./dto/reset-password-token.dto";
 import { UpdateAccountDto } from "./dto/update-account.dto";
 import { LoginDto } from "./dto/login.dto";
 import { JwtAuthGuard } from "./jwt-auth.guard";
@@ -51,6 +53,28 @@ export class AuthController {
     }
   }
 
+  @Post("forgot-password")
+  async forgotPassword(@Body() body: ForgotPasswordDto, @Req() req: Request) {
+    const origin = (req.headers.origin || req.headers.referer) as string | undefined;
+    return this.auth.forgotPassword(body.email, origin);
+  }
+
+  @Get("verify-reset-token")
+  verifyResetToken(@Query("token") token?: string) {
+    return this.auth.verifyResetToken(token ?? "");
+  }
+
+  @Post("reset-password")
+  resetPassword(@Body() body: ResetPasswordTokenDto) {
+    return this.auth.resetPasswordWithToken(body.token, body.newPassword);
+  }
+
+  @Post("revoke-sessions")
+  @UseGuards(JwtAuthGuard)
+  revokeSessions(@CurrentUser() user: AuthUser) {
+    return this.auth.revokeAllSessions(user.id);
+  }
+
   @Get("me")
   @UseGuards(JwtAuthGuard)
   me(@CurrentUser() user: AuthUser) {
@@ -64,9 +88,9 @@ export class AuthController {
   }
 
   @Patch("account")
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.OWNER)
+  @UseGuards(JwtAuthGuard)
   updateAccount(@CurrentUser() user: AuthUser, @Body() body: UpdateAccountDto) {
     return this.auth.updateAccount(user.id, body);
   }
 }
+

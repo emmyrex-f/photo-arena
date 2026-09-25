@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { MediaKind, Prisma } from "@prisma/client";
 import { parsePage, parsePageSize, paginate } from "../common/pagination";
+import { plainTextPreview } from "../common/utils";
 import { PricingService } from "../pricing/pricing.service";
 import { PrismaService } from "../prisma/prisma.service";
 
@@ -209,7 +210,11 @@ export class PublicService {
           slug: true,
           title: true,
           excerpt: true,
+          content: true,
           coverImageUrl: true,
+          metaTitle: true,
+          metaDescription: true,
+          ogImageUrl: true,
           tags: true,
           isPublished: true,
           publishedAt: true,
@@ -219,7 +224,12 @@ export class PublicService {
         },
       }),
     ]);
-    return paginate(rows, total, page, pageSize);
+    const items = rows.map(({ content, excerpt, ...rest }) => {
+      const trimmedExcerpt = excerpt?.trim() ?? "";
+      const preview = trimmedExcerpt || plainTextPreview(content ?? "");
+      return { ...rest, excerpt: trimmedExcerpt, preview };
+    });
+    return paginate(items, total, page, pageSize);
   }
 
   async blogBySlug(slug: string) {

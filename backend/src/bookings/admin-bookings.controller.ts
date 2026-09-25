@@ -102,6 +102,9 @@ export class AdminBookingsController {
   ) {
     const { booking, amountKobo } = await this.bookings.recordStudioPayment(id, {
       note: body.note,
+      amountKobo: body.amountKobo,
+      channel: body.channel,
+      reference: body.reference,
     });
     await this.audit.log({
       userId: user.id,
@@ -109,7 +112,12 @@ export class AdminBookingsController {
       action: "booking.payment",
       entity: "booking",
       entityId: id,
-      meta: { amountKobo, note: body.note },
+      meta: {
+        amountKobo,
+        channel: body.channel ?? "CASH",
+        reference: body.reference,
+        note: body.note,
+      },
     });
     return booking;
   }

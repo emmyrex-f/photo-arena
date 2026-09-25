@@ -127,7 +127,12 @@ export type BlogPostSummary = {
   slug: string;
   title: string;
   excerpt: string;
+  /** Short blurb for cards: excerpt if set, otherwise plain text from body. */
+  preview?: string;
   coverImageUrl: string | null;
+  metaTitle?: string | null;
+  metaDescription?: string | null;
+  ogImageUrl?: string | null;
   tags: string[];
   publishedAt: string | null;
   createdAt: string;
@@ -353,6 +358,149 @@ export function verifyPayment(reference: string): Promise<BookingStatusResponse>
 
 export function completeMockPayment(reference: string): Promise<unknown> {
   return request("/payments/mock/complete", { method: "POST", body: JSON.stringify({ reference }) });
+}
+
+export type CustomerBookingLookupResponse = {
+  id: string;
+  reference: string;
+  status: "TEMPORARY_HOLD" | "PENDING" | "CONFIRMED" | "CANCELLED" | "COMPLETED" | "NO_SHOW";
+  startTime: string;
+  endTime: string;
+  holdExpiresAt: string | null;
+  notes: string | null;
+  package: {
+    id: string;
+    name: string;
+    durationMinutes: number;
+    outfitCount: number | null;
+    backdropCount: number | null;
+    editedPhotoCount: number | null;
+    priceKobo: number;
+    serviceName: string;
+  };
+  customer: {
+    name: string;
+    maskedEmail: string;
+    maskedPhone: string;
+    isVerified: boolean;
+  };
+  pricing: {
+    packagePriceKobo: number;
+    amountKobo: number;
+    paidKobo: number;
+    refundedKobo: number;
+    outstandingKobo: number;
+    rescheduleFeeKobo: number;
+    cancellationPenaltyKobo: number;
+    eligibleRefundKobo: number;
+    hoursNotice: number;
+  };
+  payments: Array<{
+    id: string;
+    amountKobo: number;
+    status: string;
+    method: string;
+    channel: string | null;
+    reference: string;
+    paidAt: string | null;
+    refundedAmountKobo: number | null;
+    refundReason: string | null;
+  }>;
+  flags: {
+    canCancel: boolean;
+    canReschedule: boolean;
+    hasOutstandingBalance: boolean;
+    isLateCancellation: boolean;
+  };
+  policy: {
+    cancellationClause: string;
+    rescheduleClause: string;
+  };
+};
+
+export type CustomerCancelResponse = {
+  success: boolean;
+  bookingId: string;
+  reference: string;
+  status: string;
+  penaltyKobo: number;
+  eligibleRefundKobo: number;
+  message: string;
+};
+
+export type CustomerRescheduleResponse = {
+  success: boolean;
+  bookingId: string;
+  reference: string;
+  oldStartTime: string;
+  newStartTime: string;
+  newEndTime: string;
+  rescheduleFeeKobo: number;
+  message: string;
+};
+
+export type CustomerCheckoutResponse = {
+  checkoutUrl: string;
+  amountKobo: number;
+  bookingId: string;
+  reference: string;
+};
+
+export function fetchBookingLookup(
+  reference: string,
+  emailOrPhone?: string,
+): Promise<CustomerBookingLookupResponse> {
+  if (emailOrPhone) {
+    return request<CustomerBookingLookupResponse>("/bookings/lookup", {
+      method: "POST",
+      body: JSON.stringify({ reference, emailOrPhone }),
+    });
+  }
+  const qs = new URLSearchParams({ reference });
+  return request<CustomerBookingLookupResponse>(`/bookings/lookup?${qs.toString()}`);
+}
+
+export function customerCancelBooking(payload: {
+  reference: string;
+  emailOrPhone: string;
+  reason?: string;
+}): Promise<CustomerCancelResponse> {
+  return request<CustomerCancelResponse>("/bookings/customer-cancel", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function customerRescheduleBooking(payload: {
+  reference: string;
+  emailOrPhone: string;
+  newStartTime: string;
+  reason?: string;
+}): Promise<CustomerRescheduleResponse> {
+  return request<CustomerRescheduleResponse>("/bookings/customer-reschedule", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function customerBalanceCheckout(payload: {
+  reference: string;
+  emailOrPhone: string;
+  returnUrl: string;
+  cancelUrl: string;
+}): Promise<CustomerCheckoutResponse> {
+  return request<CustomerCheckoutResponse>("/bookings/customer-checkout", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function fetchPublicAvailability(
+  date: string,
+  durationMinutes = 60,
+): Promise<{ date: string; slots: string[] }> {
+  const qs = new URLSearchParams({ date, durationMinutes: String(durationMinutes) });
+  return request<{ date: string; slots: string[] }>(`/bookings/availability?${qs.toString()}`);
 }
 
 /* -------------------------------------------------------------------------- */

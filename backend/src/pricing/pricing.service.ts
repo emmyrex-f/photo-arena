@@ -7,6 +7,8 @@ export type BookingSource = "ONLINE" | "WALK_IN" | "ADMIN";
 export class PricingService implements OnModuleInit {
   private onlineDiscountBps = 500;
   private rescheduleFeeBps = 1500;
+  /** Photo Arena operates a strict no-refund policy on cancellations (100% forfeit / non-refundable deposit). */
+  private cancellationPenaltyBps = 10000;
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -17,13 +19,15 @@ export class PricingService implements OnModuleInit {
   async refresh() {
     this.onlineDiscountBps = 0;
     this.rescheduleFeeBps = 1500;
+    this.cancellationPenaltyBps = 10000;
     const rules = await this.prisma.pricingRule.findMany({
-      where: { key: { in: ["ONLINE_DISCOUNT", "RESCHEDULE_FEE"] } },
+      where: { key: { in: ["ONLINE_DISCOUNT", "RESCHEDULE_FEE", "CANCELLATION_PENALTY"] } },
     });
     for (const rule of rules) {
       if (!rule.isActive) continue;
       if (rule.key === "ONLINE_DISCOUNT") this.onlineDiscountBps = rule.bps;
       if (rule.key === "RESCHEDULE_FEE") this.rescheduleFeeBps = rule.bps;
+      if (rule.key === "CANCELLATION_PENALTY") this.cancellationPenaltyBps = rule.bps;
     }
   }
 
@@ -33,6 +37,10 @@ export class PricingService implements OnModuleInit {
 
   getRescheduleFeeBps() {
     return this.rescheduleFeeBps;
+  }
+
+  getCancellationPenaltyBps() {
+    return this.cancellationPenaltyBps;
   }
 
   calculatePayableKobo(basePriceKobo: number, source: BookingSource): number {
@@ -48,6 +56,11 @@ export class PricingService implements OnModuleInit {
 
   calculateRescheduleFeeKobo(originalPackagePriceKobo: number): number {
     return Math.floor((originalPackagePriceKobo * this.rescheduleFeeBps) / 10_000);
+  }
+
+  calculateCancellationPenaltyKobo(originalPackagePriceKobo: number): number {
+    // Strict no-refund contract policy: 100% of the session fee is forfeited on cancellation
+    return Math.floor((originalPackagePriceKobo * this.cancellationPenaltyBps) / 10_000);
   }
 
   toBachsAmount(kobo: number): string {

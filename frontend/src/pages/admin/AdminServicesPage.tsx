@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
+  AlertTriangle,
+  CheckCircle2,
   ExternalLink,
   ImageIcon,
   Package as PackageIcon,
@@ -451,8 +453,63 @@ export function AdminServicesPage() {
     }
   }
 
+  const [approving, setApproving] = useState(false);
+  const [approvingAll, setApprovingAll] = useState(false);
+
+  const anyProvisionalInCatalog = useMemo(
+    () => services.some((s) => s.isProvisional || s.packages?.some((p) => p.isProvisional)),
+    [services],
+  );
+
+  async function onApproveServicePricing(serviceId: string) {
+    setApproving(true);
+    try {
+      const updated = await api.services.approvePricing(serviceId);
+      setServices((prev) => prev.map((s) => (s.id === serviceId ? updated : s)));
+      toast.success("Final pricing confirmed for this service and its packages");
+    } catch (err) {
+      toast.error(errorMessage(err, "Failed to confirm pricing"));
+    } finally {
+      setApproving(false);
+    }
+  }
+
+  async function onApproveAllPricing() {
+    setApprovingAll(true);
+    try {
+      await api.services.approveAllPricing();
+      await load();
+      toast.success("All catalog services and packages confirmed as final pricing");
+    } catch (err) {
+      toast.error(errorMessage(err, "Failed to confirm catalog pricing"));
+    } finally {
+      setApprovingAll(false);
+    }
+  }
+
   return (
     <div className="pa-services space-y-admin-stack">
+      {anyProvisionalInCatalog && (
+        <div className="flex flex-col gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-200 sm:flex-row sm:items-center sm:justify-between shadow-sm">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" />
+            <span>
+              <strong>Catalog Prices are Provisional:</strong> Seed or newly imported packages are marked as provisional. You can confirm all prices for public launch with one click.
+            </span>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            className="bg-amber-600 hover:bg-amber-500 text-white text-xs shrink-0"
+            disabled={approvingAll}
+            onClick={() => void onApproveAllPricing()}
+          >
+            <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+            {approvingAll ? "Confirming…" : "Confirm All Catalog Pricing"}
+          </Button>
+        </div>
+      )}
+
       <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h1 className="font-display text-3xl font-normal tracking-tight text-foreground sm:text-[2rem]">
@@ -655,6 +712,18 @@ export function AdminServicesPage() {
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
+                    {selected.isProvisional || selected.packages?.some((p) => p.isProvisional) ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="bg-amber-600 hover:bg-amber-500 text-white"
+                        disabled={approving}
+                        onClick={() => void onApproveServicePricing(selected.id)}
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        {approving ? "Confirming…" : "Confirm Final Pricing"}
+                      </Button>
+                    ) : null}
                     <Button
                       type="button"
                       variant="outline"

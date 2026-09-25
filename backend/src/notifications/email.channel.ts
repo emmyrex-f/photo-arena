@@ -9,6 +9,7 @@ export class EmailNotificationChannel implements NotificationChannel {
 
 export class SmsNotificationChannel implements NotificationChannel {
   async send(message: NotificationMessage): Promise<void> {
-    throw new Error(`SMS channel is not configured. Event=${message.event}`);
+    // Graceful dry-run fallback when SMS provider (Termii/Twilio) is unconfigured
+    console.info(`[sms:dry-run:unconfigured] Event=${message.event} to=${message.to.join(",")}`);
   }
 }

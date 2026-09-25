@@ -196,6 +196,20 @@ export function AdminEnquiriesPage() {
     }
   }
 
+  async function sendEmailReply(id: string, replyMessage: string) {
+    setActing(true);
+    try {
+      const updated = await api.enquiries.reply(id, { replyMessage });
+      setItems((prev) => prev.map((row) => (row.id === id ? updated : row)));
+      toast.success("Email reply sent to customer");
+      void load();
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setActing(false);
+    }
+  }
+
   const tabs: { key: TabKey; label: string; count: number }[] = [
     { key: "ALL", label: "All", count: summary?.tabs.all ?? 0 },
     { key: "NEW", label: "New", count: summary?.tabs.new ?? 0 },
@@ -475,6 +489,7 @@ export function AdminEnquiriesPage() {
             onMarkReplied={() => void setStatus(selected.id, "REPLIED")}
             onCloseEnquiry={() => void setStatus(selected.id, "CLOSED")}
             onSaveNote={(note) => void saveNote(selected.id, note)}
+            onSendReply={(msg) => void sendEmailReply(selected.id, msg)}
           />
         ) : null}
       </div>
@@ -489,6 +504,7 @@ function EnquiryDetailPanel({
   onMarkReplied,
   onCloseEnquiry,
   onSaveNote,
+  onSendReply,
 }: {
   enquiry: Enquiry;
   acting: boolean;
@@ -496,6 +512,7 @@ function EnquiryDetailPanel({
   onMarkReplied: () => void;
   onCloseEnquiry: () => void;
   onSaveNote: (note: string) => void;
+  onSendReply: (replyMessage: string) => void;
 }) {
   const [replyDraft, setReplyDraft] = useState("");
   const [noteDraft, setNoteDraft] = useState(enquiry.internalNote ?? "");
@@ -586,24 +603,24 @@ function EnquiryDetailPanel({
               <Button
                 type="button"
                 size="sm"
-                disabled={!replyDraft.trim() || acting}
+                disabled={!replyDraft.trim() || acting || !enquiry.email}
                 loading={acting}
                 onClick={() => {
                   const text = replyDraft.trim();
                   if (!text) return;
-                  const combined = [noteDraft.trim(), `Reply draft: ${text}`].filter(Boolean).join("\n\n");
-                  onSaveNote(combined);
-                  onMarkReplied();
+                  onSendReply(text);
                   setReplyDraft("");
                 }}
               >
                 <Send className="h-3.5 w-3.5" />
-                Mark replied
+                Send email reply
               </Button>
             </div>
           </div>
           <p className="text-[11px] text-muted-foreground">
-            Saves your draft to the internal note and marks the enquiry as replied. Outbound email is not available.
+            {enquiry.email
+              ? `Sends a branded email reply directly to ${enquiry.email} and logs the response in the enquiry history.`
+              : "No customer email address on file. You can save private notes below."}
           </p>
         </div>
 

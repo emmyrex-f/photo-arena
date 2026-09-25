@@ -19,6 +19,7 @@ import { lockStudioResource, throwIfOverlap } from "../bookings/resource-lock";
 import { slotFits } from "../bookings/availability";
 import { PAYMENT_PROVIDER } from "./payment.constants";
 import type { PaymentProvider, WebhookParseInput } from "./payment-provider";
+import { AuditService } from "../audit/audit.service";
 import { MockPaymentProvider } from "./mock-payment.provider";
 import { providerAmountMatches } from "./payment-amount";
 
@@ -31,6 +32,7 @@ export class PaymentsService {
     private readonly config: ConfigService,
     private readonly bookings: BookingsService,
     private readonly notifications: NotificationsService,
+    private readonly audit: AuditService,
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
   ) {}
 
@@ -66,7 +68,9 @@ export class PaymentsService {
         "collection.succeeded",
         "collection.failed",
         "collection.abandoned",
-        "refund.paid",
+        "collection.underpaid",
+        "checkout.completed",
+        "checkout.expired",
       ] as const,
       mockCheckout: this.isMockProvider(),
       readyForSandboxWebhooks: Boolean(webhookSecret),
@@ -170,6 +174,153 @@ export class PaymentsService {
 
   async statusByBookingId(bookingId: string, reference: string) {
     return this.bookings.publicStatus(bookingId, reference);
+  }
+
+  async customerBalanceCheckout(
+    reference: string,
+    emailOrPhone: string,
+    returnUrl: string,
+    cancelUrl: string,
+  ) {
+    const ref = reference?.trim();
+    if (!ref) throw new BadRequestException("Booking reference is required");
+
+    const booking = await this.prisma.booking.findFirst({
+      where: {
+        OR: [
+          { reference: { equals: ref, mode: "insensitive" } },
+          { id: ref },
+        ],
+      },
+      include: { customer: true, package: true, payments: true },
+    });
+    if (!booking) throw new NotFoundException("Booking not found");
+
+    // Verify customer ownership
+    const input = (emailOrPhone ?? "").trim().toLowerCase();
+    const phoneDigits = input.replace(/\D/g, "");
+    const custEmail = (booking.customer.email ?? "").toLowerCase();
+    const custPhone = booking.customer.phone.replace(/\D/g, "");
+
+    const matchesEmail = Boolean(custEmail && input === custEmail);
+    const matchesPhone = Boolean(phoneDigits && custPhone && (custPhone.endsWith(phoneDigits) || phoneDigits.endsWith(custPhone)));
+
+    if (!matchesEmail && !matchesPhone) {
+      throw new ForbiddenException("Email or phone number does not match this booking record");
+    }
+
+    if (booking.status === BookingStatus.CANCELLED) {
+      throw new BadRequestException("Cannot pay for a cancelled booking");
+    }
+
+    const totalPaidKobo = booking.payments
+      .filter((p) => p.status === PaymentStatus.SUCCESS)
+      .reduce((sum, p) => sum + p.amountKobo, 0);
+
+    const pendingFees = booking.payments.filter((p) => p.status === PaymentStatus.PENDING);
+    const processingOnline = booking.payments.filter(
+      (p) => p.status === PaymentStatus.PROCESSING && p.method === "ONLINE_BACHS",
+    );
+    const pendingFeeTotal = pendingFees.reduce((sum, p) => sum + p.amountKobo, 0);
+
+    const baseDue = booking.amountKobo ?? booking.package.priceKobo;
+    const outstandingBase = Math.max(0, baseDue - totalPaidKobo);
+    const totalOutstanding = outstandingBase + pendingFeeTotal;
+
+    if (totalOutstanding <= 0 && processingOnline.length === 0) {
+      throw new BadRequestException("No outstanding balance on this booking");
+    }
+
+    let safeReturn: string;
+    let safeCancel: string;
+    try {
+      safeReturn = assertCheckoutRedirectUrl(returnUrl, "return");
+      safeCancel = assertCheckoutRedirectUrl(cancelUrl, "cancel");
+    } catch (error) {
+      throw new BadRequestException(error instanceof Error ? error.message : "Invalid checkout URL");
+    }
+
+    // Reuse an in-flight online balance checkout when it already covers the open amount.
+    const reusable = processingOnline.find((p) => p.amountKobo === totalOutstanding && totalOutstanding > 0)
+      ?? (totalOutstanding <= 0 ? processingOnline[0] : undefined);
+    if (reusable) {
+      const session = await this.provider.createCheckoutSession({
+        reference: reusable.reference,
+        amountKobo: reusable.amountKobo,
+        currency: "NGN",
+        customerEmail: booking.customer.email ?? "guest@photoarenang.com",
+        customerName: booking.customer.name,
+        customerPhone: booking.customer.phone,
+        returnUrl: safeReturn,
+        cancelUrl: safeCancel,
+        expiresInMinutes: 30,
+      });
+      await this.prisma.payment.update({
+        where: { id: reusable.id },
+        data: {
+          provider: session.provider,
+          providerSessionId: session.providerSessionId ?? reusable.providerSessionId,
+        },
+      });
+      return {
+        provider: session.provider as "mock" | "bachs",
+        checkoutUrl: session.checkoutUrl,
+        reference: reusable.reference,
+        amountKobo: reusable.amountKobo,
+      };
+    }
+
+    if (totalOutstanding <= 0) {
+      throw new BadRequestException("No outstanding balance on this booking");
+    }
+
+    const checkoutRef = `bal_${booking.reference ?? booking.id}_${Date.now()}`;
+    const session = await this.provider.createCheckoutSession({
+      reference: checkoutRef,
+      amountKobo: totalOutstanding,
+      currency: "NGN",
+      customerEmail: booking.customer.email ?? "guest@photoarenang.com",
+      customerName: booking.customer.name,
+      customerPhone: booking.customer.phone,
+      returnUrl: safeReturn,
+      cancelUrl: safeCancel,
+      expiresInMinutes: 30,
+    });
+
+    // Supersede pending studio fee lines — collected via this single online checkout.
+    if (pendingFees.length > 0) {
+      await this.prisma.payment.updateMany({
+        where: { id: { in: pendingFees.map((p) => p.id) } },
+        data: { status: PaymentStatus.FAILED },
+      });
+    }
+    // Drop stale processing checkouts that no longer match the due amount.
+    if (processingOnline.length > 0) {
+      await this.prisma.payment.updateMany({
+        where: { id: { in: processingOnline.map((p) => p.id) } },
+        data: { status: PaymentStatus.FAILED },
+      });
+    }
+
+    await this.prisma.payment.create({
+      data: {
+        bookingId: booking.id,
+        amountKobo: totalOutstanding,
+        currency: "NGN",
+        status: PaymentStatus.PROCESSING,
+        method: "ONLINE_BACHS",
+        provider: session.provider,
+        reference: checkoutRef,
+        providerSessionId: session.providerSessionId,
+      },
+    });
+
+    return {
+      provider: session.provider as "mock" | "bachs",
+      checkoutUrl: session.checkoutUrl,
+      reference: checkoutRef,
+      amountKobo: totalOutstanding,
+    };
   }
 
   private async resolvePaymentByWebhook(reference: string, providerSessionId?: string) {
@@ -477,8 +628,51 @@ export class PaymentsService {
         reference: payment.reference,
         startTime: payment.booking.startTime.toISOString(),
       });
+    } else if (event.abandoned && payment) {
+      if (payment.status !== PaymentStatus.SUCCESS) {
+        await this.prisma.payment.update({
+          where: { id: payment.id },
+          data: {
+            status: PaymentStatus.FAILED,
+            providerSessionId: event.providerSessionId ?? payment.providerSessionId,
+          },
+        });
+      }
+
+      if (
+        payment.booking.status === BookingStatus.TEMPORARY_HOLD ||
+        payment.booking.status === BookingStatus.PENDING
+      ) {
+        await this.prisma.booking.update({
+          where: { id: payment.bookingId },
+          data: { status: BookingStatus.CANCELLED },
+        });
+      }
+
+      // Notify customer and studio admin on abandon process
+      void this.notifications.notifyEvent(
+        "checkout_abandoned",
+        {
+          customerName: payment.booking.customer.name,
+          reference: payment.booking.reference ?? payment.booking.id,
+          startTime: payment.booking.startTime.toISOString(),
+          details: `Checkout incomplete (${event.rawType}). The temporary booking hold has been released.`,
+        },
+        [payment.booking.customer.email ?? ""].filter(Boolean),
+      );
+
+      await this.audit.log({
+        userEmail: "webhook@bachs.io",
+        action: "payment.abandon_webhook",
+        entity: "payment",
+        entityId: payment.id,
+        meta: {
+          event: event.rawType,
+          bookingId: payment.bookingId,
+          reference: payment.reference,
+        },
+      });
     }
-    // abandoned / underpaid / expired / refund.* → acknowledge only; booking stays unpaid/pending
 
     if (event.eventId) {
       try {
@@ -503,5 +697,16 @@ export class PaymentsService {
     }
 
     return { received: true as const, ...(ignored ? { ignored } : {}) };
+  }
+
+  async refundPayment(
+    paymentId: string,
+    actorId: string,
+    actorEmail: string,
+    dto: { amountKobo?: number; reason: string },
+  ) {
+    throw new BadRequestException(
+      "Photo Arena operates a strict no-refund policy. Refunds are not supported.",
+    );
   }
 }

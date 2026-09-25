@@ -84,6 +84,10 @@ function statusUiLabel(status: PaymentStatus): string {
       return "Processing";
     case "FAILED":
       return "Failed";
+    case "REFUNDED":
+      return "Refunded";
+    case "PARTIALLY_REFUNDED":
+      return "Partially refunded";
     default: {
       const _exhaustive: never = status;
       return _exhaustive;
@@ -216,7 +220,7 @@ export function AdminPaymentsPage() {
             Payments
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Track and manage all payment transactions, refunds and reconciliations.
+            Track and manage all payment transactions, reconciliations, and checkout status.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -283,12 +287,12 @@ export function AdminPaymentsPage() {
           hint={summary ? pctHint(summary.pending?.deltaPct ?? null, "vs prior period") : undefined}
         />
         <StatCard
-          label="Failed / Refunded"
+          label="Failed / Abandoned"
           icon={XCircle}
           tone="destructive"
           loading={loading}
           value={summary?.failed?.count ?? "—"}
-          hint={summary ? pctHint(summary.failed?.deltaPct ?? null, "Failed only — no refunds") : undefined}
+          hint={summary ? pctHint(summary.failed?.deltaPct ?? null, "Failed & abandoned") : undefined}
         />
       </section>
 
@@ -306,6 +310,8 @@ export function AdminPaymentsPage() {
             <SelectItem value="PENDING">Pending</SelectItem>
             <SelectItem value="PROCESSING">Processing</SelectItem>
             <SelectItem value="FAILED">Failed</SelectItem>
+            <SelectItem value="REFUNDED">Refunded</SelectItem>
+            <SelectItem value="PARTIALLY_REFUNDED">Partially refunded</SelectItem>
           </SelectContent>
         </Select>
         <Select
@@ -361,7 +367,7 @@ export function AdminPaymentsPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Reference</TableHead>
+                      <TableHead>Booking ref</TableHead>
                       <TableHead>Customer</TableHead>
                       <TableHead className="hidden md:table-cell">Booking</TableHead>
                       <TableHead>Amount</TableHead>
@@ -382,8 +388,13 @@ export function AdminPaymentsPage() {
                           className={cn("cursor-pointer", active && "bg-muted/40")}
                           onClick={() => setParam({ id: row.id })}
                         >
-                          <TableCell className="max-w-[8rem] truncate font-medium tabular-nums">
-                            {row.reference}
+                          <TableCell className="max-w-[9rem]">
+                            <p className="truncate font-mono text-xs font-medium text-foreground">
+                              {row.booking?.reference ?? "—"}
+                            </p>
+                            <p className="truncate text-[11px] text-muted-foreground" title={row.reference}>
+                              Pay: {row.reference}
+                            </p>
                           </TableCell>
                           <TableCell>
                             <div className="min-w-0">
@@ -403,8 +414,13 @@ export function AdminPaymentsPage() {
                                 : "—"}
                             </p>
                           </TableCell>
-                          <TableCell className="font-semibold tabular-nums">
-                            {formatNairaFromKobo(row.amountKobo)}
+                          <TableCell className="font-semibold">
+                            <span className="inline-flex items-baseline gap-0.5">
+                              <span aria-hidden="true">₦</span>
+                              <span className="tabular-nums">
+                                {Math.round(row.amountKobo / 100).toLocaleString("en-NG")}
+                              </span>
+                            </span>
                           </TableCell>
                           <TableCell className="hidden text-muted-foreground sm:table-cell">
                             {methodLabel(row.method)}
@@ -464,7 +480,10 @@ export function AdminPaymentsPage() {
         </Card>
 
         {selected ? (
-          <PaymentDetailPanel payment={selected} onClose={() => setParam({ id: null })} />
+          <PaymentDetailPanel
+            payment={selected}
+            onClose={() => setParam({ id: null })}
+          />
         ) : null}
       </div>
     </div>
@@ -556,12 +575,30 @@ function PaymentDetailPanel({
         <div className="space-y-1 text-xs text-muted-foreground">
           <p>
             Method · {methodLabel(payment.method)}
+            {payment.channel ? ` (${payment.channel})` : ""}
             {payment.provider ? ` · ${payment.provider}` : ""}
           </p>
           {source ? <p>Source · {source === "ONLINE" ? "Website" : source.replace("_", " ")}</p> : null}
           <p>Created · {formatLagosDateTime(payment.createdAt)}</p>
           {payment.paidAt ? <p>Paid · {formatLagosDateTime(payment.paidAt)}</p> : null}
         </div>
+
+        {payment.refundedAmountKobo ? (
+          <div className="space-y-1 rounded-lg border border-amber-500/20 bg-amber-500/10 p-2.5 text-xs text-amber-600 dark:text-amber-400">
+            <div className="flex justify-between font-medium">
+              <span>Historical Refund</span>
+              <span className="tabular-nums">{formatNairaFromKobo(payment.refundedAmountKobo)}</span>
+            </div>
+            {payment.refundReason ? (
+              <p className="text-[11px] text-muted-foreground">Reason: {payment.refundReason}</p>
+            ) : null}
+            {payment.refundedAt ? (
+              <p className="text-[11px] text-muted-foreground">
+                Refund date: {formatLagosDateTime(payment.refundedAt)}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );

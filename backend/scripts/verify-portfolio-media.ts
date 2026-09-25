@@ -97,18 +97,21 @@ async function main() {
     if (urls.length !== publicCountBefore) fail("existing portfolio still renders", "missing urls");
     pass("existing portfolio still renders");
 
-    const list = await api<GalleryRow[]>("GET", "/admin/gallery?kind=GALLERY&isActive=true", { token });
-    if (list.status !== 200 || !Array.isArray(list.data) || list.data.length < 2) {
+    const list = await api<{ items: GalleryRow[] }>("GET", "/admin/gallery?kind=GALLERY&isActive=true&pageSize=50", {
+      token,
+    });
+    const listItems = list.data?.items ?? [];
+    if (list.status !== 200 || listItems.length < 2) {
       fail("list portfolio items", `status ${list.status}`);
     }
-    itemA = list.data[0];
-    itemB = list.data[1];
+    itemA = listItems[0];
+    itemB = listItems[1];
     originalA = itemA.media?.id ?? null;
     originalB = itemB.media?.id ?? null;
     const originalUrlA = publicBefore.data.find((row) => row.id === itemA!.id)?.url ?? itemA.url;
 
-    const library = await api<GalleryRow[]>("GET", "/admin/gallery?isActive=true", { token });
-    const candidates = (library.data ?? []).filter((row) => row.id !== itemA!.id && row.id !== itemB!.id);
+    const library = await api<{ items: GalleryRow[] }>("GET", "/admin/gallery?isActive=true&pageSize=50", { token });
+    const candidates = (library.data?.items ?? []).filter((row) => row.id !== itemA!.id && row.id !== itemB!.id);
     if (candidates.length < 2) fail("library", "need two other active images");
     const image1 = candidates[0]!;
     const image2 = candidates[1]!;

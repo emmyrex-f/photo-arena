@@ -289,6 +289,8 @@ async function main() {
     console.log("10. Valid login still succeeds ✓");
     const ownerToken = login.data.token;
 
+    await prisma.user.deleteMany({ where: { email: { contains: "-sec-" } } });
+
     const staffEmail = `staff-sec-${Date.now()}@example.com`;
     const staffPass = "staffpass1";
     const created = await api<{ id: string }>("POST", "/admin/users", {
@@ -636,6 +638,11 @@ async function main() {
     console.log("23. Happy-path pieces covered by verify:payment-flow");
     console.log("All security tests passed.");
   } finally {
+    try {
+      await prisma.user.deleteMany({ where: { email: { contains: "-sec-" } } });
+    } catch {
+      // ignore
+    }
     await prisma.$disconnect();
   }
 }

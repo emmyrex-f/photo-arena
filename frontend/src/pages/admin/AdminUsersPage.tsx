@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState, type FormEvent } from "react";
-import { KeyRound, MoreHorizontal, Plus, Trash2, UserPlus, Users } from "lucide-react";
+import { KeyRound, MoreHorizontal, Plus, ShieldAlert, Trash2, UserPlus, Users } from "lucide-react";
 import { ActiveBadge, RoleBadge } from "../../admin/components/ui/status-badge";
 import { Button } from "../../admin/components/ui/button";
 import {
@@ -73,7 +73,7 @@ const EMPTY_FORM: EditorForm = {
 
 export function AdminUsersPage() {
   const api = useAdminApi();
-  const { user: me } = useAuth();
+  const { user: me, refreshUser } = useAuth();
   const owner = isOwner(me?.role);
 
   const listQuery = useQuery(() => api.users.list(), []);
@@ -138,8 +138,8 @@ export function AdminUsersPage() {
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!owner) {
-      toast.error("Only the owner can manage desk users");
+    if (!owner && editing?.role === "OWNER" && editing?.id !== me?.id) {
+      toast.error("Only the owner can modify owner accounts");
       return;
     }
 
@@ -162,16 +162,34 @@ export function AdminUsersPage() {
         listQuery.setData((current) => (current ? [...current, created] : [created]));
         toast.success("User created");
       } else if (mode === "edit" && editing) {
+        const nextEmail = form.email.trim();
+        if (!nextEmail) {
+          toast.error("Email cannot be empty");
+          setSaving(false);
+          return;
+        }
         const updated = await api.users.update(editing.id, {
+          email: nextEmail,
           name: form.name.trim(),
-          role: form.role,
-          isActive: form.isActive,
-          fullAccess: form.role === "OWNER" ? true : form.fullAccess,
-          permissions: form.fullAccess || form.role === "OWNER" ? undefined : form.permissions,
+          ...(owner
+            ? {
+                role: form.role,
+                isActive: form.isActive,
+                fullAccess: form.role === "OWNER" ? true : form.fullAccess,
+                permissions: form.fullAccess || form.role === "OWNER" ? undefined : form.permissions,
+              }
+            : me?.role === "ADMIN" && editing.role !== "OWNER" && editing.id !== me?.id
+              ? {
+                  isActive: form.isActive,
+                }
+              : {}),
         });
         listQuery.setData((current) =>
           current ? current.map((row) => (row.id === updated.id ? { ...row, ...updated } : row)) : [updated],
         );
+        if (editing.id === me?.id) {
+          void refreshUser();
+        }
         toast.success("User updated");
       } else if (mode === "password" && editing) {
         if (form.password.length < 8) {
@@ -190,7 +208,15 @@ export function AdminUsersPage() {
   }
 
   async function deactivate(row: AdminUser) {
-    if (!owner) return;
+    if (!owner && me?.role !== "ADMIN") return;
+    if (row.role === "OWNER") {
+      toast.error("Only the owner can deactivate owner accounts");
+      return;
+    }
+    if (row.id === me?.id) {
+      toast.error("You cannot deactivate yourself");
+      return;
+    }
     if (!window.confirm(`Deactivate ${row.name}? Their sessions will end.`)) return;
     setBusyId(row.id);
     try {
@@ -201,6 +227,20 @@ export function AdminUsersPage() {
       toast.success("User deactivated");
     } catch (err) {
       toast.error(errorMessage(err, "Could not deactivate user"));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function revokeSessions(row: AdminUser) {
+    if (!owner) return;
+    if (!window.confirm(`Revoke all active sessions for ${row.name}? They will be forced to log in again.`)) return;
+    setBusyId(row.id);
+    try {
+      await api.users.revokeSessions(row.id);
+      toast.success(`Active sessions revoked for ${row.name}`);
+    } catch (err) {
+      toast.error(errorMessage(err, "Could not revoke sessions"));
     } finally {
       setBusyId(null);
     }
@@ -229,7 +269,7 @@ export function AdminUsersPage() {
 
       {!owner ? (
         <p className="rounded-lg border border-border bg-card/50 px-3 py-2 text-sm text-muted-foreground">
-          You can view the roster. Only the owner can create or edit desk users.
+          You have admin permissions to update staff details (name, email, and active status) and deactivate accounts. Only the owner can create users, assign roles, or manage desk permissions.
         </p>
       ) : null}
 
@@ -283,7 +323,7 @@ export function AdminUsersPage() {
                     {row.lastLoginAt ? formatLagosDateTime(row.lastLoginAt) : "—"}
                   </TableCell>
                   <TableCell className="text-right">
-                    {owner ? (
+                    {owner || (me?.role === "ADMIN" && row.role !== "OWNER") || row.id === me?.id ? (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button
@@ -298,11 +338,21 @@ export function AdminUsersPage() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => openEdit(row)}>Edit</DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => openPassword(row)}>
-                            <KeyRound className="h-4 w-4" />
-                            Reset password
-                          </DropdownMenuItem>
-                          {row.isActive && row.id !== me?.id ? (
+                          {owner ? (
+                            <>
+                              <DropdownMenuItem onClick={() => openPassword(row)}>
+                                <KeyRound className="h-4 w-4" />
+                                Reset password
+                              </DropdownMenuItem>
+                              {row.isActive ? (
+                                <DropdownMenuItem onClick={() => void revokeSessions(row)}>
+                                  <ShieldAlert className="h-4 w-4" />
+                                  Revoke sessions
+                                </DropdownMenuItem>
+                              ) : null}
+                            </>
+                          ) : null}
+                          {row.isActive && row.id !== me?.id && (owner || (me?.role === "ADMIN" && row.role !== "OWNER")) ? (
                             <>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
@@ -353,20 +403,16 @@ export function AdminUsersPage() {
               </div>
             ) : (
               <>
-                {mode === "create" ? (
-                  <div className="space-y-1.5">
-                    <Label htmlFor="user-email">Email</Label>
-                    <Input
-                      id="user-email"
-                      type="email"
-                      value={form.email}
-                      onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))}
-                      required
-                    />
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">{editing?.email}</p>
-                )}
+                <div className="space-y-1.5">
+                  <Label htmlFor="user-email">Email</Label>
+                  <Input
+                    id="user-email"
+                    type="email"
+                    value={form.email}
+                    onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))}
+                    required
+                  />
+                </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="user-name">Name</Label>
                   <Input
@@ -381,6 +427,7 @@ export function AdminUsersPage() {
                   <Select
                     value={form.role}
                     onValueChange={(value) => setForm((prev) => ({ ...prev, role: value as Role }))}
+                    disabled={!owner}
                   >
                     <SelectTrigger id="user-role">
                       <SelectValue />
@@ -415,11 +462,11 @@ export function AdminUsersPage() {
                       checked={form.isActive}
                       onCheckedChange={(isActive) => setForm((prev) => ({ ...prev, isActive }))}
                       aria-label="Active"
-                      disabled={editing?.id === me?.id}
+                      disabled={editing?.id === me?.id || (!owner && editing?.role === "OWNER")}
                     />
                   </div>
                 )}
-                {showAccessControls ? (
+                {showAccessControls && owner ? (
                   <>
                     <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
                       <div>
