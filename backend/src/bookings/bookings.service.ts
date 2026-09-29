@@ -90,6 +90,31 @@ export class BookingsService {
     private readonly publicService: PublicService,
   ) {}
 
+  /**
+   * The studio is a single bookable resource: every availability and overlap check
+   * is scoped to it. More than one active row would silently split those checks,
+   * so refuse to serve bookings instead of picking an arbitrary studio.
+   */
+  async activeResource() {
+    const resources = await this.prisma.studioResource.findMany({
+      where: { isActive: true },
+      orderBy: { id: "asc" },
+    });
+    if (resources.length > 1) {
+      this.logger.error(
+        `Found ${resources.length} active studio resources; bookings are disabled until one remains active`,
+      );
+      throw new ConflictException("Studio availability is misconfigured");
+    }
+    return resources[0] ?? null;
+  }
+
+  private async requireActiveResource() {
+    const resource = await this.activeResource();
+    if (!resource) throw new BadRequestException("No studio resource is configured");
+    return resource;
+  }
+
   async getCmsHours(): Promise<Record<string, string>> {
     const rows = await this.prisma.businessSettings.findMany({
       where: { key: { in: ["site.hours.weekday", "site.hours.sunday"] } },
@@ -111,7 +136,7 @@ export class BookingsService {
   }
 
   async availability(ymd: string, durationMinutes: number, options?: { requireSameDayNotice?: boolean }) {
-    const resource = await this.prisma.studioResource.findFirst({ where: { isActive: true } });
+    const resource = await this.activeResource();
     const existing = resource
       ? await this.prisma.booking.findMany({
           where: { resourceId: resource.id, ...blockingWhere() },
@@ -199,8 +224,7 @@ export class BookingsService {
     const pkg = await this.prisma.package.findUnique({ where: { id: input.packageId } });
     if (!pkg?.isActive) throw new BadRequestException("Choose an active package");
 
-    const resource = await this.prisma.studioResource.findFirst({ where: { isActive: true } });
-    if (!resource) throw new BadRequestException("No studio resource is configured");
+    const resource = await this.requireActiveResource();
 
     const start = new Date(input.startTime);
     if (Number.isNaN(start.getTime())) throw new BadRequestException("Invalid start time");
@@ -375,8 +399,7 @@ export class BookingsService {
     const pkg = await this.prisma.package.findUnique({ where: { id: dto.packageId } });
     if (!pkg?.isActive) throw new BadRequestException("Choose an active package");
 
-    const resource = await this.prisma.studioResource.findFirst({ where: { isActive: true } });
-    if (!resource) throw new BadRequestException("No studio resource is configured");
+    const resource = await this.requireActiveResource();
 
     const start = new Date(dto.startTime);
     if (Number.isNaN(start.getTime())) throw new BadRequestException("Invalid start time");

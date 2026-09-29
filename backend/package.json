@@ -11,7 +11,7 @@
     "build": "nest build",
     "prisma:generate": "prisma generate",
     "prisma:seed": "tsx prisma/seed.ts",
-    "prisma:constraints": "prisma db execute --schema prisma/schema.prisma --file prisma/sql/user-token-version.sql && prisma db execute --schema prisma/schema.prisma --file prisma/sql/booking-overlap-exclude.sql",
+    "prisma:constraints": "prisma db execute --schema prisma/schema.prisma --file prisma/sql/studio-resource-single-active.sql && prisma db execute --schema prisma/schema.prisma --file prisma/sql/booking-overlap-exclude.sql",
     "verify:rules": "tsx scripts/verify-rules.ts",
     "verify:calendar": "tsx scripts/verify-calendar.ts",
     "verify:bachs-webhook": "tsx scripts/verify-bachs-webhook.ts",
