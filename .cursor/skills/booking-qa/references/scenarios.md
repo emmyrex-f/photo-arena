@@ -12,7 +12,7 @@ Use Lagos local dates. Convert to UTC ISO for API bodies.
 
 4. Slots on 30-minute grid inside opening hours (Mon–Sat 08:00–18:00, Sun 12:00–18:00 unless settings say otherwise).
 5. Package duration occupies the full window (90 min package blocks 90 min).
-6. Same-day: slot start ≥ now + 2 hours.
+6. Same-day: first slot is the next 30-minute start that has not begun; started slots and past dates are refused.
 7. Occupied interval hidden/rejected for TEMPORARY_HOLD, PENDING, CONFIRMED.
 
 ## Hold
@@ -26,7 +26,7 @@ Use Lagos local dates. Convert to UTC ISO for API bodies.
 ## Admin / walk-in
 
 13. OWNER/ADMIN walk-in → PENDING (studio pay), no Bachs required.
-14. Admin future reservation does not require 2-hour online notice (if product rules allow admin override — verify actual service code, do not invent).
+14. Admin reservations follow the same rule as online: any unstarted slot, never a started or past one.
 15. Customer has no cancel endpoint; admin cancel → CANCELLED, not NO_SHOW.
 16. NO_SHOW is a distinct status.
 

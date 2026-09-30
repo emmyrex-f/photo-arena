@@ -1,6 +1,6 @@
 ---
 name: booking-qa
-description: Runs Photo Arena booking-domain QA against the live NestJS API and booking UI. Use when verifying service/package selection, availability, 30-minute slots, 2-hour notice, holds, overlap, reschedule, no-show, cancellation, or /booking-qa.
+description: Runs Photo Arena booking-domain QA against the live NestJS API and booking UI. Use when verifying service/package selection, availability, 30-minute slots, same-day start rules, holds, overlap, reschedule, no-show, cancellation, or /booking-qa.
 ---
 
 # Booking QA
@@ -58,7 +58,7 @@ Must actually run:
 - date selection
 - available times
 - 30-minute increments
-- 2-hour minimum notice
+- No minimum notice; started slots and past dates refused
 - same-day booking
 - temporary hold
 - hold expiration

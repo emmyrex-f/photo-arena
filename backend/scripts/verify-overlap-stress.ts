@@ -21,7 +21,7 @@ import assert from "assert";
 import { PrismaClient, BookingStatus } from "@prisma/client";
 
 const prisma = new PrismaClient();
-const API_URL = "http://localhost:3001/api";
+const API_URL = (process.env.API_BASE ?? "http://localhost:3001/api").replace(/\/$/, "");
 
 // ---------------------------------------------------------------------------
 // Test Configuration
@@ -199,6 +199,61 @@ async function main() {
 
     // Brief delay between rounds to avoid any carry-over
     await new Promise((r) => setTimeout(r, 300));
+  }
+
+  // ─── Cross-package round: different packages, different starts, overlapping windows ───
+  {
+    const byDuration = new Map(pkgRes.data.map((p) => [p.durationMinutes, p]));
+    const mixed = [...byDuration.values()].sort((a, b) => a.durationMinutes - b.durationMinutes);
+    assert.ok(mixed.length >= 2, "need packages with at least two different durations");
+    const targetYmd = nextWeekday(TOTAL_ROUNDS + 8);
+    const anchor = new Date(`${targetYmd}T11:00:00+01:00`);
+    const stamp = Date.now();
+    // Every request's window covers 11:00–11:30, so at most one may win.
+    const requests = Array.from({ length: 20 }, (_, i) => {
+      const p = mixed[i % mixed.length]!;
+      const offsetMinutes = -30 * Math.floor(Math.random() * Math.max(1, p.durationMinutes / 30));
+      const start = new Date(anchor.getTime() + offsetMinutes * 60_000);
+      return { p, start, i };
+    });
+    console.log(`─── Cross-package round: 20 concurrent bookings across ${mixed.length} package durations on ${targetYmd} ───`);
+    const results = await Promise.all(
+      requests.map(({ p, start, i }) =>
+        api("POST", "/admin/bookings", {
+          token,
+          body: {
+            packageId: p.id,
+            startTime: start.toISOString(),
+            customerName: `Stress Mixed ${i}`,
+            customerPhone: `0902${String(stamp).slice(-4)}${String(1000 + i).slice(-3)}`,
+            customerEmail: `stress-mixed-${stamp}-${i}@test.com`,
+            source: "WALK_IN",
+          },
+        }).then((r) => ({ status: r.status, data: r.data })),
+      ),
+    );
+    const wins = results.filter((r) => r.status === 201).length;
+    const conflicts = results.filter((r) => r.status === 409).length;
+    const others = results.filter((r) => r.status !== 201 && r.status !== 409);
+    console.log(`   201 Created  : ${wins}`);
+    console.log(`   409 Conflict : ${conflicts}`);
+    for (const o of others.slice(0, 3)) console.log(`   [${o.status}] ${JSON.stringify(o.data).slice(0, 200)}`);
+    assert.equal(wins, 1, `cross-package: expected exactly 1 booking, got ${wins}`);
+    assert.equal(others.length, 0, "cross-package: unexpected non-409 errors");
+    console.log("   ✅ PASS — one package won the window, every other package was rejected");
+
+    const mixedBookings = await prisma.booking.findMany({
+      where: { customer: { email: { startsWith: `stress-mixed-${stamp}-` } } },
+      select: { id: true },
+    });
+    for (const b of mixedBookings) {
+      await prisma.payment.deleteMany({ where: { bookingId: b.id } });
+      await prisma.booking.delete({ where: { id: b.id } });
+    }
+    await prisma.customer.deleteMany({
+      where: { email: { startsWith: `stress-mixed-${stamp}-` }, bookings: { none: {} } },
+    });
+    console.log(`   ✓ Cleanup: removed ${mixedBookings.length} test booking(s)\n`);
   }
 
   // ─── Additional: Database-Level Overlap Verification ───

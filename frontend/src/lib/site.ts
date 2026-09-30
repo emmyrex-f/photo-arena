@@ -71,7 +71,6 @@ export const navLinks = [
   { to: "/about", label: "About" },
   { to: "/services", label: "Services" },
   { to: "/portfolio", label: "Portfolio" },
-  { to: "/blog", label: "Journal" },
   { to: "/book", label: "Book Now" },
   { to: "/booking/lookup", label: "My Booking" },
   { to: "/contact", label: "Contact" },

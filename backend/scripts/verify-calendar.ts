@@ -18,6 +18,7 @@ import {
   addLagosDays,
 } from "../src/bookings/availability";
 import { blockingWhere } from "../src/bookings/blocking";
+import { isOverlapConstraintError } from "../src/bookings/resource-lock";
 
 const API_BASE = (process.env.API_BASE ?? "http://localhost:3001/api").replace(/\/$/, "");
 const ownerPassword = process.env.SEED_OWNER_PASSWORD ?? "changeme";
@@ -56,12 +57,13 @@ function lagosDateOffset(days: number): string {
 async function main() {
   const createdIds: string[] = [];
   const stamp = Date.now();
+  let originalWeekdayHours: string | null | undefined;
 
   try {
     // --- Offline rules (source of truth) ---
     assert.equal(BOOKING_RULES.slotIncrementMinutes, 30);
     assert.equal(BOOKING_RULES.bufferMinutes, 0);
-    assert.equal(BOOKING_RULES.sameDayMinimumNoticeMinutes, 120);
+    assert.equal(BOOKING_RULES.sameDayMinimumNoticeMinutes, 0);
     assert.equal(BOOKING_RULES.holdDurationMinutes, 15);
     assert.equal(BOOKING_RULES.timezone, "Africa/Lagos");
 
@@ -266,7 +268,7 @@ async function main() {
     assert.equal(toLagosYmd(new Date(seen!.startTime)), day);
     console.log("admin range places booking on correct Lagos date ✓");
 
-    // Admin availability skips 2h notice; public enforces it on same day
+    // Same day: no notice period, but nothing that has already started (public and admin agree)
     const today = toLagosYmd(new Date());
     const publicToday = await api<{ slots: string[] }>(
       "GET",
@@ -279,31 +281,72 @@ async function main() {
       { token: login.data.token },
     );
     assert.ok(publicToday.status < 300 && adminToday.status < 300);
-    assert.ok(
-      adminToday.data.slots.length >= publicToday.data.slots.length,
-      "admin same-day slots ≥ public (no 2h notice)",
-    );
-    console.log("public same-day notice vs admin walk-in availability ✓");
+    assert.deepEqual(adminToday.data.slots, publicToday.data.slots, "no same-day notice: admin and public match");
+    const checkedAt = Date.now();
+    for (const iso of publicToday.data.slots) {
+      assert.ok(new Date(iso).getTime() > checkedAt - 5_000, `today slot ${iso} already started`);
+    }
+    console.log(`same-day slots start from the next unstarted time (${publicToday.data.slots[0] ?? "none left"}) ✓`);
 
-    // Expire hold → slot released (simulate expireHolds)
+    // Past dates offer nothing and cannot be held
+    const pastDay = lagosDateOffset(-3);
+    const pastPublic = await api<{ slots: string[] }>(
+      "GET",
+      `/bookings/availability?date=${encodeURIComponent(pastDay)}&durationMinutes=${pkg60.durationMinutes}`,
+      { ip: "10.255.20.1" },
+    );
+    const pastAdmin = await api<{ slots: string[] }>(
+      "GET",
+      `/admin/availability?date=${encodeURIComponent(pastDay)}&durationMinutes=${pkg60.durationMinutes}`,
+      { token: login.data.token },
+    );
+    assert.equal(pastPublic.data.slots.length, 0, "past date public availability empty");
+    assert.equal(pastAdmin.data.slots.length, 0, "past date admin availability empty");
+    const pastHold = await api("POST", "/bookings/hold", {
+      ip: "10.255.20.6",
+      body: {
+        packageId: pkg60.id,
+        startTime: lagosDateTime(pastDay, 13, 0).toISOString(),
+        customerName: `CalPast ${stamp}`,
+        customerPhone: `0805${String(stamp).slice(-7)}`,
+        customerEmail: `calpast-${stamp}@example.com`,
+      },
+    });
+    assert.equal(pastHold.status, 409, `past hold must be refused, got ${pastHold.status}`);
+    console.log("past dates: no slots, hold refused ✓");
+
+    // An expired hold the cron has not cancelled yet must not block a new booking
+    // (the DB exclusion constraint still counts it until it is cancelled).
     const holdId = winners[0]!.data.bookingId;
     await prisma.booking.update({
       where: { id: holdId },
       data: { holdExpiresAt: new Date(Date.now() - 60_000), status: BookingStatus.TEMPORARY_HOLD },
     });
-    // blockingWhere should already exclude expired hold even before cron
     const afterExpireLogic = await api<{ slots: string[] }>(
       "GET",
       `/bookings/availability?date=${encodeURIComponent(day)}&durationMinutes=${pkg60.durationMinutes}`,
       { ip: "10.255.20.1" },
     );
     assert.equal(afterExpireLogic.data.slots.includes(target), true, "expired hold no longer blocks");
-    // Run cancel like cron
-    await prisma.booking.updateMany({
-      where: { id: holdId, status: BookingStatus.TEMPORARY_HOLD },
-      data: { status: BookingStatus.CANCELLED },
+    const rehold = await api<{ bookingId: string }>("POST", "/bookings/hold", {
+      ip: "10.255.20.7",
+      body: {
+        packageId: pkg60.id,
+        startTime: target,
+        customerName: `CalRe ${stamp}`,
+        customerPhone: `0804${String(stamp).slice(-7)}`,
+        customerEmail: `calre-${stamp}@example.com`,
+      },
     });
-    console.log("expired hold releases slot ✓");
+    assert.ok(rehold.status < 300, `re-hold over stale expired hold ${rehold.status} ${JSON.stringify(rehold.data)}`);
+    createdIds.push(rehold.data.bookingId);
+    const stale = await prisma.booking.findUnique({ where: { id: holdId }, select: { status: true } });
+    assert.equal(stale?.status, BookingStatus.CANCELLED, "stale expired hold released inside the booking transaction");
+    await prisma.booking.update({
+      where: { id: rehold.data.bookingId },
+      data: { status: BookingStatus.CANCELLED, holdExpiresAt: null },
+    });
+    console.log("expired hold releases slot, even before the cron runs ✓");
 
     // Confirmed booking blocks; cancel releases
     const slot2 = afterExpireLogic.data.slots.find((s) => s !== target) ?? afterExpireLogic.data.slots[0]!;
@@ -332,6 +375,35 @@ async function main() {
     );
     assert.equal(afterPaid.data.slots.includes(slot2), false, "confirmed paid booking blocks slot");
     console.log("payment confirmation keeps slot occupied ✓");
+
+    // Future sessions cannot be marked completed / no-show (that would reopen the slot)
+    for (const status of ["COMPLETED", "NO_SHOW"] as const) {
+      const early = await api("PATCH", `/admin/bookings/${pending.data.id}/status`, {
+        token: login.data.token,
+        body: { status },
+      });
+      assert.equal(early.status, 400, `${status} before start must be refused, got ${early.status}`);
+    }
+    console.log("future booking cannot be marked completed / no-show ✓");
+
+    // DB backstop: an overlapping write that skips the app lock is rejected by Postgres
+    const occupying = await prisma.booking.findUniqueOrThrow({ where: { id: pending.data.id } });
+    await assert.rejects(
+      prisma.booking.create({
+        data: {
+          customerId: occupying.customerId,
+          packageId: occupying.packageId,
+          resourceId: occupying.resourceId,
+          startTime: new Date(occupying.startTime.getTime() + 30 * 60_000),
+          endTime: new Date(occupying.endTime.getTime() + 30 * 60_000),
+          status: BookingStatus.PENDING,
+          source: "ADMIN",
+        },
+      }),
+      (err: unknown) => isOverlapConstraintError(err),
+      "overlapping insert without the lock must hit Booking_no_overlap",
+    );
+    console.log("Booking_no_overlap constraint rejects unlocked overlapping insert ✓");
 
     // Reschedule moves block
     const slot3 = afterPaid.data.slots[0];
@@ -373,8 +445,60 @@ async function main() {
     assert.ok(!blocking.some((b) => b.status === "CANCELLED"));
     console.log("blockingWhere excludes cancelled ✓");
 
+    // Payment confirmation honours widened CMS hours (needs PAYMENTS_MOCK=true on the API)
+    const hoursRow = await prisma.businessSettings.findUnique({ where: { key: "site.hours.weekday" } });
+    originalWeekdayHours = hoursRow?.value ?? null;
+    await prisma.businessSettings.upsert({
+      where: { key: "site.hours.weekday" },
+      update: { value: "8:00 AM – 8:00 PM" },
+      create: { key: "site.hours.weekday", value: "8:00 AM – 8:00 PM" },
+    });
+    const evening = lagosDateTime(day, 18, 30).toISOString();
+    const eveningHold = await api<{ bookingId: string; reference: string }>("POST", "/bookings/hold", {
+      ip: "10.255.20.8",
+      body: {
+        packageId: pkg60.id,
+        startTime: evening,
+        customerName: `CalCms ${stamp}`,
+        customerPhone: `0803${String(stamp).slice(-7)}`,
+        customerEmail: `calcms-${stamp}@example.com`,
+      },
+    });
+    assert.ok(eveningHold.status < 300, `hold in widened CMS hours ${eveningHold.status} ${JSON.stringify(eveningHold.data)}`);
+    createdIds.push(eveningHold.data.bookingId);
+    const checkout = await api<{ provider: string; reference: string }>(
+      "POST",
+      `/bookings/${eveningHold.data.bookingId}/checkout`,
+      {
+        ip: "10.255.20.8",
+        body: {
+          reference: eveningHold.data.reference,
+          returnUrl: "http://localhost:5173/book/confirmation",
+          cancelUrl: "http://localhost:5173/book",
+        },
+      },
+    );
+    assert.ok(checkout.status < 300, `checkout ${checkout.status} ${JSON.stringify(checkout.data)}`);
+    assert.equal(checkout.data.provider, "mock", "CMS-hours payment check needs PAYMENTS_MOCK=true");
+    const completed = await api<{ status: string }>("POST", "/payments/mock/complete", {
+      body: { reference: checkout.data.reference },
+    });
+    assert.ok(completed.status < 300, `mock complete ${completed.status} ${JSON.stringify(completed.data)}`);
+    assert.equal(completed.data.status, "CONFIRMED", "paid booking inside widened CMS hours is confirmed, not PAID_UNPLACED");
+    console.log("payment confirmation honours CMS opening hours ✓");
+
     console.log("\nCALENDAR VERIFICATION PASS");
   } finally {
+    if (originalWeekdayHours !== undefined) {
+      if (originalWeekdayHours === null) {
+        await prisma.businessSettings.deleteMany({ where: { key: "site.hours.weekday" } });
+      } else {
+        await prisma.businessSettings.update({
+          where: { key: "site.hours.weekday" },
+          data: { value: originalWeekdayHours },
+        });
+      }
+    }
     for (const id of createdIds) {
       try {
         await prisma.payment.deleteMany({ where: { bookingId: id } });

@@ -17,7 +17,7 @@ v2 build (2026-09-13): premium public site redesign, cookie consent + legal page
 - Open daily. Mon–Sat 8AM–6PM. Sunday 12PM–6PM.
 - One location, one session at a time.
 - 30-minute slots, no buffer, full package duration.
-- Same-day online bookings with 2-hour notice.
+- Same-day online bookings from the next unstarted 30-minute slot (no notice period).
 - Online: 15-minute hold, full payment minus 5%, confirm after Bachs.
 - Walk-in: OWNER/ADMIN create `PENDING` reservation, pay at studio.
 - Non-refundable. Reschedule +15%. Distinct `NO_SHOW`.

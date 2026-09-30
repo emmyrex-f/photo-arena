@@ -9,7 +9,9 @@ Enforce these rules in backend services, not in React.
 
 - 30-minute slot increment.
 - No buffer between sessions.
-- 2-hour minimum notice for online bookings (slot start ≥ now + 2 hours).
+- No minimum notice (D-30): same-day slots start from the next 30-minute start that has not begun. No booking path may accept a start in the past; only payment confirmation of an existing hold may use `allowStarted`.
+- One session at a time across every package: overlap is enforced by the `StudioResource` row lock + `slotFits`, backed by the `Booking_no_overlap` exclusion constraint.
+- `COMPLETED` / `NO_SHOW` cannot be set before the session starts.
 - Packages occupy their full duration (a 90-minute package blocks 90 minutes).
 - 5% online discount (backend `PricingService` only).
 - 15% rescheduling fee (of original package price).

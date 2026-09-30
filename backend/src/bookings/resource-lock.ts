@@ -1,5 +1,6 @@
 import { ConflictException } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
+import { BookingStatus, Prisma } from "@prisma/client";
+import { expiredHoldWhere } from "./blocking";
 
 export async function lockStudioResource(
   tx: Prisma.TransactionClient,
@@ -11,6 +12,12 @@ export async function lockStudioResource(
   if (!rows.length) {
     throw new ConflictException("That slot is not available");
   }
+  // The Booking_no_overlap exclusion constraint counts every TEMPORARY_HOLD row (it cannot
+  // compare against now()), so expired holds must be released before any write on this resource.
+  await tx.booking.updateMany({
+    where: { resourceId, ...expiredHoldWhere() },
+    data: { status: BookingStatus.CANCELLED },
+  });
 }
 
 export function isOverlapConstraintError(error: unknown): boolean {

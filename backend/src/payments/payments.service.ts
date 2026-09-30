@@ -413,6 +413,7 @@ export class PaymentsService {
 
     type ConfirmResult = "already" | "confirmed" | "unplaced";
 
+    const cmsHours = await this.bookings.getCmsHours();
     let outcome: ConfirmResult = "already";
     try {
       outcome = await this.prisma.$transaction(async (tx) => {
@@ -454,6 +455,8 @@ export class PaymentsService {
           Math.max(1, Math.round((booking.endTime.getTime() - booking.startTime.getTime()) / 60_000));
         const free = slotFits(booking.startTime, duration, new Date(), existing, {
           requireSameDayNotice: false,
+          allowStarted: true,
+          cmsHours,
         });
 
         if (free) {

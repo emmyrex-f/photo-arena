@@ -97,7 +97,7 @@ Confirmed:
 - 30-minute slot increment
 - No buffer
 - Package occupies its full duration
-- Same-day online booking with 2-hour minimum notice
+- Same-day online booking from the next unstarted slot (no minimum notice)
 - Online: 15-minute hold, confirm after Bachs success
 - Walk-in: OWNER/ADMIN create `PENDING` reservation that blocks the slot
 - `NO_SHOW` ≠ `CANCELLED`

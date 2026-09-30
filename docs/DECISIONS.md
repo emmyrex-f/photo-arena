@@ -15,7 +15,7 @@ Decisions below are locked unless the owner changes them. Temporary defaults are
 | D-02 | One physical location. One session at a time. | Owner |
 | D-03 | Slot increment is 30 minutes. No buffer between sessions. | Owner |
 | D-04 | A booked package occupies its full duration. | Owner |
-| D-05 | Same-day online booking is allowed with 2 hours minimum notice. | Owner |
+| D-05 | ~~Same-day online booking is allowed with 2 hours minimum notice.~~ Superseded by D-30. | Owner |
 | D-06 | Online customers pay the full amount minus a 5% backend-calculated discount. | Owner |
 | D-07 | Selecting an online slot creates a 15-minute temporary hold. Confirmation happens only after successful Bachs payment. | Owner |
 | D-08 | Walk-in / future reservations start as `PENDING`. Staff records payment later. | Owner |
@@ -31,6 +31,8 @@ Decisions below are locked unless the owner changes them. Temporary defaults are
 | D-18 | Hosting: VPS. Contact form: keep Web3Forms for now. | Owner |
 | D-19 | Old website prices are provisional seed data only. Admin can update prices. Do not invent new prices. | Owner |
 | D-20 | Testimonials must be real and approved. Do not fabricate. Hide the homepage section until approved. | Owner / IA |
+| D-30 | *(2026-09-30)* No same-day notice. Today's slots start from the next 30-minute start that has not begun; past dates and started slots are never bookable (online or admin). Replaces D-05. | Owner |
+| D-31 | *(2026-09-30)* `COMPLETED` and `NO_SHOW` can only be set once the session has started, so a future slot is never reopened early. | Owner |
 
 ---
 

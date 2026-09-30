@@ -26,7 +26,7 @@ Timezone: Africa/Lagos. Store UTC.
 
 ### Same-day online
 
-Allowed if the slot starts at least 2 hours from now.
+Allowed for any slot that has not started yet (no minimum notice, D-30). Past dates and started slots are never offered or accepted.
 
 ### Sources
 
@@ -53,7 +53,7 @@ NO_SHOW          customer did not attend
 
 Statuses that block availability: `TEMPORARY_HOLD`, `PENDING`, `CONFIRMED`.
 
-Statuses that do not block: `CANCELLED`, expired holds, `NO_SHOW` after the appointment time has passed.
+Statuses that do not block: `CANCELLED`, expired holds, `COMPLETED`, `NO_SHOW`. `COMPLETED` / `NO_SHOW` can only be set once the session has started (D-31), so they never reopen a future slot.
 
 ---
 
@@ -64,7 +64,7 @@ Statuses that do not block: `CANCELLED`, expired holds, `NO_SHOW` after the appo
 2. Frontend requests available slots
 3. Backend generates 30-minute start times inside operating hours
 4. Each candidate occupies [start, start + package.duration)
-5. Reject if it overruns closing time, overlaps a blocking booking, or violates 2-hour notice
+5. Reject if it overruns closing time, overlaps a blocking booking, or has already started
 6. Customer selects a slot
 7. Backend creates TEMPORARY_HOLD (15 minutes)
 8. Backend PricingService applies 5% online discount
@@ -117,7 +117,9 @@ Customers cannot self-cancel. Admin handles exceptions.
 
 ## 6. Availability algorithm
 
-Inputs: date, package duration, resource id, operating hours, existing blocking bookings, active holds, now + 2 hours for same-day.
+Inputs: date, package duration, resource id, operating hours, existing blocking bookings, active holds, now (starts must be after now).
+
+Database backstop: the `Booking_no_overlap` exclusion constraint (`prisma/sql/booking-overlap-exclude.sql`, applied with `npm run prisma:constraints`) rejects overlapping `TEMPORARY_HOLD` / `PENDING` / `CONFIRMED` rows on the same resource. Because it counts holds regardless of expiry, `lockStudioResource` cancels expired holds before each booking write.
 
 Conflict:
 

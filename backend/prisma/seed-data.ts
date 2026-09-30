@@ -519,7 +519,7 @@ export function buildSeedSettings(env: NodeJS.ProcessEnv): Record<string, string
     "booking.slotIncrementMinutes": "30",
     "booking.bufferMinutes": "0",
     "booking.holdDurationMinutes": "15",
-    "booking.sameDayMinimumNoticeMinutes": "120",
+    "booking.sameDayMinimumNoticeMinutes": "0",
     "booking.timezone": "Africa/Lagos",
 
     // notifications.* (admin-only)

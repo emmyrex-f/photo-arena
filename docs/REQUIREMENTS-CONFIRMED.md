@@ -20,7 +20,7 @@
 - 30-minute slot increment
 - No buffer
 - Package occupies full duration
-- Same-day online booking allowed with 2-hour minimum notice
+- Same-day online booking allowed from the next unstarted slot, no minimum notice (changed 2026-09-30, see D-30)
 - Do not design for simultaneous sessions now
 - Schema includes `StudioResource` so more rooms can be added later
 

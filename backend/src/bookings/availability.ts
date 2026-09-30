@@ -1,7 +1,7 @@
 export const BOOKING_RULES = {
   slotIncrementMinutes: 30,
   bufferMinutes: 0,
-  sameDayMinimumNoticeMinutes: 120,
+  sameDayMinimumNoticeMinutes: 0,
   holdDurationMinutes: 15,
   timezone: "Africa/Lagos",
 } as const;
@@ -180,9 +180,16 @@ export function slotFits(
   durationMinutes: number,
   now: Date,
   existing: Array<{ startTime: Date; endTime: Date }>,
-  options?: { requireSameDayNotice?: boolean; cmsHours?: Record<string, string> | null },
+  options?: {
+    requireSameDayNotice?: boolean;
+    /** Only for re-placing an already-held booking (payment confirmation), never for new bookings. */
+    allowStarted?: boolean;
+    cmsHours?: Record<string, string> | null;
+  },
 ): boolean {
-  const requireSameDayNotice = options?.requireSameDayNotice ?? true;
+  const allowStarted = options?.allowStarted ?? false;
+  const requireSameDayNotice = !allowStarted && (options?.requireSameDayNotice ?? true);
+  if (!allowStarted && start.getTime() <= now.getTime()) return false;
   const end = new Date(start.getTime() + durationMinutes * 60_000);
   const ymd = toLagosYmd(start);
   const hours = openingHoursForYmd(ymd, options?.cmsHours);
