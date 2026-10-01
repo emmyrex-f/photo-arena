@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { ChevronLeft, ChevronRight, FileText, ImageIcon, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
 import { Badge } from "../../admin/components/ui/badge";
 import { Button } from "../../admin/components/ui/button";
+import { useModal } from "../../admin/components/ui/confirm-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,6 +36,7 @@ const PAGE_SIZE = 10;
 
 export function AdminBlogPage() {
   const api = useAdminApi();
+  const modal = useModal();
   const [params, setParams] = useSearchParams();
   const q = (params.get("q") ?? "").trim();
   const page = Math.max(1, Number(params.get("page") || "1") || 1);
@@ -93,7 +95,15 @@ export function AdminBlogPage() {
   }
 
   async function removePost(post: BlogPost) {
-    if (!window.confirm(`Delete “${post.title}”?`)) return;
+    const ok = await modal.confirm({
+      title: "Delete Blog Post",
+      description: `Are you sure you want to delete “${post.title}”? This action cannot be undone.`,
+      confirmLabel: "Delete post",
+      destructive: true,
+      tone: "danger",
+      icon: "trash",
+    });
+    if (!ok) return;
     setBusyId(post.id);
     try {
       await api.blog.remove(post.id);

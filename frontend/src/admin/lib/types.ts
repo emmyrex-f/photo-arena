@@ -211,6 +211,27 @@ export type GalleryImage = {
   createdAt?: string;
 };
 
+export type PresignedUploadResponse = {
+  provider: "cloudinary" | "local" | "r2";
+  uploadUrl: string;
+  fields?: Record<string, string | number>;
+  publicId?: string;
+  folder?: string;
+  resourceType?: "image" | "video" | "auto";
+  direct: boolean;
+};
+
+export type CompletePresignedPayload = {
+  url: string;
+  thumbUrl?: string;
+  filename: string;
+  width?: number;
+  height?: number;
+  kind?: MediaKind;
+  category?: string;
+  alt?: string;
+};
+
 export type MediaUsage = {
   id: string;
   mediaId: string;
@@ -387,24 +408,37 @@ export type DashboardData = {
     upcomingTomorrowCount: number;
   };
   todaysBookings: DashboardTodayBooking[];
-  weeklyRevenue: {
-    totalKobo: number;
-    deltaPct: number | null;
-    weekStart: string;
-    weekEnd: string;
-    earliestWeekStart: string;
-    latestWeekStart: string;
-    canGoBack: boolean;
-    canGoForward: boolean;
-    isCurrentWeek: boolean;
-    daily: Array<{ date: string; label: string; revenueKobo: number }>;
-  };
+  weeklyRevenue: DashboardRevenueData;
   needsAttention: DashboardAttentionItem[];
   tomorrowsBookings: DashboardTomorrowBooking[];
   upcomingBookings: DashboardUpcomingBooking[];
 };
 
-export type DashboardWeeklyRevenue = DashboardData["weeklyRevenue"];
+export type DashboardRevenuePoint = {
+  date: string;
+  label: string;
+  sublabel?: string;
+  revenueKobo: number;
+};
+
+export type DashboardRevenueData = {
+  period?: "week" | "month";
+  totalKobo: number;
+  deltaPct: number | null;
+  weekStart?: string;
+  weekEnd?: string;
+  earliestWeekStart?: string;
+  latestWeekStart?: string;
+  month?: string;
+  monthLabel?: string;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  isCurrentWeek?: boolean;
+  isCurrentMonth?: boolean;
+  daily: DashboardRevenuePoint[];
+};
+
+export type DashboardWeeklyRevenue = DashboardRevenueData;
 
 
 export type AvailabilityResponse = {

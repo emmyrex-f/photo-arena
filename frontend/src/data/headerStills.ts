@@ -18,6 +18,34 @@ export const BOOK_PAGE_HEADER: HeaderStill = {
   objectPosition: "65% 20%",
 };
 
+export const ABOUT_PAGE_SLIDES: HeaderStill[] = [
+  { src: "/gallery/09-portraits.jpg", objectPosition: "60% 22%" },
+  { src: "/media/about.jpg", objectPosition: "center 30%" },
+  { src: "/gallery/07-portraits.jpg", objectPosition: "55% 20%" },
+  { src: "/gallery/12-corporate.jpg", objectPosition: "62% 14%" },
+];
+
+export const PORTFOLIO_PAGE_SLIDES: HeaderStill[] = [
+  PORTFOLIO_PAGE_HEADER,
+  { src: "/gallery/06-portraits.jpg", objectPosition: "52% 20%" },
+  { src: "/gallery/02-birthdays.jpg", objectPosition: "center 14%" },
+  { src: "/gallery/18-kids.jpg", objectPosition: "center 14%" },
+];
+
+export const BOOK_PAGE_SLIDES: HeaderStill[] = [
+  BOOK_PAGE_HEADER,
+  { src: "/gallery/08-portraits.jpg", objectPosition: "55% 22%" },
+  { src: "/gallery/13-corporate.jpg", objectPosition: "60% 16%" },
+  { src: "/gallery/01-birthdays.jpg", objectPosition: "center 14%" },
+];
+
+/** Home About carousel extras, shown after the `about.imageUrl` photo until the CMS sets `about.images`. */
+export const HOME_ABOUT_EXTRA_IMAGES = [
+  "/media/sets/curated-cove.jpg",
+  "/media/booths/swing-attitude.jpg",
+  "/media/sets/aurora-wave.jpg",
+];
+
 const BY_PATH: Record<string, HeaderStill> = {
   "/about": { src: "/gallery/09-portraits.jpg", objectPosition: "60% 22%" },
   "/book": BOOK_PAGE_HEADER,

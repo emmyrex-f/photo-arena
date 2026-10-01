@@ -33,10 +33,8 @@ async function main() {
   console.log("Starting verification of Admin Email Editing...");
   const prisma = new PrismaClient();
 
-  try {
-    const desk = await api<{ email: string }>("GET", "/auth/desk-email");
-    assert.equal(desk.status, 200, `desk-email ${desk.status}`);
-    const ownerEmail = desk.data.email.trim().toLowerCase();
+    const ownerUser = await prisma.user.findFirst({ where: { role: "OWNER" } });
+    const ownerEmail = (ownerUser?.email ?? process.env.SEED_OWNER_EMAIL ?? "owner@photoarenang.com").trim().toLowerCase();
     const ownerPassword = process.env.SEED_OWNER_PASSWORD ?? "changeme";
 
     // 1. Owner Login

@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import {
   AlertTriangle,
   CheckCircle2,
-  ExternalLink,
   ImageIcon,
-  Package as PackageIcon,
   Pencil,
   Plus,
   Trash2,
@@ -13,11 +11,21 @@ import {
 import { ActiveBadge } from "../../admin/components/ui/status-badge";
 import { Badge } from "../../admin/components/ui/badge";
 import { Button } from "../../admin/components/ui/button";
+import { useModal } from "../../admin/components/ui/confirm-dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "../../admin/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../../admin/components/ui/dialog";
 import { EmptyState } from "../../admin/components/ui/empty-state";
 import { ErrorBanner } from "../../admin/components/ui/error-banner";
 import { Input } from "../../admin/components/ui/input";
 import { Label } from "../../admin/components/ui/label";
+import { Pagination } from "../../admin/components/ui/pagination";
 import {
   Select,
   SelectContent,
@@ -37,7 +45,11 @@ import {
 } from "../../admin/components/ui/table";
 import { Textarea } from "../../admin/components/ui/textarea";
 import { toast } from "../../admin/components/ui/toaster";
-import { ServiceMediaPicker } from "../../admin/components/ServiceMediaPicker";
+import {
+  ServiceMediaPicker,
+  type SelectedServiceMedia,
+} from "../../admin/components/ServiceMediaPicker";
+import { CreateBookingDialog } from "../../components/admin/CreateBookingDialog";
 import { useAdminApi } from "../../admin/lib/adminApi";
 import {
   formatLagosDate,
@@ -55,8 +67,10 @@ import {
 } from "../../admin/lib/types";
 import { ApiError, errorMessage } from "../../lib/api";
 import { cn } from "../../lib/cn";
+import { formatDuration } from "../../lib/datetime";
+import { serviceHeroSrc } from "../../data/serviceMedia";
 
-type TabKey = "packages" | "description" | "media" | "settings";
+type TabKey = "packages" | "description" | "settings";
 
 type PackageForm = {
   id: string | null;
@@ -74,10 +88,12 @@ type ServiceForm = {
   description: string;
   kind: ServiceKind;
   isActive: boolean;
+  media: SelectedServiceMedia | null;
 };
 
-const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120, 180];
+const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120, 180, 240, 300, 360, 480];
 const COUNT_OPTIONS = [0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 14, 15, 20, 24, 30];
+const PACKAGES_PAGE_SIZE = 7;
 
 /** Display-only mirror of PricingService for ONLINE — never used to charge. */
 function onlinePriceKobo(studioKobo: number, discountBps: number): number {
@@ -98,6 +114,11 @@ function packageLabel(pkg: Package): string {
 
 function durationLabel(minutes: number): string {
   return `${minutes} min${minutes === 1 ? "" : "s"}`;
+}
+
+/** Display mirror of the backend rule — rentals, booths and backdrops are hired by time. */
+function usesOutfits(kind: ServiceKind): boolean {
+  return kind === "SESSION" || kind === "SET";
 }
 
 function kindLabel(kind: ServiceKind): string {
@@ -154,11 +175,11 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 
 export function AdminServicesPage() {
   const api = useAdminApi();
+  const modal = useModal();
   const [params, setParams] = useSearchParams();
 
   const selectedId = params.get("id");
   const tab = (params.get("tab") as TabKey | null) || "packages";
-  const editingPackageId = params.get("pkg");
 
   const [services, setServices] = useState<Service[]>([]);
   const [pricingRules, setPricingRules] = useState<PricingRule[]>([]);
@@ -168,12 +189,21 @@ export function AdminServicesPage() {
   const [packageForm, setPackageForm] = useState<PackageForm | null>(null);
   const [serviceForm, setServiceForm] = useState<ServiceForm | null>(null);
   const [creatingService, setCreatingService] = useState(false);
-  const [newService, setNewService] = useState({
+  const [bookModalOpen, setBookModalOpen] = useState(false);
+  const [newService, setNewService] = useState<{
+    name: string;
+    summary: string;
+    description: string;
+    kind: ServiceKind;
+    startingPriceNaira: string;
+    media: SelectedServiceMedia | null;
+  }>({
     name: "",
     summary: "",
     description: "",
-    kind: "SESSION" as ServiceKind,
+    kind: "SESSION",
     startingPriceNaira: "20000",
+    media: null,
   });
 
   const setParam = useCallback(
@@ -226,10 +256,16 @@ export function AdminServicesPage() {
     if (selected && selected.id !== selectedId) setParam({ id: selected.id });
   }, [selected, selectedId, setParam]);
 
+  // Clean up any legacy pkg param from URL
+  useEffect(() => {
+    if (params.has("pkg")) {
+      setParam({ pkg: null });
+    }
+  }, [params, setParam]);
+
   useEffect(() => {
     if (!selected) {
       setServiceForm(null);
-      setPackageForm(null);
       return;
     }
     setServiceForm({
@@ -238,18 +274,16 @@ export function AdminServicesPage() {
       description: selected.description,
       kind: selected.kind,
       isActive: selected.isActive,
+      media: selected.media
+        ? {
+            id: selected.media.id,
+            url: selected.media.url,
+            thumbUrl: selected.media.thumbUrl,
+            alt: selected.media.alt,
+          }
+        : null,
     });
-    if (editingPackageId === "new") {
-      setPackageForm(emptyPackageForm());
-      return;
-    }
-    if (editingPackageId) {
-      const pkg = selected.packages?.find((p) => p.id === editingPackageId);
-      setPackageForm(pkg ? formFromPackage(pkg) : null);
-      return;
-    }
-    setPackageForm(null);
-  }, [selected, editingPackageId]);
+  }, [selected]);
 
   const onlineDiscountBps = useMemo(() => {
     const rule = pricingRules.find((r) => r.key === "ONLINE_DISCOUNT" && r.isActive);
@@ -260,6 +294,25 @@ export function AdminServicesPage() {
     () => [...(selected?.packages ?? [])].sort((a, b) => a.sortOrder - b.sortOrder),
     [selected],
   );
+
+  const [packagesPage, setPackagesPage] = useState(1);
+
+  useEffect(() => {
+    setPackageForm(null);
+    setPackagesPage(1);
+  }, [selected?.id]);
+
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(packages.length / PACKAGES_PAGE_SIZE));
+    if (packagesPage > totalPages) {
+      setPackagesPage(totalPages);
+    }
+  }, [packages.length, packagesPage]);
+
+  const paginatedPackages = useMemo(() => {
+    const start = (packagesPage - 1) * PACKAGES_PAGE_SIZE;
+    return packages.slice(start, start + PACKAGES_PAGE_SIZE);
+  }, [packages, packagesPage]);
 
   const lowestStudioKobo = useMemo(() => {
     const active = packages.filter((p) => p.isActive);
@@ -300,12 +353,22 @@ export function AdminServicesPage() {
   }
 
   async function deletePackage(pkg: Package) {
-    if (!window.confirm(`Delete package “${packageLabel(pkg)}”?`)) return;
+    const ok = await modal.confirm({
+      title: "Delete Package",
+      description: `Are you sure you want to delete package “${packageLabel(pkg)}”?`,
+      confirmLabel: "Delete package",
+      destructive: true,
+      tone: "danger",
+      icon: "trash",
+    });
+    if (!ok) return;
     setSaving(true);
     try {
       await api.services.removePackage(pkg.id);
       toast.success("Package removed");
-      setParam({ pkg: null });
+      if (packageForm?.id === pkg.id) {
+        setPackageForm(null);
+      }
       await refreshKeepSelection();
     } catch (err) {
       toast.error(errorMessage(err));
@@ -315,12 +378,21 @@ export function AdminServicesPage() {
   }
 
   async function deleteService(service: Service) {
-    if (!window.confirm(`Delete service “${service.name}”?`)) return;
+    const ok = await modal.confirm({
+      title: "Delete Service",
+      description: `Are you sure you want to delete service “${service.name}” and all associated packages?`,
+      confirmLabel: "Delete service",
+      destructive: true,
+      tone: "danger",
+      icon: "trash",
+    });
+    if (!ok) return;
     setSaving(true);
     try {
       await api.services.remove(service.id);
       toast.success("Service removed");
-      setParam({ id: null, pkg: null, tab: null });
+      setPackageForm(null);
+      setParam({ id: null, tab: null });
       await load();
     } catch (err) {
       toast.error(errorMessage(err));
@@ -338,7 +410,7 @@ export function AdminServicesPage() {
       return;
     }
     const durationMinutes = Number(packageForm.durationMinutes);
-    const outfitCount = Number(packageForm.outfitCount);
+    const outfitCount = usesOutfits(selected.kind) ? Number(packageForm.outfitCount) : NaN;
     const backdropCount = Number(packageForm.backdropCount);
     const editedPhotoCount = Number(packageForm.editedPhotoCount);
     if (!Number.isFinite(durationMinutes) || durationMinutes < 15) {
@@ -348,7 +420,7 @@ export function AdminServicesPage() {
     const name =
       Number.isFinite(outfitCount) && outfitCount > 0
         ? `${outfitCount} Outfit${outfitCount === 1 ? "" : "s"}`
-        : `${durationMinutes} min`;
+        : formatDuration(durationMinutes);
     const includes = [
       Number.isFinite(outfitCount) && outfitCount > 0
         ? `${outfitCount} outfit${outfitCount === 1 ? "" : "s"}`
@@ -382,7 +454,7 @@ export function AdminServicesPage() {
         await api.services.createPackage(selected.id, body);
         toast.success("Package created");
       }
-      setParam({ pkg: null });
+      setPackageForm(null);
       await refreshKeepSelection();
     } catch (err) {
       toast.error(errorMessage(err));
@@ -402,6 +474,7 @@ export function AdminServicesPage() {
         description: serviceForm.description.trim(),
         kind: serviceForm.kind,
         isActive: serviceForm.isActive,
+        mediaId: serviceForm.media?.id ?? null,
         startingPriceKobo: lowestStudioKobo || selected.startingPriceKobo,
       });
       toast.success("Service saved");
@@ -434,6 +507,7 @@ export function AdminServicesPage() {
         description: newService.description.trim(),
         startingPriceKobo,
         isActive: true,
+        mediaId: newService.media?.id ?? null,
       });
       toast.success("Service created");
       setCreatingService(false);
@@ -443,9 +517,10 @@ export function AdminServicesPage() {
         description: "",
         kind: "SESSION",
         startingPriceNaira: "20000",
+        media: null,
       });
       await load();
-      setParam({ id: created.id, tab: "packages", pkg: null });
+      setParam({ id: created.id, tab: "packages" });
     } catch (err) {
       toast.error(errorMessage(err));
     } finally {
@@ -520,12 +595,6 @@ export function AdminServicesPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" variant="outline" asChild>
-            <Link to="/services" target="_blank" rel="noreferrer">
-              <ExternalLink className="h-4 w-4" />
-              View Public Site
-            </Link>
-          </Button>
           <Button type="button" onClick={() => setCreatingService(true)}>
             <Plus strokeWidth={1.5} />
             Add Service
@@ -536,72 +605,125 @@ export function AdminServicesPage() {
       <ErrorBanner message={error} onRetry={() => void load()} retrying={loading} />
 
       {creatingService ? (
-        <Card>
-          <CardHeader className="p-admin-card-sm">
-            <CardTitle className="font-display text-lg font-normal">New Service</CardTitle>
+        <Card className="overflow-hidden border-border shadow-md animate-in fade-in-0 duration-200">
+          <CardHeader className="border-b border-border bg-muted/20 p-admin-card-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="font-display text-xl font-normal">New Service</CardTitle>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Create a new photography service or studio session category with custom details and thumbnail.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setCreatingService(false)}
+                className="text-muted-foreground"
+              >
+                Close
+              </Button>
+            </div>
           </CardHeader>
-          <CardContent className="p-admin-card-sm pt-0">
-            <form className="grid gap-3 sm:grid-cols-2" onSubmit={(e) => void createService(e)}>
-              <div className="space-y-1.5 sm:col-span-2">
-                <Label htmlFor="new-service-name">Name</Label>
-                <Input
-                  id="new-service-name"
-                  value={newService.name}
-                  onChange={(e) => setNewService((s) => ({ ...s, name: e.target.value }))}
-                  placeholder="e.g. Personal / Birthday Shoots"
-                  required
-                />
+          <CardContent className="p-admin-card-sm sm:p-admin-card">
+            <form onSubmit={(e) => void createService(e)}>
+              <div className="grid gap-6 lg:grid-cols-12">
+                {/* Left Column: Core Service Details */}
+                <div className="space-y-4 lg:col-span-7">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="new-service-name">Service Name</Label>
+                    <Input
+                      id="new-service-name"
+                      value={newService.name}
+                      onChange={(e) => setNewService((s) => ({ ...s, name: e.target.value }))}
+                      placeholder="e.g. Personal / Birthday Shoots"
+                      required
+                    />
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <Label>Category Type</Label>
+                      <Select
+                        value={newService.kind}
+                        onValueChange={(v) =>
+                          setNewService((s) => ({ ...s, kind: v as ServiceKind }))
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {SERVICE_KINDS.map((k) => (
+                            <SelectItem key={k} value={k}>
+                              {kindLabel(k)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="new-service-price">Starting price (₦)</Label>
+                      <Input
+                        id="new-service-price"
+                        inputMode="numeric"
+                        value={newService.startingPriceNaira}
+                        onChange={(e) =>
+                          setNewService((s) => ({ ...s, startingPriceNaira: e.target.value }))
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="new-service-summary">Summary / Tagline</Label>
+                    <Input
+                      id="new-service-summary"
+                      value={newService.summary}
+                      onChange={(e) => setNewService((s) => ({ ...s, summary: e.target.value }))}
+                      placeholder="Short card copy shown in previews"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="new-service-description">Full Description</Label>
+                    <Textarea
+                      id="new-service-description"
+                      rows={4}
+                      value={newService.description}
+                      onChange={(e) =>
+                        setNewService((s) => ({ ...s, description: e.target.value }))
+                      }
+                      placeholder="Detailed overview of what clients get in this shoot category..."
+                      required
+                    />
+                  </div>
+                </div>
+
+                {/* Right Column: Thumbnail Media & File Picker */}
+                <div className="space-y-3 rounded-xl border border-border bg-card p-4 lg:col-span-5">
+                  <div>
+                    <h4 className="text-sm font-semibold text-foreground">Service Thumbnail</h4>
+                    <p className="text-xs text-muted-foreground">
+                      Upload a new photo or select an existing image from your media library.
+                    </p>
+                  </div>
+                  <ServiceMediaPicker
+                    enabled={creatingService}
+                    value={newService.media}
+                    onChange={(next) => setNewService((s) => ({ ...s, media: next }))}
+                    previewAlt={newService.name || "New service thumbnail"}
+                  />
+                </div>
               </div>
-              <div className="space-y-1.5">
-                <Label>Type</Label>
-                <Select
-                  value={newService.kind}
-                  onValueChange={(v) => setNewService((s) => ({ ...s, kind: v as ServiceKind }))}
+
+              {/* Action Buttons */}
+              <div className="mt-6 flex items-center justify-end gap-3 border-t border-border pt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setCreatingService(false)}
                 >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {SERVICE_KINDS.map((k) => (
-                      <SelectItem key={k} value={k}>
-                        {kindLabel(k)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="new-service-price">Starting price (₦)</Label>
-                <Input
-                  id="new-service-price"
-                  inputMode="numeric"
-                  value={newService.startingPriceNaira}
-                  onChange={(e) =>
-                    setNewService((s) => ({ ...s, startingPriceNaira: e.target.value }))
-                  }
-                />
-              </div>
-              <div className="space-y-1.5 sm:col-span-2">
-                <Label htmlFor="new-service-summary">Summary</Label>
-                <Input
-                  id="new-service-summary"
-                  value={newService.summary}
-                  onChange={(e) => setNewService((s) => ({ ...s, summary: e.target.value }))}
-                  placeholder="Short card copy"
-                />
-              </div>
-              <div className="space-y-1.5 sm:col-span-2">
-                <Label htmlFor="new-service-description">Description</Label>
-                <Textarea
-                  id="new-service-description"
-                  rows={3}
-                  value={newService.description}
-                  onChange={(e) => setNewService((s) => ({ ...s, description: e.target.value }))}
-                  required
-                />
-              </div>
-              <div className="flex gap-2 sm:col-span-2">
-                <Button type="button" variant="outline" onClick={() => setCreatingService(false)}>
                   Cancel
                 </Button>
                 <Button type="submit" loading={saving}>
@@ -613,7 +735,7 @@ export function AdminServicesPage() {
         </Card>
       ) : null}
 
-      <div className="grid gap-admin-stack xl:grid-cols-[16rem_minmax(0,1fr)_18rem]">
+      <div className="grid gap-admin-stack lg:grid-cols-[16rem_minmax(0,1fr)] xl:grid-cols-[16rem_minmax(0,1fr)_18rem] items-start">
         <Card className="min-w-0 overflow-hidden">
           <CardHeader className="border-b border-border p-admin-card-sm">
             <CardTitle className="text-sm font-medium">All Services</CardTitle>
@@ -636,7 +758,7 @@ export function AdminServicesPage() {
                   <button
                     key={service.id}
                     type="button"
-                    onClick={() => setParam({ id: service.id, pkg: null, tab: "packages" })}
+                    onClick={() => setParam({ id: service.id, tab: "packages" })}
                     className={cn(
                       "flex w-full items-center gap-3 rounded-lg border px-2.5 py-2 text-left transition-colors",
                       active
@@ -645,11 +767,12 @@ export function AdminServicesPage() {
                     )}
                   >
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted">
-                      {service.media?.thumbUrl || service.media?.url ? (
+                      {serviceHeroSrc(service) ? (
                         <img
-                          src={service.media.thumbUrl || service.media.url}
+                          src={serviceHeroSrc(service)}
                           alt=""
-                          className="h-full w-full object-cover"
+                          className="h-full w-full object-cover object-top"
+                          loading="lazy"
                         />
                       ) : (
                         <ImageIcon className="h-4 w-4 text-muted-foreground" />
@@ -680,22 +803,22 @@ export function AdminServicesPage() {
           ) : (
             <>
               <Card>
-                <CardContent className="flex flex-col gap-4 p-admin-card-sm sm:flex-row sm:items-start sm:justify-between">
-                  <div className="flex min-w-0 items-start gap-3">
-                    <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted">
-                      {selected.media?.thumbUrl || selected.media?.url ? (
+                <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex min-w-0 items-center gap-3.5">
+                    <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted border border-border/40">
+                      {serviceHeroSrc(selected) ? (
                         <img
-                          src={selected.media.thumbUrl || selected.media.url}
+                          src={serviceHeroSrc(selected)}
                           alt=""
-                          className="h-full w-full object-cover"
+                          className="h-full w-full object-cover object-top"
                         />
                       ) : (
-                        <ImageIcon className="h-6 w-6 text-muted-foreground" />
+                        <ImageIcon className="h-5 w-5 text-muted-foreground" />
                       )}
                     </div>
-                    <div className="min-w-0 space-y-1">
+                    <div className="min-w-0 space-y-0.5">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h2 className="font-display text-xl font-normal leading-tight">
+                        <h2 className="font-display text-xl font-normal leading-tight text-foreground">
                           {selected.name}
                         </h2>
                         <ActiveBadge active={selected.isActive} />
@@ -703,7 +826,7 @@ export function AdminServicesPage() {
                           <Badge variant="warning">Provisional</Badge>
                         ) : null}
                       </div>
-                      <p className="text-sm text-muted-foreground">
+                      <p className="text-sm text-muted-foreground line-clamp-1">
                         {selected.summary ||
                           `${selected.description.slice(0, 120)}${
                             selected.description.length > 120 ? "…" : ""
@@ -711,16 +834,16 @@ export function AdminServicesPage() {
                       </p>
                     </div>
                   </div>
-                  <div className="flex shrink-0 items-center gap-2">
+                  <div className="flex shrink-0 items-center gap-2 self-start sm:self-center">
                     {selected.isProvisional || selected.packages?.some((p) => p.isProvisional) ? (
                       <Button
                         type="button"
                         size="sm"
-                        className="bg-amber-600 hover:bg-amber-500 text-white"
+                        className="bg-amber-600 hover:bg-amber-500 text-white font-medium shadow-xs"
                         disabled={approving}
                         onClick={() => void onApproveServicePricing(selected.id)}
                       >
-                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
                         {approving ? "Confirming…" : "Confirm Final Pricing"}
                       </Button>
                     ) : null}
@@ -728,9 +851,9 @@ export function AdminServicesPage() {
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => setParam({ tab: "settings", pkg: null })}
+                      onClick={() => setParam({ tab: "settings" })}
                     >
-                      <Pencil className="h-3.5 w-3.5" />
+                      <Pencil className="h-3.5 w-3.5 mr-1" />
                       Edit Service
                     </Button>
                   </div>
@@ -740,13 +863,12 @@ export function AdminServicesPage() {
               <div
                 role="tablist"
                 aria-label="Service sections"
-                className="flex flex-wrap gap-1 border-b border-border"
+                className="flex flex-wrap items-center gap-1 border-b border-border"
               >
                 {(
                   [
                     ["packages", "Packages"],
                     ["description", "Description"],
-                    ["media", "Media"],
                     ["settings", "Settings"],
                   ] as const
                 ).map(([key, label]) => {
@@ -764,7 +886,6 @@ export function AdminServicesPage() {
                       onClick={() =>
                         setParam({
                           tab: key,
-                          pkg: key === "packages" ? editingPackageId : null,
                         })
                       }
                     >
@@ -790,7 +911,7 @@ export function AdminServicesPage() {
                     <Button
                       type="button"
                       size="sm"
-                      onClick={() => setParam({ pkg: "new", tab: "packages" })}
+                      onClick={() => setPackageForm(emptyPackageForm())}
                     >
                       <Plus className="h-3.5 w-3.5" />
                       Add Package
@@ -819,10 +940,10 @@ export function AdminServicesPage() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {packages.map((pkg) => (
+                            {paginatedPackages.map((pkg) => (
                               <TableRow
                                 key={pkg.id}
-                                className={cn(editingPackageId === pkg.id && "bg-muted/40")}
+                                className={cn(packageForm?.id === pkg.id && "bg-muted/40")}
                               >
                                 <TableCell className="font-medium">{packageLabel(pkg)}</TableCell>
                                 <TableCell>{durationLabel(pkg.durationMinutes)}</TableCell>
@@ -850,7 +971,7 @@ export function AdminServicesPage() {
                                       variant="ghost"
                                       size="icon-sm"
                                       aria-label={`Edit ${packageLabel(pkg)}`}
-                                      onClick={() => setParam({ pkg: pkg.id, tab: "packages" })}
+                                      onClick={() => setPackageForm(formFromPackage(pkg))}
                                     >
                                       <Pencil className="h-3.5 w-3.5" />
                                     </Button>
@@ -871,155 +992,21 @@ export function AdminServicesPage() {
                         </Table>
                       </div>
                     )}
+                    {packages.length > PACKAGES_PAGE_SIZE ? (
+                      <div className="border-t border-border px-admin-card-sm py-3">
+                        <Pagination
+                          page={packagesPage}
+                          pageSize={PACKAGES_PAGE_SIZE}
+                          total={packages.length}
+                          onPageChange={setPackagesPage}
+                        />
+                      </div>
+                    ) : null}
                   </CardContent>
                 </Card>
               ) : null}
 
-              {tab === "packages" && packageForm ? (
-                <Card>
-                  <CardHeader className="p-admin-card-sm">
-                    <CardTitle className="font-display text-lg font-normal">
-                      {packageForm.id ? "Edit Package" : "Add Package"}
-                    </CardTitle>
-                    <p className="text-xs text-muted-foreground">
-                      Online price is calculated automatically (
-                      {percentFromBps(onlineDiscountBps)} off) by the system. Do not enter it here.
-                    </p>
-                  </CardHeader>
-                  <CardContent className="p-admin-card-sm pt-0">
-                    <form className="grid gap-3 sm:grid-cols-2" onSubmit={(e) => void savePackage(e)}>
-                      <div className="space-y-1.5">
-                        <Label>Outfit Count</Label>
-                        <Select
-                          value={packageForm.outfitCount}
-                          onValueChange={(v) =>
-                            setPackageForm((f) => (f ? { ...f, outfitCount: v } : f))
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {COUNT_OPTIONS.filter((n) => n >= 1).map((n) => (
-                              <SelectItem key={n} value={String(n)}>
-                                {n}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor="pkg-price">Studio Price (₦)</Label>
-                        <Input
-                          id="pkg-price"
-                          inputMode="numeric"
-                          value={packageForm.priceNaira}
-                          onChange={(e) =>
-                            setPackageForm((f) => (f ? { ...f, priceNaira: e.target.value } : f))
-                          }
-                          required
-                        />
-                        {nairaInputToKobo(packageForm.priceNaira) != null ? (
-                          <p className="text-[11px] text-muted-foreground">
-                            Online preview:{" "}
-                            {formatNairaFromKobo(
-                              onlinePriceKobo(
-                                nairaInputToKobo(packageForm.priceNaira)!,
-                                onlineDiscountBps,
-                              ),
-                            )}
-                          </p>
-                        ) : null}
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label>Duration (minutes)</Label>
-                        <Select
-                          value={packageForm.durationMinutes}
-                          onValueChange={(v) =>
-                            setPackageForm((f) => (f ? { ...f, durationMinutes: v } : f))
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {DURATION_OPTIONS.map((n) => (
-                              <SelectItem key={n} value={String(n)}>
-                                {n}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label>Status</Label>
-                        <Select
-                          value={packageForm.isActive ? "active" : "inactive"}
-                          onValueChange={(v) =>
-                            setPackageForm((f) => (f ? { ...f, isActive: v === "active" } : f))
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="active">Active</SelectItem>
-                            <SelectItem value="inactive">Inactive</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label>Backdrop Count</Label>
-                        <Select
-                          value={packageForm.backdropCount}
-                          onValueChange={(v) =>
-                            setPackageForm((f) => (f ? { ...f, backdropCount: v } : f))
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {COUNT_OPTIONS.map((n) => (
-                              <SelectItem key={n} value={String(n)}>
-                                {n}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label>Edited Photo Count</Label>
-                        <Select
-                          value={packageForm.editedPhotoCount}
-                          onValueChange={(v) =>
-                            setPackageForm((f) => (f ? { ...f, editedPhotoCount: v } : f))
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {COUNT_OPTIONS.filter((n) => n >= 1).map((n) => (
-                              <SelectItem key={n} value={String(n)}>
-                                {n}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="flex gap-2 sm:col-span-2">
-                        <Button type="button" variant="outline" onClick={() => setParam({ pkg: null })}>
-                          Cancel
-                        </Button>
-                        <Button type="submit" loading={saving}>
-                          Save Changes
-                        </Button>
-                      </div>
-                    </form>
-                  </CardContent>
-                </Card>
-              ) : null}
+
 
               {tab === "description" && serviceForm ? (
                 <Card>
@@ -1057,42 +1044,7 @@ export function AdminServicesPage() {
                 </Card>
               ) : null}
 
-              {tab === "media" ? (
-                <Card>
-                  <CardContent className="space-y-4 p-admin-card-sm">
-                    <ServiceMediaPicker
-                      enabled={tab === "media"}
-                      value={
-                        selected.media
-                          ? {
-                              id: selected.media.id,
-                              url: selected.media.url,
-                              thumbUrl: selected.media.thumbUrl,
-                              alt: selected.media.alt,
-                            }
-                          : null
-                      }
-                      onChange={(next) => {
-                        void (async () => {
-                          setSaving(true);
-                          try {
-                            await api.services.update(selected.id, {
-                              mediaId: next?.id ?? null,
-                            });
-                            toast.success(next ? "Media attached" : "Media removed");
-                            await refreshKeepSelection();
-                          } catch (err) {
-                            toast.error(errorMessage(err));
-                          } finally {
-                            setSaving(false);
-                          }
-                        })();
-                      }}
-                      previewAlt={selected.name}
-                    />
-                  </CardContent>
-                </Card>
-              ) : null}
+
 
               {tab === "settings" && serviceForm ? (
                 <Card>
@@ -1101,53 +1053,94 @@ export function AdminServicesPage() {
                   </CardHeader>
                   <CardContent className="p-admin-card-sm pt-0">
                     <form
-                      className="grid gap-3 sm:grid-cols-2"
+                      className="space-y-6"
                       onSubmit={(e) => void saveServiceDetails(e)}
                     >
-                      <div className="space-y-1.5 sm:col-span-2">
-                        <Label htmlFor="svc-name">Name</Label>
-                        <Input
-                          id="svc-name"
-                          value={serviceForm.name}
-                          onChange={(e) =>
-                            setServiceForm((f) => (f ? { ...f, name: e.target.value } : f))
-                          }
-                          required
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label>Type</Label>
-                        <Select
-                          value={serviceForm.kind}
-                          onValueChange={(v) =>
-                            setServiceForm((f) => (f ? { ...f, kind: v as ServiceKind } : f))
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {SERVICE_KINDS.map((k) => (
-                              <SelectItem key={k} value={k}>
-                                {kindLabel(k)}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
-                        <div>
-                          <p className="text-sm font-medium">Active</p>
-                          <p className="text-xs text-muted-foreground">Visible for booking</p>
+                      <div className="grid gap-6 lg:grid-cols-12 items-start">
+                        {/* Left Column: Details + Media Library Gallery */}
+                        <div className="space-y-6 lg:col-span-7">
+                          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                            <div className="space-y-1.5 sm:col-span-5">
+                              <Label htmlFor="svc-name">Name</Label>
+                              <Input
+                                id="svc-name"
+                                value={serviceForm.name}
+                                onChange={(e) =>
+                                  setServiceForm((f) => (f ? { ...f, name: e.target.value } : f))
+                                }
+                                required
+                              />
+                            </div>
+                            <div className="space-y-1.5 sm:col-span-4">
+                              <Label>Type</Label>
+                              <Select
+                                value={serviceForm.kind}
+                                onValueChange={(v) =>
+                                  setServiceForm((f) => (f ? { ...f, kind: v as ServiceKind } : f))
+                                }
+                              >
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {SERVICE_KINDS.map((k) => (
+                                    <SelectItem key={k} value={k}>
+                                      {kindLabel(k)}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="sm:col-span-3">
+                              <div className="flex h-9 items-center justify-between gap-2.5 rounded-lg border border-border px-3 py-1.5 bg-muted/20">
+                                <div className="min-w-0">
+                                  <p className="text-xs font-medium leading-none">Active</p>
+                                  <p className="text-[10px] text-muted-foreground truncate">Visible for booking</p>
+                                </div>
+                                <Switch
+                                  checked={serviceForm.isActive}
+                                  onCheckedChange={(v) =>
+                                    setServiceForm((f) => (f ? { ...f, isActive: v } : f))
+                                  }
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Gallery Picker moved to the left */}
+                          <div className="space-y-3 rounded-xl border border-border bg-card p-4">
+                            <div>
+                              <h4 className="text-sm font-semibold text-foreground">Media Library</h4>
+                              <p className="text-xs text-muted-foreground">
+                                Choose an image from the library or upload a new photo.
+                              </p>
+                            </div>
+                            <ServiceMediaPicker
+                              enabled={true}
+                              value={serviceForm.media}
+                              onChange={(next) =>
+                                setServiceForm((f) => (f ? { ...f, media: next } : f))
+                              }
+                              hidePreview={true}
+                            />
+                          </div>
                         </div>
-                        <Switch
-                          checked={serviceForm.isActive}
-                          onCheckedChange={(v) =>
-                            setServiceForm((f) => (f ? { ...f, isActive: v } : f))
-                          }
-                        />
+
+                        {/* Right Column: Service Thumbnail Preview */}
+                        <div className="space-y-3 rounded-xl border border-border bg-card p-4 lg:col-span-5 sticky top-4">
+                          <ServiceMediaPicker
+                            enabled={true}
+                            value={serviceForm.media}
+                            onChange={(next) =>
+                              setServiceForm((f) => (f ? { ...f, media: next } : f))
+                            }
+                            previewAlt={serviceForm.name || selected.name}
+                            previewOnly={true}
+                          />
+                        </div>
                       </div>
-                      <div className="flex gap-2 sm:col-span-2">
+
+                      <div className="flex items-center justify-between border-t border-border pt-4">
                         <Button type="submit" loading={saving}>
                           Save Settings
                         </Button>
@@ -1174,8 +1167,8 @@ export function AdminServicesPage() {
             <>
               <Card className="overflow-hidden">
                 <div className="relative aspect-[4/3] bg-muted">
-                  {selected.media?.url ? (
-                    <img src={selected.media.url} alt="" className="h-full w-full object-cover" />
+                  {serviceHeroSrc(selected) ? (
+                    <img src={serviceHeroSrc(selected)} alt="" className="h-full w-full object-cover object-top" />
                   ) : (
                     <div className="flex h-full items-center justify-center">
                       <ImageIcon className="h-10 w-10 text-muted-foreground/40" />
@@ -1214,14 +1207,12 @@ export function AdminServicesPage() {
                       <li className="text-sm text-muted-foreground">No active packages</li>
                     ) : null}
                   </ul>
-                  <Button type="button" className="w-full" asChild>
-                    <Link
-                      to={`/book?service=${encodeURIComponent(selected.slug)}`}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Book Now
-                    </Link>
+                  <Button
+                    type="button"
+                    className="w-full"
+                    onClick={() => setBookModalOpen(true)}
+                  >
+                    Book Now
                   </Button>
                 </CardContent>
               </Card>
@@ -1253,35 +1244,195 @@ export function AdminServicesPage() {
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardHeader className="p-admin-card-sm pb-2">
-                  <CardTitle className="text-sm font-medium">Quick Actions</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2 p-admin-card-sm pt-0">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full justify-start"
-                    onClick={() => setParam({ tab: "media", pkg: null })}
-                  >
-                    <PackageIcon className="h-4 w-4" />
-                    Manage Media
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full justify-start border-destructive text-destructive hover:bg-destructive/10"
-                    onClick={() => void deleteService(selected)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    Delete Service
-                  </Button>
-                </CardContent>
-              </Card>
             </>
           ) : null}
         </div>
       </div>
+
+      {selected ? (
+        <CreateBookingDialog
+          open={bookModalOpen}
+          onOpenChange={setBookModalOpen}
+          defaultServiceId={selected.id}
+          defaultPackageId={packages.find((p) => p.isActive)?.id}
+          onSuccess={() => {
+            toast.success("Booking created successfully!");
+          }}
+        />
+      ) : null}
+      {/* Edit / Add Package Dialog */}
+      <Dialog
+        open={Boolean(packageForm)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPackageForm(null);
+          }
+        }}
+      >
+        <DialogContent
+          className="max-w-xl sm:max-w-2xl"
+          onPointerDownOutside={(e) => e.preventDefault()}
+          onInteractOutside={(e) => e.preventDefault()}
+        >
+          {packageForm ? (
+            <form onSubmit={(e) => void savePackage(e)} className="space-y-4">
+              <DialogHeader>
+                <DialogTitle>
+                  {packageForm.id ? "Edit Package" : "Add Package"}
+                </DialogTitle>
+                <DialogDescription>
+                  Online price is calculated automatically ({percentFromBps(onlineDiscountBps)} off) by the system. Do not enter it here.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="grid gap-4 sm:grid-cols-2 py-2">
+                {selected && usesOutfits(selected.kind) ? (
+                <div className="space-y-1.5">
+                  <Label>Outfit Count</Label>
+                  <Select
+                    value={packageForm.outfitCount}
+                    onValueChange={(v) =>
+                      setPackageForm((f) => (f ? { ...f, outfitCount: v } : f))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {COUNT_OPTIONS.filter((n) => n >= 1).map((n) => (
+                        <SelectItem key={n} value={String(n)}>
+                          {n}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                ) : null}
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="pkg-price">Studio Price (₦)</Label>
+                  <Input
+                    id="pkg-price"
+                    inputMode="numeric"
+                    value={packageForm.priceNaira}
+                    onChange={(e) =>
+                      setPackageForm((f) => (f ? { ...f, priceNaira: e.target.value } : f))
+                    }
+                    required
+                  />
+                  {nairaInputToKobo(packageForm.priceNaira) != null ? (
+                    <p className="text-[11px] text-muted-foreground">
+                      Online preview:{" "}
+                      {formatNairaFromKobo(
+                        onlinePriceKobo(
+                          nairaInputToKobo(packageForm.priceNaira)!,
+                          onlineDiscountBps,
+                        ),
+                      )}
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>Duration</Label>
+                  <Select
+                    value={packageForm.durationMinutes}
+                    onValueChange={(v) =>
+                      setPackageForm((f) => (f ? { ...f, durationMinutes: v } : f))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {DURATION_OPTIONS.map((n) => (
+                        <SelectItem key={n} value={String(n)}>
+                          {formatDuration(n)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>Status</Label>
+                  <Select
+                    value={packageForm.isActive ? "active" : "inactive"}
+                    onValueChange={(v) =>
+                      setPackageForm((f) => (f ? { ...f, isActive: v === "active" } : f))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="inactive">Inactive</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>Backdrop Count</Label>
+                  <Select
+                    value={packageForm.backdropCount}
+                    onValueChange={(v) =>
+                      setPackageForm((f) => (f ? { ...f, backdropCount: v } : f))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {COUNT_OPTIONS.map((n) => (
+                        <SelectItem key={n} value={String(n)}>
+                          {n}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>Edited Photo Count</Label>
+                  <Select
+                    value={packageForm.editedPhotoCount}
+                    onValueChange={(v) =>
+                      setPackageForm((f) => (f ? { ...f, editedPhotoCount: v } : f))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {COUNT_OPTIONS.filter((n) => n >= 1).map((n) => (
+                        <SelectItem key={n} value={String(n)}>
+                          {n}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <DialogFooter className="gap-2 sm:gap-0">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setPackageForm(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" loading={saving}>
+                  Save Changes
+                </Button>
+              </DialogFooter>
+            </form>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

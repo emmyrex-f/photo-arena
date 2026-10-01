@@ -18,6 +18,7 @@ import {
   type PublicService,
 } from "../lib/publicApi";
 import { serviceHeroSrc, servicesHeroImage } from "../data/serviceMedia";
+import { VideoReelsRateCard } from "../components/booking/VideoReelsRateCard";
 import { usePolicyValues } from "../lib/policies";
 import { Seo } from "../lib/seo";
 import { usePublicData } from "../lib/usePublicData";
@@ -149,68 +150,94 @@ export function ServicesPage() {
         </Section>
       ) : null}
 
-      {groups.map((group) => {
+      {groups.map((group, groupIdx) => {
         const labels = SERVICE_KIND_LABELS[group.kind];
-        return (
-          <Section key={group.kind} className={group.kind === "SESSION" ? undefined : "bg-surface/30"}>
-            <Container>
-              <Eyebrow>{labels.eyebrow}</Eyebrow>
-              <Heading as="h2">{labels.title}</Heading>
-              <p className="mt-stack max-w-2xl text-sm text-text-secondary">{labels.blurb}</p>
+        const isAlt = groupIdx % 2 === 1;
+        const groupServices =
+          group.kind === "SESSION"
+            ? group.services.filter((s) => s.slug !== "video-reels")
+            : group.services;
+        const videoReelsService =
+          group.kind === "SESSION"
+            ? group.services.find((s) => s.slug === "video-reels")
+            : null;
 
-              <div className="mt-stack-xl space-y-stack-2xl">
-                {group.services.map((service) => {
-                  const image = serviceHeroSrc(service);
-                  return (
-                  <article
-                    key={service.id}
-                    id={service.slug}
-                    className={`scroll-mt-28 ${
-                      highlightedSlug === service.slug
-                        ? "rounded-sm outline outline-1 outline-accent outline-offset-8"
-                        : ""
-                    }`}
-                  >
-                    {image ? (
-                      <img
-                        src={image}
-                        alt={`${service.name} at Photo Arena`}
-                        className="mb-stack aspect-[4/5] w-full max-w-md object-cover object-top sm:max-w-xl"
-                      />
-                    ) : null}
-                    <div className="mb-stack-sm flex flex-wrap items-end justify-between gap-control">
-                      <div>
-                        <h3 className="font-display text-2xl">{service.name}</h3>
-                        {service.summary ? (
-                          <p className="mt-2 max-w-xl text-sm text-text-secondary">{service.summary}</p>
+        return (
+          <div key={group.kind}>
+            <Section
+              className={`border-b border-border/30 transition-colors ${
+                isAlt ? "bg-[#f6f6f4] dark:bg-stone-950/70" : "bg-white dark:bg-stone-900"
+              }`}
+            >
+              <Container>
+                <Eyebrow>{labels.eyebrow}</Eyebrow>
+                <Heading as="h2">{labels.title}</Heading>
+                <p className="mt-stack max-w-2xl text-sm text-text-secondary">{labels.blurb}</p>
+
+                <div className="mt-stack-xl space-y-stack-2xl">
+                  {groupServices.map((service) => {
+                    const image = serviceHeroSrc(service);
+                    return (
+                      <article
+                        key={service.id}
+                        id={service.slug}
+                        className={`scroll-mt-28 ${
+                          highlightedSlug === service.slug
+                            ? "rounded-sm outline outline-1 outline-accent outline-offset-8"
+                            : ""
+                        }`}
+                      >
+                        {image ? (
+                          <img
+                            src={image}
+                            alt={`${service.name} at Photo Arena`}
+                            className="mb-stack aspect-[4/5] w-full max-w-md object-cover object-top sm:max-w-xl"
+                          />
                         ) : null}
-                      </div>
-                      <p className="text-sm text-accent">
-                        From {formatNairaFromKobo(service.startingPriceKobo)}
-                      </p>
-                    </div>
-                    <PackageCards service={service} />
-                    <div className="hidden min-w-0 overflow-x-auto sm:block">
-                      <ServicePackageTable service={service} />
-                      {service.packages[0]?.id ? (
-                        <Button
-                          to={`/book?package=${encodeURIComponent(service.packages[0].id)}`}
-                          className="mt-4"
-                        >
-                          Book {service.name}
-                        </Button>
-                      ) : (
-                        <Button to={`/book?service=${encodeURIComponent(service.slug)}`} className="mt-4">
-                          Book {service.name}
-                        </Button>
-                      )}
-                    </div>
-                  </article>
-                  );
-                })}
+                        <div className="mb-stack-sm flex flex-wrap items-end justify-between gap-control">
+                          <div>
+                            <h3 className="font-display text-2xl">{service.name}</h3>
+                            {service.summary ? (
+                              <p className="mt-2 max-w-xl text-sm text-text-secondary">{service.summary}</p>
+                            ) : null}
+                          </div>
+                          <p className="text-sm text-accent">
+                            From {formatNairaFromKobo(service.startingPriceKobo)}
+                          </p>
+                        </div>
+                        <PackageCards service={service} />
+                        <div className="hidden min-w-0 overflow-x-auto sm:block">
+                          <ServicePackageTable service={service} />
+                          {service.packages[0]?.id ? (
+                            <Button
+                              to={`/book?package=${encodeURIComponent(service.packages[0].id)}`}
+                              className="mt-4"
+                            >
+                              Book {service.name}
+                            </Button>
+                          ) : (
+                            <Button to={`/book?service=${encodeURIComponent(service.slug)}`} className="mt-4">
+                              Book {service.name}
+                            </Button>
+                          )}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              </Container>
+            </Section>
+
+            {videoReelsService ? (
+              <div id={videoReelsService.slug} className="scroll-mt-28">
+                <Section className="border-b border-border/30 bg-[#f6f6f4] dark:bg-stone-950/70 py-12">
+                  <Container>
+                    <VideoReelsRateCard service={videoReelsService} mode="display" />
+                  </Container>
+                </Section>
               </div>
-            </Container>
-          </Section>
+            ) : null}
+          </div>
         );
       })}
 

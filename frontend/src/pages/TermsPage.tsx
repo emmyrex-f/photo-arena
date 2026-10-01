@@ -33,12 +33,12 @@ export function TermsPage() {
           <h2>Online booking</h2>
           <ul>
             <li>
-              Selecting a slot places a temporary hold (typically 15 minutes) while you complete
-              payment. Unpaid holds expire and the slot returns to the calendar.
+              A slot is booked once payment is confirmed. If someone else completes payment for the
+              same time first, you will be asked to pick another available time.
             </li>
             <li>
               Online bookings paid in full receive a {policies.onlineDiscountPercent}% discount. The
-              charged amount is calculated by the studio booking system at hold/checkout — display
+              charged amount is calculated by the studio booking system at checkout — display
               estimates on this site are not final.
             </li>
             <li>Times are shown in Africa/Lagos (West Africa Time).</li>

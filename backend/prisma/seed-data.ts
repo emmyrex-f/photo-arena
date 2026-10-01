@@ -162,6 +162,20 @@ export const seedServices: SeedService[] = [
       { durationMinutes: 90, includes: "3 outfits · 3 themed setups · 12 photos", priceKobo: naira(60_000) },
     ],
   },
+  {
+    slug: "video-reels",
+    name: "Studio Video Content",
+    kind: "SESSION",
+    summary: "4K luxury video reels & studio content sessions",
+    description:
+      "Studio video content & 4K reels sessions by NUFX. Delivery within 72 hours. 24-hour express delivery available (+50%).",
+    tiers: [
+      { durationMinutes: 30, includes: "1 outfit · 1 4K Reel (15–30 secs)", priceKobo: naira(50_000) },
+      { durationMinutes: 60, includes: "2 outfits · 2 4K Reels (30 sec–1 min each)", priceKobo: naira(90_000) },
+      { durationMinutes: 120, includes: "3 outfits · 3 4K Reels", priceKobo: naira(140_000) },
+      { durationMinutes: 150, includes: "4 outfits · 4 4K Reels + 1 combo reel of all 4 outfits", priceKobo: naira(200_000) },
+    ],
+  },
 
   // ── Aesthetic Background Sessions ("Premium Themed Sets") ──
   {

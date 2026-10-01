@@ -1,11 +1,12 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
-  GoneException,
   Inject,
   Injectable,
   NotFoundException,
   UnauthorizedException,
+  forwardRef,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { BookingStatus, PaymentStatus } from "@prisma/client";
@@ -16,7 +17,7 @@ import { BookingsService } from "../bookings/bookings.service";
 import { isPaymentsMockEnabled } from "../common/payments-mock";
 import { assertCheckoutRedirectUrl } from "../common/site-origins";
 import { blockingWhere } from "../bookings/blocking";
-import { lockStudioResource, throwIfOverlap } from "../bookings/resource-lock";
+import { SLOT_TAKEN_MESSAGE, lockStudioResource, throwIfOverlap } from "../bookings/resource-lock";
 import { slotFits } from "../bookings/availability";
 import { PAYMENT_PROVIDER } from "./payment.constants";
 import type { PaymentProvider, WebhookParseInput } from "./payment-provider";
@@ -24,16 +25,17 @@ import { AuditService } from "../audit/audit.service";
 import { MockPaymentProvider } from "./mock-payment.provider";
 import { providerAmountMatches } from "./payment-amount";
 
-const HOLD_MINUTES = 15;
+/** Payment page stays open past the slot hold; late payments are placed in confirmPayment under the studio lock. */
+const PAYMENT_PAGE_MINUTES = 30;
 
 @Injectable()
 export class PaymentsService {
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly config: ConfigService,
-    private readonly bookings: BookingsService,
-    private readonly notifications: NotificationsService,
-    private readonly audit: AuditService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(ConfigService) private readonly config: ConfigService,
+    @Inject(forwardRef(() => BookingsService)) private readonly bookings: BookingsService,
+    @Inject(NotificationsService) private readonly notifications: NotificationsService,
+    @Inject(AuditService) private readonly audit: AuditService,
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
   ) {}
 
@@ -89,15 +91,14 @@ export class PaymentsService {
     if (!reference || booking.reference !== reference) {
       throw new BadRequestException("Booking reference does not match");
     }
+    if (booking.status === BookingStatus.CANCELLED) {
+      throw new ConflictException("This booking is no longer active. Please pick another available time.");
+    }
     if (booking.status !== BookingStatus.TEMPORARY_HOLD) {
-      throw new BadRequestException("Checkout requires an active temporary hold");
+      throw new BadRequestException("Checkout requires an unpaid online booking");
     }
     if (!booking.holdExpiresAt || booking.holdExpiresAt.getTime() < Date.now()) {
-      await this.prisma.booking.update({
-        where: { id: booking.id },
-        data: { status: BookingStatus.CANCELLED },
-      });
-      throw new GoneException("Hold has expired");
+      await this.renewExpiredHold(booking);
     }
 
     let safeReturn: string;
@@ -116,12 +117,6 @@ export class PaymentsService {
     const paymentReference = booking.reference;
     const email = bookingNotifyEmail(booking);
     if (!email) throw new BadRequestException("Booking contact email is required for checkout");
-    const remainingHoldMinutes = Math.max(
-      1,
-      Math.ceil((booking.holdExpiresAt.getTime() - Date.now()) / 60_000),
-    );
-    const expiresInMinutes = Math.min(HOLD_MINUTES, remainingHoldMinutes);
-
     const existingPending = booking.payments.find(
       (p) => p.status === PaymentStatus.PENDING || p.status === PaymentStatus.PROCESSING,
     );
@@ -135,7 +130,7 @@ export class PaymentsService {
       customerPhone: booking.customer.phone,
       returnUrl: safeReturn,
       cancelUrl: safeCancel,
-      expiresInMinutes,
+      expiresInMinutes: PAYMENT_PAGE_MINUTES,
     });
 
     if (existingPending) {
@@ -172,6 +167,42 @@ export class PaymentsService {
       checkoutUrl: session.checkoutUrl,
       reference: paymentReference,
     };
+  }
+
+  private async renewExpiredHold(booking: {
+    id: string;
+    resourceId: string;
+    startTime: Date;
+    endTime: Date;
+    package: { durationMinutes: number };
+  }) {
+    const cmsHours = await this.bookings.getCmsHours();
+    const holdMinutes = await this.bookings.getHoldDurationMinutes();
+    const duration =
+      booking.package.durationMinutes ||
+      Math.max(1, Math.round((booking.endTime.getTime() - booking.startTime.getTime()) / 60_000));
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await lockStudioResource(tx, booking.resourceId);
+        const existing = await tx.booking.findMany({
+          where: { resourceId: booking.resourceId, ...blockingWhere(booking.id) },
+          select: { startTime: true, endTime: true },
+        });
+        if (!slotFits(booking.startTime, duration, new Date(), existing, { requireSameDayNotice: true, cmsHours })) {
+          throw new ConflictException(SLOT_TAKEN_MESSAGE);
+        }
+        await tx.booking.update({
+          where: { id: booking.id },
+          data: {
+            status: BookingStatus.TEMPORARY_HOLD,
+            holdExpiresAt: new Date(Date.now() + holdMinutes * 60_000),
+          },
+        });
+      });
+    } catch (error) {
+      if (error instanceof ConflictException) throw error;
+      throwIfOverlap(error);
+    }
   }
 
   async statusByBookingId(bookingId: string, reference: string) {
@@ -668,7 +699,7 @@ export class PaymentsService {
           customerName: payment.booking.customer.name,
           reference: payment.booking.reference ?? payment.booking.id,
           startTime: payment.booking.startTime.toISOString(),
-          details: `Checkout incomplete (${event.rawType}). The temporary booking hold has been released.`,
+          details: `Checkout incomplete (${event.rawType}). The slot is open again.`,
         },
         [bookingNotifyEmail(payment.booking)].filter(Boolean),
       );

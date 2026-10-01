@@ -86,6 +86,57 @@ class UploadFieldsDto {
   alt?: string;
 }
 
+class PresignUploadDto {
+  @IsString()
+  filename!: string;
+
+  @IsOptional()
+  @IsString()
+  kind?: string;
+
+  @IsOptional()
+  @IsString()
+  contentType?: string;
+
+  @IsOptional()
+  @IsString()
+  resourceType?: "image" | "video" | "auto";
+}
+
+class CompletePresignedUploadDto {
+  @IsString()
+  url!: string;
+
+  @IsOptional()
+  @IsString()
+  thumbUrl?: string;
+
+  @IsString()
+  filename!: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  width?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  height?: number;
+
+  @IsOptional()
+  @IsString()
+  kind?: string;
+
+  @IsOptional()
+  @IsString()
+  category?: string;
+
+  @IsOptional()
+  @IsString()
+  alt?: string;
+}
+
 function parseOptionalBoolean(raw?: string): boolean | undefined {
   if (raw === undefined || raw === "") return undefined;
   if (raw === "true" || raw === "1") return true;
@@ -107,9 +158,34 @@ export class GalleryController {
     return this.gallery.getStorageStatus();
   }
 
+  @Post("presign")
+  @Roles(Role.OWNER, Role.ADMIN)
+  presign(@Body() body: PresignUploadDto) {
+    return this.gallery.getPresignedUpload(body);
+  }
+
+  @Post("complete-presigned")
+  @Roles(Role.OWNER, Role.ADMIN)
+  async completePresigned(
+    @Body() body: CompletePresignedUploadDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const row = await this.gallery.completePresigned(body);
+    await this.audit.log({
+      userId: user.id,
+      userEmail: user.email,
+      action: "gallery.presigned_upload",
+      entity: "gallery",
+      entityId: row.id,
+      meta: { id: row.id, url: row.url },
+    });
+    return row;
+  }
+
   @Get()
   list(
     @Query("kind") kind?: string,
+    @Query("usageType") usageType?: string,
     @Query("isActive") isActiveRaw?: string,
     @Query("featured") featuredRaw?: string,
     @Query("category") category?: string,
@@ -119,6 +195,7 @@ export class GalleryController {
   ) {
     return this.gallery.list({
       kind,
+      usageType,
       isActive: parseOptionalBoolean(isActiveRaw),
       featured: parseOptionalBoolean(featuredRaw),
       category,
@@ -133,7 +210,7 @@ export class GalleryController {
   @UseInterceptors(
     FilesInterceptor("files", 10, {
       storage: memoryStorage(),
-      limits: { fileSize: 15 * 1024 * 1024 },
+      limits: { fileSize: 100 * 1024 * 1024 },
     }),
   )
   async upload(

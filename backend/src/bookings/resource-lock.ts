@@ -2,6 +2,9 @@ import { ConflictException } from "@nestjs/common";
 import { BookingStatus, Prisma } from "@prisma/client";
 import { expiredHoldWhere } from "./blocking";
 
+export const SLOT_TAKEN_MESSAGE =
+  "Sorry, this slot was just booked by someone else. Please pick another available time.";
+
 export async function lockStudioResource(
   tx: Prisma.TransactionClient,
   resourceId: string,
@@ -30,7 +33,7 @@ export function isOverlapConstraintError(error: unknown): boolean {
 
 export function throwIfOverlap(error: unknown): never {
   if (isOverlapConstraintError(error)) {
-    throw new ConflictException("That slot is not available");
+    throw new ConflictException(SLOT_TAKEN_MESSAGE);
   }
   throw error;
 }

@@ -44,6 +44,8 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   onSuccess: (booking: BookingRecord) => void;
   defaultDate?: string;
+  defaultPackageId?: string;
+  defaultServiceId?: string;
 };
 
 function validatePhone(raw: string): string | null {
@@ -72,6 +74,8 @@ export function CreateBookingDialog({
   onOpenChange,
   onSuccess,
   defaultDate,
+  defaultPackageId,
+  defaultServiceId,
 }: Props) {
   const api = useAdminApi();
 
@@ -110,8 +114,13 @@ export function CreateBookingDialog({
       .then((pkgs) => {
         if (!active) return;
         setPackages(pkgs);
-        if (pkgs.length > 0 && !selectedPackageId) {
-          setSelectedPackageId(pkgs[0]!.id);
+        if (pkgs.length > 0) {
+          const matched = defaultPackageId
+            ? pkgs.find((p) => p.id === defaultPackageId)
+            : defaultServiceId
+              ? pkgs.find((p) => p.serviceId === defaultServiceId || p.service?.id === defaultServiceId)
+              : null;
+          setSelectedPackageId(matched ? matched.id : pkgs[0]!.id);
         }
       })
       .catch((err) => {
@@ -123,7 +132,7 @@ export function CreateBookingDialog({
     return () => {
       active = false;
     };
-  }, [open, api]);
+  }, [open, api, defaultPackageId, defaultServiceId]);
 
   const selectedPackage = useMemo(
     () => packages.find((p) => p.id === selectedPackageId),

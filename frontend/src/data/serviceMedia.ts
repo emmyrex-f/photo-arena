@@ -19,6 +19,7 @@ const FILES = {
   bundle01: "/media/bookings/bundle-of-joy-0-1.jpg",
   bundle26: "/media/bookings/bundle-of-joy-2-6.jpg",
   teens: "/media/bookings/teens-7-15.jpg",
+  videoReels: "/media/bookings/video-reels.jpg",
   curatedWall: "/media/sets/curated-wall.jpg",
   curatedCove: "/media/sets/curated-cove.jpg",
   archedRetreat: "/media/sets/arched-retreat.jpg",
@@ -36,21 +37,36 @@ const FILES = {
  */
 const serviceSlugImages: Record<string, string> = {
   "personal-birthday": FILES.personalBirthday,
+  "personal-birthday-shoots": FILES.personalBirthday,
   "pre-wedding": FILES.preWedding,
+  "pre-wedding-couples": FILES.preWedding,
   family: FILES.family,
+  "family-shoots": FILES.family,
   corporate: FILES.corporate,
+  "corporate-headshots": FILES.corporate,
   maternity: FILES.maternity,
+  "maternity-shoots": FILES.maternity,
   "bundle-of-joy-0-1": FILES.bundle01,
+  "bundle-of-joy-0-1-year": FILES.bundle01,
   "bundle-of-joy-2-6": FILES.bundle26,
+  "bundle-of-joy-2-6-years": FILES.bundle26,
   "teens-7-15": FILES.teens,
+  "teens-shoot-7-15-years": FILES.teens,
   teens: FILES.teens,
+  "video-reels": FILES.videoReels,
+  "studio-video-coverage": FILES.videoReels,
+  "the-curated-wardrobe": FILES.personalBirthday,
+  "curated-wardrobe": FILES.personalBirthday,
 
   "set-curated-wall": FILES.curatedWall,
   "curated-wall": FILES.curatedWall,
+  "the-curated-wall": FILES.curatedWall,
   "set-curated-cove": FILES.curatedCove,
   "curated-cove": FILES.curatedCove,
+  "the-curated-cove": FILES.curatedCove,
   "set-arched-retreat": FILES.archedRetreat,
   "arched-retreat": FILES.archedRetreat,
+  "the-arched-retreat": FILES.archedRetreat,
   "set-aurora-wave": FILES.auroraWave,
   "aurora-wave": FILES.auroraWave,
 
@@ -75,17 +91,31 @@ const serviceSlugImages: Record<string, string> = {
 
   "space-rental": FILES.spaceRental,
   "studio-rental": FILES.spaceRental,
+  "studio-space-rental": FILES.spaceRental,
 };
 
 const serviceNameImages: Record<string, string> = {
   "personal birthday shoots": FILES.personalBirthday,
+  "personal birthday": FILES.personalBirthday,
   "pre wedding couples": FILES.preWedding,
+  "pre wedding": FILES.preWedding,
   "family shoots": FILES.family,
+  family: FILES.family,
   "corporate headshots": FILES.corporate,
+  corporate: FILES.corporate,
   "maternity shoots": FILES.maternity,
+  maternity: FILES.maternity,
   "bundle of joy 0 1 year": FILES.bundle01,
+  "bundle of joy 0 1": FILES.bundle01,
   "bundle of joy 2 6 years": FILES.bundle26,
+  "bundle of joy 2 6": FILES.bundle26,
   "teens shoot 7 15 years": FILES.teens,
+  "teens shoot": FILES.teens,
+  teens: FILES.teens,
+  "studio video coverage": FILES.videoReels,
+  "video reels": FILES.videoReels,
+  "the curated wardrobe": FILES.personalBirthday,
+  "curated wardrobe": FILES.personalBirthday,
   "the curated wall": FILES.curatedWall,
   "the curated cove": FILES.curatedCove,
   "the arched retreat": FILES.archedRetreat,
@@ -95,13 +125,14 @@ const serviceNameImages: Record<string, string> = {
   "lets party booth": FILES.letsParty,
   "telephone booth": FILES.telephone,
   "studio space rental": FILES.spaceRental,
+  "space rental": FILES.spaceRental,
 };
 
 function normalizeServiceName(name: string): string {
   return name
     .toLowerCase()
     .replace(/\(.*?\)/g, " ")
-    .replace(/[·•]/g, " ")
+    .replace(/[·•–—]/g, " ")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
 }
@@ -117,13 +148,17 @@ function mediaForServiceName(name: string | null | undefined): string | undefine
 
 /** CMS media wins; otherwise the existing slug / name fallback. */
 export function serviceHeroSrc(service: {
-  slug: string;
+  slug?: string | null;
   name?: string | null;
-  media?: { url?: string | null } | null;
+  media?: { url?: string | null; thumbUrl?: string | null } | null;
 }): string | undefined {
-  const cms = service.media?.url?.trim();
+  const cms = (service.media?.thumbUrl || service.media?.url)?.trim();
   if (cms) return mediaUrl(cms) || undefined;
-  return mediaForServiceSlug(service.slug) ?? mediaForServiceName(service.name);
+  if (service.slug) {
+    const fromSlug = mediaForServiceSlug(service.slug);
+    if (fromSlug) return fromSlug;
+  }
+  return mediaForServiceName(service.name);
 }
 
 export const aboutStudioImage = "/media/about.jpg";

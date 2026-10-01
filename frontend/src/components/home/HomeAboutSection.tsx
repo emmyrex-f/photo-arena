@@ -1,9 +1,12 @@
+import { HOME_ABOUT_EXTRA_IMAGES } from "../../data/headerStills";
+import { cn } from "../../lib/cn";
 import { useSetting, useSiteInfo } from "../../lib/settings";
 import { site } from "../../lib/site";
 import { Button } from "../ui/Button";
 import { Container } from "../ui/Container";
 import { Eyebrow, Heading } from "../ui/Heading";
 import { Section } from "../ui/Section";
+import { SlideDots, useImageListSetting, useSlideshow } from "../ui/Slideshow";
 
 /** Short About on the home page — copy from settings (`about.*`), no invented claims. */
 export function HomeAboutSection() {
@@ -13,6 +16,9 @@ export function HomeAboutSection() {
   const imageUrl = useSetting("about.imageUrl", site.about.imageUrl);
   const ctaLabel = useSetting("about.ctaLabel", site.about.ctaLabel);
   const ctaHref = useSetting("about.ctaHref", site.about.ctaHref);
+  const carousel = useImageListSetting("about.images");
+  const images = carousel.length ? carousel : [imageUrl, ...HOME_ABOUT_EXTRA_IMAGES];
+  const [active, setActive] = useSlideshow(images.length);
 
   return (
     <Section className="bg-gradient-to-b from-bg to-surface">
@@ -31,11 +37,26 @@ export function HomeAboutSection() {
             </Button>
           </div>
         </div>
-        <img
-          src={imageUrl}
-          alt="Inside the Photo Arena studio space"
-          className="w-full rounded-2xl object-cover object-center shadow-soft"
-        />
+        <div className="relative aspect-[16/10] overflow-hidden rounded-2xl shadow-soft">
+          {images.map((src, i) => (
+            <img
+              key={`${i}-${src}`}
+              src={src}
+              alt={i === active ? "Inside the Photo Arena studio space" : ""}
+              loading={i === 0 ? "eager" : "lazy"}
+              className={cn(
+                "absolute inset-0 size-full object-cover object-center transition-opacity duration-1000 ease-in-out",
+                i === active ? "opacity-100" : "opacity-0",
+              )}
+            />
+          ))}
+          <SlideDots
+            count={images.length}
+            active={active}
+            onPick={setActive}
+            className="absolute bottom-2 right-2"
+          />
+        </div>
       </Container>
     </Section>
   );

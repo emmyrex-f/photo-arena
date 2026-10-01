@@ -2,23 +2,26 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   AlertTriangle,
+  BarChart2,
   Calendar,
   CalendarPlus,
   ChevronLeft,
   ChevronRight,
   Clock3,
   Eye,
-  FileText,
   ImageIcon,
   ImagePlus,
   Inbox,
   LayoutGrid,
+  LineChart as LineChartIcon,
   Plus,
   ShieldAlert,
   UserRound,
   type LucideIcon,
 } from "lucide-react";
 import {
+  Area,
+  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
@@ -65,7 +68,7 @@ import { cn } from "../../lib/cn";
 type AttentionTone = "danger" | "info" | "warning" | "muted";
 
 type AttentionRowDef = {
-  key: "unpaidBookings" | "newEnquiries" | "noShowFollowUp" | "failedPayments";
+  key: "newEnquiries" | "noShowFollowUp" | "failedPayments";
   label: (count: number) => string;
   to: string;
   Icon: LucideIcon;
@@ -74,16 +77,9 @@ type AttentionRowDef = {
 
 const ATTENTION_ROWS: AttentionRowDef[] = [
   {
-    key: "unpaidBookings",
-    label: (n) => (n === 1 ? "Unpaid booking" : "Unpaid bookings"),
-    to: "/admin/payments",
-    Icon: FileText,
-    tone: "danger",
-  },
-  {
     key: "newEnquiries",
     label: (n) => (n === 1 ? "New enquiry" : "New enquiries"),
-    to: "/admin/enquiries",
+    to: "/admin/enquiries?tab=NEW",
     Icon: Inbox,
     tone: "info",
   },
@@ -91,14 +87,14 @@ const ATTENTION_ROWS: AttentionRowDef[] = [
     key: "noShowFollowUp",
     label: (n) =>
       n === 1 ? "Upcoming no-show follow-up" : "Upcoming no-show follow-ups",
-    to: "/admin/bookings",
+    to: "/admin/bookings?tab=NO_SHOW",
     Icon: Eye,
     tone: "warning",
   },
   {
     key: "failedPayments",
     label: (n) => (n === 1 ? "Failed payment" : "Failed payments"),
-    to: "/admin/payments",
+    to: "/admin/payments?status=FAILED",
     Icon: ShieldAlert,
     tone: "muted",
   },
@@ -184,15 +180,30 @@ function revenueDeltaHint(deltaPct: number | null, deltaKobo: number): string {
   return `${sign}${formatNairaFromKobo(Math.abs(deltaKobo))} from yesterday`;
 }
 
-function weeklyDeltaHint(deltaPct: number | null, totalKobo: number, isCurrentWeek: boolean): string {
+function shiftMonthKey(ym: string, delta: number): string {
+  const [year, month] = ym.split("-").map(Number);
+  const totalMonths = year * 12 + (month - 1) + delta;
+  const newYear = Math.floor(totalMonths / 12);
+  const newMonth = (totalMonths % 12) + 1;
+  return `${newYear}-${String(newMonth).padStart(2, "0")}`;
+}
+
+function periodDeltaHint(
+  period: "week" | "month",
+  deltaPct: number | null | undefined,
+  totalKobo: number,
+  isCurrent?: boolean,
+): string {
   if (deltaPct != null) {
     const sign = deltaPct > 0 ? "+" : "";
-    return `${sign}${deltaPct}% vs prior week`;
+    return `${sign}${deltaPct}% vs prior ${period}`;
   }
-  return isCurrentWeek
-    ? `${formatNairaFromKobo(totalKobo)} this week`
-    : `${formatNairaFromKobo(totalKobo)} that week`;
+  return isCurrent
+    ? `${formatNairaFromKobo(totalKobo)} this ${period}`
+    : `${formatNairaFromKobo(totalKobo)} that ${period}`;
 }
+
+
 
 function PaymentPill({ status }: { status: DashboardPaymentStatus }) {
   if (status === "PAID") {
@@ -238,6 +249,8 @@ export function AdminDashboardPage() {
   const siteTagline = useSetting("site.tagline");
   const [data, setData] = useState<DashboardData | null>(null);
   const [weeklyRevenue, setWeeklyRevenue] = useState<DashboardWeeklyRevenue | null>(null);
+  const [revenuePeriod, setRevenuePeriod] = useState<"week" | "month">("week");
+  const [chartType, setChartType] = useState<"bar" | "line">("bar");
   const [loading, setLoading] = useState(true);
   const [chartLoading, setChartLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -267,20 +280,53 @@ export function AdminDashboardPage() {
     void load();
   }, [load]);
 
-  async function shiftWeek(direction: -1 | 1) {
+  async function shiftPeriod(direction: -1 | 1) {
     if (!weeklyRevenue) return;
-    const nextStart =
-      direction < 0
-        ? addDaysToKey(weeklyRevenue.weekStart, -7)
-        : addDaysToKey(weeklyRevenue.weekStart, 7);
-    if (direction < 0 && !weeklyRevenue.canGoBack) return;
-    if (direction > 0 && !weeklyRevenue.canGoForward) return;
+    if (revenuePeriod === "month") {
+      if (!weeklyRevenue.month) return;
+      const nextMonth = shiftMonthKey(weeklyRevenue.month, direction);
+      if (direction < 0 && !weeklyRevenue.canGoBack) return;
+      if (direction > 0 && !weeklyRevenue.canGoForward) return;
 
+      setChartLoading(true);
+      try {
+        const next = await api.dashboard.revenue({ month: nextMonth, period: "month" });
+        setWeeklyRevenue(next);
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) return;
+        setError(errorMessage(err));
+      } finally {
+        setChartLoading(false);
+      }
+    } else {
+      if (!weeklyRevenue.weekStart) return;
+      const nextStart =
+        direction < 0
+          ? addDaysToKey(weeklyRevenue.weekStart, -7)
+          : addDaysToKey(weeklyRevenue.weekStart, 7);
+      if (direction < 0 && !weeklyRevenue.canGoBack) return;
+      if (direction > 0 && !weeklyRevenue.canGoForward) return;
+
+      setChartLoading(true);
+      try {
+        const next = await api.dashboard.revenue({ weekStart: nextStart, period: "week" });
+        setWeeklyRevenue(next);
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) return;
+        setError(errorMessage(err));
+      } finally {
+        setChartLoading(false);
+      }
+    }
+  }
+
+  async function changePeriod(nextPeriod: "week" | "month") {
+    if (nextPeriod === revenuePeriod) return;
+    setRevenuePeriod(nextPeriod);
     setChartLoading(true);
     try {
-      const next = await api.dashboard.revenue({ weekStart: nextStart });
+      const next = await api.dashboard.revenue({ period: nextPeriod });
       setWeeklyRevenue(next);
-      setData((prev) => (prev ? { ...prev, weeklyRevenue: next } : prev));
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) return;
       setError(errorMessage(err));
@@ -292,6 +338,8 @@ export function AdminDashboardPage() {
   const chartData =
     weeklyRevenue?.daily.map((d) => ({
       label: d.label,
+      sublabel: d.sublabel,
+      date: d.date,
       revenueKobo: d.revenueKobo,
       naira: d.revenueKobo / 100,
     })) ?? [];
@@ -375,9 +423,9 @@ export function AdminDashboardPage() {
               value={todos?.total ?? "—"}
               hint={
                 todos
-                  ? `${todos.unpaidBookings} unpaid · ${todos.newEnquiries} enquir${
+                  ? `${todos.newEnquiries} enquir${
                       todos.newEnquiries === 1 ? "y" : "ies"
-                    }`
+                    } · ${todos.failedPayments} failed`
                   : undefined
               }
             />
@@ -395,203 +443,345 @@ export function AdminDashboardPage() {
       <div className="pa-dash-body space-y-admin-stack">
       <div className="pa-dash-grid grid items-stretch gap-admin-stack xl:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="flex min-w-0 flex-col gap-admin-stack">
-          <Card className="pa-dash-card overflow-hidden">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 p-admin-card-sm">
-              <CardTitle className="font-display text-lg font-normal">Today&apos;s Bookings</CardTitle>
-              <Button variant="ghost" size="sm" className="text-muted-foreground" asChild>
-                <Link to="/admin/bookings">View all</Link>
-              </Button>
-            </CardHeader>
-            <CardContent className="p-0">
-              {loading ? (
-                <div className="space-y-3 p-admin-card-sm" aria-busy>
-                  {Array.from({ length: 4 }).map((_, i) => (
-                    <Skeleton key={i} className="h-10 w-full" />
-                  ))}
-                </div>
-              ) : !data?.todaysBookings.length ? (
-                <EmptyState
-                  compact
-                  className="m-admin-card-sm border-0 bg-transparent"
-                  title="No bookings today"
-                  description="When sessions are on the floor, they’ll show up here."
-                />
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Time</TableHead>
-                      <TableHead>Customer</TableHead>
-                      <TableHead className="hidden md:table-cell">Service</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Payment</TableHead>
-                      <TableHead className="w-8" />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {data.todaysBookings.map((row) => (
-                      <TableRow key={row.id} className="cursor-default">
-                        <TableCell className="tabular-nums font-medium">
-                          {formatCompactTime(row.startTime)}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Avatar className="h-7 w-7">
-                              <AvatarFallback className="text-[10px]">
-                                {initials(row.customerName)}
-                              </AvatarFallback>
-                            </Avatar>
-                            <span className="truncate">{row.customerName}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="hidden max-w-[10rem] truncate md:table-cell">
-                          {row.serviceName}
-                        </TableCell>
-                        <TableCell>
-                          <BookingStatusBadge status={row.status} />
-                        </TableCell>
-                        <TableCell>
-                          <PaymentPill status={row.paymentStatus} />
-                        </TableCell>
-                        <TableCell>
-                          <ChevronRight className="h-4 w-4 text-muted-foreground" aria-hidden />
-                        </TableCell>
-                      </TableRow>
+          {/* Unified Row: Today's Bookings (60%) + Revenue (40%) */}
+          <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-admin-stack items-stretch">
+            {/* Today's Bookings (60%) */}
+            <Card className="pa-dash-card flex flex-col h-full overflow-hidden">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 p-admin-card-sm pb-2">
+                <CardTitle className="font-display text-lg font-normal">Today&apos;s Bookings</CardTitle>
+                <Button variant="ghost" size="sm" className="text-muted-foreground" asChild>
+                  <Link to="/admin/bookings">View all</Link>
+                </Button>
+              </CardHeader>
+              <CardContent className="flex-1 p-0 overflow-auto">
+                {loading ? (
+                  <div className="space-y-3 p-admin-card-sm" aria-busy>
+                    {Array.from({ length: 3 }).map((_, i) => (
+                      <Skeleton key={i} className="h-10 w-full" />
                     ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
+                  </div>
+                ) : !data?.todaysBookings.length ? (
+                  <EmptyState
+                    compact
+                    className="m-admin-card-sm border-0 bg-transparent"
+                    title="No bookings today"
+                    description="When sessions are on the floor, they’ll show up here."
+                  />
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-16">Time</TableHead>
+                        <TableHead>Customer</TableHead>
+                        <TableHead className="hidden 2xl:table-cell">Service</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Payment</TableHead>
+                        <TableHead className="w-6" />
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {data.todaysBookings.map((row) => (
+                        <TableRow key={row.id} className="cursor-default">
+                          <TableCell className="tabular-nums font-medium text-xs">
+                            {formatCompactTime(row.startTime)}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <Avatar className="h-6 w-6">
+                                <AvatarFallback className="text-[9px]">
+                                  {initials(row.customerName)}
+                                </AvatarFallback>
+                              </Avatar>
+                              <span className="truncate text-sm font-medium">{row.customerName}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell className="hidden max-w-[8rem] truncate text-xs text-muted-foreground 2xl:table-cell">
+                            {row.serviceName}
+                          </TableCell>
+                          <TableCell>
+                            <BookingStatusBadge status={row.status} />
+                          </TableCell>
+                          <TableCell>
+                            <PaymentPill status={row.paymentStatus} />
+                          </TableCell>
+                          <TableCell className="p-1">
+                            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
 
-          <Card className="pa-dash-card">
-            <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0 p-admin-card-sm">
-              <div className="min-w-0">
-                <CardTitle className="font-display text-lg font-normal">Revenue</CardTitle>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {weeklyRevenue
-                    ? formatWeekRangeLabel(
-                        weeklyRevenue.weekStart,
-                        weeklyRevenue.weekEnd,
-                        weeklyRevenue.isCurrentWeek,
-                      )
-                    : "This week"}
-                </p>
-              </div>
-              <div className="flex items-start gap-2">
-                <div className="flex items-center gap-0.5 pt-0.5">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="Previous week"
-                    disabled={loading || chartLoading || !weeklyRevenue?.canGoBack}
-                    onClick={() => void shiftWeek(-1)}
-                  >
-                    <ChevronLeft className="h-4 w-4" strokeWidth={1.75} />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="Next week"
-                    disabled={loading || chartLoading || !weeklyRevenue?.canGoForward}
-                    onClick={() => void shiftWeek(1)}
-                  >
-                    <ChevronRight className="h-4 w-4" strokeWidth={1.75} />
-                  </Button>
+            {/* Revenue Graph (40%) */}
+            <Card className="pa-dash-card flex flex-col h-full">
+              <CardHeader className="flex flex-col gap-2.5 space-y-0 p-admin-card-sm pb-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <CardTitle className="font-display text-lg font-normal">Revenue</CardTitle>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {revenuePeriod === "month"
+                        ? weeklyRevenue?.monthLabel
+                          ? weeklyRevenue.isCurrentMonth
+                            ? `This month (${weeklyRevenue.monthLabel})`
+                            : weeklyRevenue.monthLabel
+                          : "This month"
+                        : weeklyRevenue?.weekStart && weeklyRevenue?.weekEnd
+                          ? formatWeekRangeLabel(
+                              weeklyRevenue.weekStart,
+                              weeklyRevenue.weekEnd,
+                              Boolean(weeklyRevenue.isCurrentWeek),
+                            )
+                          : "This week"}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    {loading || (chartLoading && !weeklyRevenue) ? (
+                      <Skeleton className="ml-auto h-7 w-24" />
+                    ) : (
+                      <>
+                        <p className="text-lg font-semibold tabular-nums">
+                          {formatNairaFromKobo(weeklyRevenue?.totalKobo ?? 0)}
+                        </p>
+                        <p
+                          className={cn(
+                            "text-[11px]",
+                            (weeklyRevenue?.deltaPct ?? 0) >= 0
+                              ? "text-[var(--color-success)]"
+                              : "text-destructive",
+                          )}
+                        >
+                          {weeklyRevenue
+                            ? periodDeltaHint(
+                                revenuePeriod,
+                                weeklyRevenue.deltaPct,
+                                weeklyRevenue.totalKobo,
+                                revenuePeriod === "month"
+                                  ? weeklyRevenue.isCurrentMonth
+                                  : weeklyRevenue.isCurrentWeek,
+                              )
+                            : null}
+                        </p>
+                      </>
+                    )}
+                  </div>
                 </div>
-                <div className="text-right">
-                  {loading || (chartLoading && !weeklyRevenue) ? (
-                    <Skeleton className="ml-auto h-7 w-28" />
-                  ) : (
-                    <>
-                      <p className="text-xl font-semibold tabular-nums">
-                        {formatNairaFromKobo(weeklyRevenue?.totalKobo ?? 0)}
-                      </p>
-                      <p
+
+                {/* Toolbar: Period Filter (Weeks/Month), Chart Type (Bar/Line), Nav (< >) */}
+                <div className="flex items-center justify-between gap-2 border-t border-border/40 pt-2">
+                  {/* Period Filter */}
+                  <div className="flex items-center rounded-lg bg-muted/60 p-0.5 ring-1 ring-border/50">
+                    <button
+                      type="button"
+                      onClick={() => void changePeriod("week")}
+                      className={cn(
+                        "rounded-md px-2.5 py-0.5 text-xs font-medium transition-all cursor-pointer",
+                        revenuePeriod === "week"
+                          ? "bg-background text-foreground shadow-xs"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      Weeks
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void changePeriod("month")}
+                      className={cn(
+                        "rounded-md px-2.5 py-0.5 text-xs font-medium transition-all cursor-pointer",
+                        revenuePeriod === "month"
+                          ? "bg-background text-foreground shadow-xs"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      Month
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {/* Chart Type Toggle */}
+                    <div className="flex items-center rounded-lg bg-muted/60 p-0.5 ring-1 ring-border/50">
+                      <button
+                        type="button"
+                        onClick={() => setChartType("bar")}
+                        title="Bar chart"
+                        aria-label="Bar chart"
                         className={cn(
-                          "text-xs",
-                          (weeklyRevenue?.deltaPct ?? 0) >= 0
-                            ? "text-[var(--color-success)]"
-                            : "text-destructive",
+                          "flex h-6 w-6 items-center justify-center rounded-md transition-all cursor-pointer",
+                          chartType === "bar"
+                            ? "bg-background text-foreground shadow-xs"
+                            : "text-muted-foreground hover:text-foreground",
                         )}
                       >
-                        {weeklyRevenue
-                          ? weeklyDeltaHint(
-                              weeklyRevenue.deltaPct,
-                              weeklyRevenue.totalKobo,
-                              weeklyRevenue.isCurrentWeek,
-                            )
-                          : null}
-                      </p>
-                    </>
-                  )}
+                        <BarChart2 className="h-3.5 w-3.5" strokeWidth={2} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setChartType("line")}
+                        title="Line graph"
+                        aria-label="Line graph"
+                        className={cn(
+                          "flex h-6 w-6 items-center justify-center rounded-md transition-all cursor-pointer",
+                          chartType === "line"
+                            ? "bg-background text-foreground shadow-xs"
+                            : "text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        <LineChartIcon className="h-3.5 w-3.5" strokeWidth={2} />
+                      </button>
+                    </div>
+
+                    {/* Nav Chevrons */}
+                    <div className="flex items-center gap-0.5">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        className="h-6 w-6"
+                        aria-label={`Previous ${revenuePeriod}`}
+                        disabled={loading || chartLoading || !weeklyRevenue?.canGoBack}
+                        onClick={() => void shiftPeriod(-1)}
+                      >
+                        <ChevronLeft className="h-3.5 w-3.5" strokeWidth={1.75} />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        className="h-6 w-6"
+                        aria-label={`Next ${revenuePeriod}`}
+                        disabled={loading || chartLoading || !weeklyRevenue?.canGoForward}
+                        onClick={() => void shiftPeriod(1)}
+                      >
+                        <ChevronRight className="h-3.5 w-3.5" strokeWidth={1.75} />
+                      </Button>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </CardHeader>
-            <CardContent className="px-admin-card-sm pb-admin-card-sm pt-0">
-              {loading && !weeklyRevenue ? (
-                <Skeleton className="h-48 w-full" />
-              ) : chartData.every((d) => d.revenueKobo === 0) ? (
-                <EmptyState
-                  compact
-                  className="border-0 bg-transparent"
-                  title={
-                    weeklyRevenue?.isCurrentWeek
-                      ? "No revenue this week yet"
-                      : "No revenue that week"
-                  }
-                  description="Successful payments will appear as daily bars."
-                />
-              ) : (
-                <div
-                  className={cn("h-48 w-full", chartLoading && "opacity-60")}
-                  role="img"
-                  aria-label="Weekly revenue bar chart"
-                  aria-busy={chartLoading}
-                >
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={chartData} margin={{ top: 8, right: 4, left: 0, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
-                      <XAxis
-                        dataKey="label"
-                        tickLine={false}
-                        axisLine={false}
-                        tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
-                      />
-                      <YAxis
-                        tickLine={false}
-                        axisLine={false}
-                        width={36}
-                        tickFormatter={(v: number) => chartTickNaira(v * 100)}
-                        tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
-                      />
-                      <Tooltip
-                        cursor={{ fill: "hsl(var(--muted) / 0.4)" }}
-                        contentStyle={{
-                          background: "hsl(var(--card))",
-                          border: "1px solid hsl(var(--border))",
-                          borderRadius: 8,
-                          fontSize: 12,
-                        }}
-                        formatter={(value) => [
-                          formatNairaFromKobo(Number(value ?? 0) * 100),
-                          "Revenue",
-                        ]}
-                      />
-                      <Bar
-                        dataKey="naira"
-                        fill="hsl(var(--primary))"
-                        radius={[6, 6, 0, 0]}
-                        maxBarSize={36}
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+              </CardHeader>
+              <CardContent className="flex-1 px-admin-card-sm pb-admin-card-sm pt-0 flex flex-col justify-end">
+                {loading && !weeklyRevenue ? (
+                  <Skeleton className="h-44 w-full" />
+                ) : chartData.every((d) => d.revenueKobo === 0) ? (
+                  <EmptyState
+                    compact
+                    className="border-0 bg-transparent py-8"
+                    title={
+                      revenuePeriod === "month"
+                        ? weeklyRevenue?.isCurrentMonth
+                          ? "No revenue this month yet"
+                          : "No revenue that month"
+                        : weeklyRevenue?.isCurrentWeek
+                          ? "No revenue this week yet"
+                          : "No revenue that week"
+                    }
+                    description="Successful payments will appear in the revenue chart."
+                  />
+                ) : (
+                  <div
+                    className={cn("h-44 w-full min-h-[11rem]", chartLoading && "opacity-60")}
+                    role="img"
+                    aria-label={`${revenuePeriod === "month" ? "Monthly" : "Weekly"} revenue ${chartType === "bar" ? "bar chart" : "line graph"}`}
+                    aria-busy={chartLoading}
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      {chartType === "bar" ? (
+                        <BarChart data={chartData} margin={{ top: 8, right: 4, left: 0, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
+                          <XAxis
+                            dataKey="label"
+                            tickLine={false}
+                            axisLine={false}
+                            tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
+                          />
+                          <YAxis
+                            tickLine={false}
+                            axisLine={false}
+                            width={32}
+                            tickFormatter={(v: number) => chartTickNaira(v * 100)}
+                            tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }}
+                          />
+                          <Tooltip
+                            cursor={{ fill: "hsl(var(--muted) / 0.4)" }}
+                            contentStyle={{
+                              background: "hsl(var(--card))",
+                              border: "1px solid hsl(var(--border))",
+                              borderRadius: 8,
+                              fontSize: 12,
+                            }}
+                            formatter={(value) => [
+                              formatNairaFromKobo(Number(value ?? 0) * 100),
+                              "Revenue",
+                            ]}
+                            labelFormatter={(label, payload) => {
+                              const item = payload?.[0]?.payload;
+                              return item?.sublabel || label;
+                            }}
+                          />
+                          <Bar
+                            dataKey="naira"
+                            fill="hsl(var(--primary))"
+                            radius={[5, 5, 0, 0]}
+                            maxBarSize={32}
+                          />
+                        </BarChart>
+                      ) : (
+                        <AreaChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                          <defs>
+                            <linearGradient id="dashRevenueGrad" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.4} />
+                              <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0.0} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
+                          <XAxis
+                            dataKey="label"
+                            tickLine={false}
+                            axisLine={false}
+                            tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
+                          />
+                          <YAxis
+                            tickLine={false}
+                            axisLine={false}
+                            width={32}
+                            tickFormatter={(v: number) => chartTickNaira(v * 100)}
+                            tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }}
+                          />
+                          <Tooltip
+                            contentStyle={{
+                              background: "hsl(var(--card))",
+                              border: "1px solid hsl(var(--border))",
+                              borderRadius: 8,
+                              fontSize: 12,
+                            }}
+                            formatter={(value) => [
+                              formatNairaFromKobo(Number(value ?? 0) * 100),
+                              "Revenue",
+                            ]}
+                            labelFormatter={(label, payload) => {
+                              const item = payload?.[0]?.payload;
+                              return item?.sublabel || label;
+                            }}
+                          />
+                          <Area
+                            type="monotone"
+                            dataKey="naira"
+                            stroke="hsl(var(--primary))"
+                            strokeWidth={2.5}
+                            fillOpacity={1}
+                            fill="url(#dashRevenueGrad)"
+                            dot={{ r: 3.5, fill: "hsl(var(--primary))", strokeWidth: 1.5, stroke: "hsl(var(--card))" }}
+                            activeDot={{ r: 5.5, fill: "hsl(var(--primary))", stroke: "hsl(var(--background))", strokeWidth: 2 }}
+                          />
+                        </AreaChart>
+                      )}
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
 
           <Card className="pa-dash-card">
             <CardHeader className="p-admin-card-sm pb-admin-control">
@@ -636,7 +826,7 @@ export function AdminDashboardPage() {
             <CardContent className="p-admin-card-sm pt-0">
               {loading || !todos ? (
                 <div className="space-y-2" aria-busy>
-                  {Array.from({ length: 4 }).map((_, i) => (
+                  {Array.from({ length: 3 }).map((_, i) => (
                     <Skeleton key={i} className="h-10 w-full" />
                   ))}
                 </div>

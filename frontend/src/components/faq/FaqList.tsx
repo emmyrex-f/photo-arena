@@ -19,13 +19,18 @@ export function FaqList({ items }: { items?: Faq[] }) {
   }
 
   return (
-    <div className="divide-y divide-elevated">
+    <div className="space-y-3">
       {faqs.map((item, index) => {
         const expanded = open === index;
         const buttonId = `${baseId}-q-${index}`;
         const panelId = `${baseId}-a-${index}`;
         return (
-          <div key={item.id ?? item.question}>
+          <div
+            key={item.id ?? item.question}
+            className={`rounded-lg border px-4 transition-colors sm:px-5 ${
+              expanded ? "border-accent/40" : "border-border/30"
+            }`}
+          >
             <h2>
               <button
                 id={buttonId}
@@ -43,7 +48,7 @@ export function FaqList({ items }: { items?: Faq[] }) {
               </button>
             </h2>
             <div id={panelId} role="region" aria-labelledby={buttonId} hidden={!expanded}>
-              <p className="pb-grid leading-relaxed text-text-secondary">{item.answer}</p>
+              <p className="pb-stack leading-relaxed text-text-secondary">{item.answer}</p>
             </div>
           </div>
         );

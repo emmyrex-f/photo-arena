@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { Badge } from "../../admin/components/ui/badge";
 import { Button } from "../../admin/components/ui/button";
+import { useModal } from "../../admin/components/ui/confirm-dialog";
 import {
   Dialog,
   DialogContent,
@@ -113,6 +114,7 @@ function Stars({ rating }: { rating: number | null | undefined }) {
 
 export function AdminTestimonialsPage() {
   const api = useAdminApi();
+  const modal = useModal();
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [query, setQuery] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -241,7 +243,15 @@ export function AdminTestimonialsPage() {
   }
 
   async function removeRow(row: Testimonial) {
-    if (!window.confirm(`Delete testimonial from ${row.name}?`)) return;
+    const ok = await modal.confirm({
+      title: "Delete Testimonial",
+      description: `Are you sure you want to delete the testimonial from ${row.name}?`,
+      confirmLabel: "Delete testimonial",
+      destructive: true,
+      tone: "danger",
+      icon: "trash",
+    });
+    if (!ok) return;
     setBusyId(row.id);
     try {
       await api.testimonials.remove(row.id);

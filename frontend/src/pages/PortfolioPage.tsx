@@ -4,7 +4,7 @@ import { PortfolioGrid } from "../components/portfolio/PortfolioGrid";
 import { Container } from "../components/ui/Container";
 import { CameraSpinner } from "../components/ui/CameraSpinner";
 import { Section } from "../components/ui/Section";
-import { PORTFOLIO_PAGE_HEADER } from "../data/headerStills";
+import { PORTFOLIO_PAGE_SLIDES } from "../data/headerStills";
 import type { PortfolioImage } from "../data/portfolio.generated";
 import { distinctImageAlt } from "../lib/imageAlt";
 import { fetchGallery, mediaUrl } from "../lib/publicApi";
@@ -39,8 +39,8 @@ export function PortfolioPage() {
         eyebrow="Portfolio"
         title="The work"
         description="Photographs from Photo Arena sessions. Select an image to view it full screen."
-        image={PORTFOLIO_PAGE_HEADER.src}
-        objectPosition={PORTFOLIO_PAGE_HEADER.objectPosition}
+        slides={PORTFOLIO_PAGE_SLIDES}
+        slidesSettingKey="site.header.portfolio"
       />
       <Section>
         <Container>

@@ -106,9 +106,12 @@ export class AdminNotificationsController {
   }
 
   @Get("logs")
-  async logs(@Query("page") pageRaw?: string) {
+  async logs(
+    @Query("page") pageRaw?: string,
+    @Query("pageSize") pageSizeRaw?: string,
+  ) {
     const page = parsePage(pageRaw);
-    const pageSize = parsePageSize(undefined, 50);
+    const pageSize = parsePageSize(pageSizeRaw, 20);
     const [total, items] = await Promise.all([
       this.prisma.notificationLog.count(),
       this.prisma.notificationLog.findMany({

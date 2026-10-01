@@ -28,8 +28,28 @@ const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 
 /** How far back the revenue chart can navigate (inclusive of current week). */
 const REVENUE_WEEKS_BACK = 52;
+const REVENUE_MONTHS_BACK = 24;
 
 const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
+const YM_RE = /^\d{4}-\d{2}$/;
+
+function formatLagosMonthLabel(ym: string): string {
+  const [year, month] = ym.split("-").map(Number);
+  const date = new Date(year, month - 1, 1);
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    year: "numeric",
+    timeZone: "Africa/Lagos",
+  }).format(date);
+}
+
+function shiftLagosMonth(ym: string, delta: number): string {
+  const [year, month] = ym.split("-").map(Number);
+  const totalMonths = year * 12 + (month - 1) + delta;
+  const newYear = Math.floor(totalMonths / 12);
+  const newMonth = (totalMonths % 12) + 1;
+  return `${newYear}-${String(newMonth).padStart(2, "0")}`;
+}
 
 function mondayOfWeek(ymd: string): string {
   const wd = lagosWeekday(ymd); // 0 = Sun … 6 = Sat
@@ -227,6 +247,12 @@ export class DashboardService {
         where: {
           status: PaymentStatus.FAILED,
           createdAt: { gte: attentionWindowStart },
+          booking: {
+            status: { in: [BookingStatus.PENDING, BookingStatus.CONFIRMED] },
+            payments: {
+              none: { status: PaymentStatus.SUCCESS },
+            },
+          },
         },
       }),
       this.prisma.booking.count({
@@ -308,6 +334,102 @@ export class DashboardService {
   /** Lightweight chart-only refresh when navigating weeks. */
   async getWeeklyRevenue(weekStart?: string) {
     return this.buildWeeklyRevenue(weekStart);
+  }
+
+  /** Lightweight chart-only refresh when navigating months. */
+  async getMonthlyRevenue(monthRaw?: string) {
+    return this.buildMonthlyRevenue(monthRaw);
+  }
+
+  private async buildMonthlyRevenue(monthRaw?: string) {
+    const todayYmd = toLagosYmd(new Date());
+    const latestMonth = todayYmd.slice(0, 7);
+    const earliestMonth = shiftLagosMonth(latestMonth, -(REVENUE_MONTHS_BACK - 1));
+
+    let currentMonth = latestMonth;
+    if (monthRaw != null && monthRaw.trim() !== "") {
+      const raw = monthRaw.trim().slice(0, 7);
+      if (!YM_RE.test(raw)) {
+        throw new BadRequestException("month must be YYYY-MM");
+      }
+      currentMonth = raw;
+      if (currentMonth < earliestMonth) currentMonth = earliestMonth;
+      if (currentMonth > latestMonth) currentMonth = latestMonth;
+    }
+
+    const [year, monthNum] = currentMonth.split("-").map(Number);
+    const monthStartDate = `${currentMonth}-01`;
+    const nextMonthStr = shiftLagosMonth(currentMonth, 1);
+    const nextMonthStartDate = `${nextMonthStr}-01`;
+    const priorMonthStr = shiftLagosMonth(currentMonth, -1);
+    const priorMonthStartDate = `${priorMonthStr}-01`;
+
+    const rangeStart = startOfLagosDay(monthStartDate);
+    const rangeEndExclusive = startOfLagosDay(nextMonthStartDate);
+    const priorRangeStart = startOfLagosDay(priorMonthStartDate);
+
+    const [monthPayments, priorMonthRevenue] = await Promise.all([
+      this.prisma.payment.findMany({
+        where: {
+          status: PaymentStatus.SUCCESS,
+          paidAt: { gte: rangeStart, lt: rangeEndExclusive },
+        },
+        select: { paidAt: true, amountKobo: true },
+      }),
+      this.sumRevenue(priorRangeStart, rangeStart),
+    ]);
+
+    const daysInMonth = new Date(year, monthNum, 0).getDate();
+    const monthAbbr = new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      timeZone: "Africa/Lagos",
+    }).format(new Date(year, monthNum - 1, 1));
+
+    const buckets = [
+      { label: "W1", sublabel: `${monthAbbr} 1–7`, minDay: 1, maxDay: 7, revenueKobo: 0 },
+      { label: "W2", sublabel: `${monthAbbr} 8–14`, minDay: 8, maxDay: 14, revenueKobo: 0 },
+      { label: "W3", sublabel: `${monthAbbr} 15–21`, minDay: 15, maxDay: 21, revenueKobo: 0 },
+      { label: "W4", sublabel: `${monthAbbr} 22–28`, minDay: 22, maxDay: 28, revenueKobo: 0 },
+    ];
+    if (daysInMonth > 28) {
+      buckets.push({
+        label: "W5",
+        sublabel: `${monthAbbr} 29–${daysInMonth}`,
+        minDay: 29,
+        maxDay: daysInMonth,
+        revenueKobo: 0,
+      });
+    }
+
+    for (const p of monthPayments) {
+      if (!p.paidAt) continue;
+      const dayOfMonth = parseInt(toLagosYmd(p.paidAt).slice(8, 10), 10);
+      for (const b of buckets) {
+        if (dayOfMonth >= b.minDay && dayOfMonth <= b.maxDay) {
+          b.revenueKobo += p.amountKobo;
+          break;
+        }
+      }
+    }
+
+    const totalKobo = buckets.reduce((sum, b) => sum + b.revenueKobo, 0);
+
+    return {
+      period: "month" as const,
+      totalKobo,
+      deltaPct: pctChange(totalKobo, priorMonthRevenue),
+      month: currentMonth,
+      monthLabel: formatLagosMonthLabel(currentMonth),
+      canGoBack: currentMonth > earliestMonth,
+      canGoForward: currentMonth < latestMonth,
+      isCurrentMonth: currentMonth === latestMonth,
+      daily: buckets.map((b) => ({
+        date: `${currentMonth}-${String(b.minDay).padStart(2, "0")}`,
+        label: b.label,
+        sublabel: b.sublabel,
+        revenueKobo: b.revenueKobo,
+      })),
+    };
   }
 
   private async sumRevenue(from: Date, to: Date) {

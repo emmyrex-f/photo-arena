@@ -213,6 +213,66 @@ async function main() {
     galleryOrder += 1;
   }
 
+  // Seed Service Media and Attach MediaUsages
+  const serviceMediaMap: Record<string, { url: string; alt: string; category: string; filename: string }> = {
+    "personal-birthday": { url: "/media/bookings/personal-birthday.jpg", alt: "Personal & Birthday Shoots", category: "sessions", filename: "personal-birthday.jpg" },
+    "pre-wedding": { url: "/media/bookings/pre-wedding.jpg", alt: "Pre-Wedding & Couples Shoots", category: "sessions", filename: "pre-wedding.jpg" },
+    "family": { url: "/media/bookings/family.jpg", alt: "Family Shoots", category: "sessions", filename: "family.jpg" },
+    "corporate": { url: "/media/bookings/corporate.jpg", alt: "Corporate Headshots", category: "sessions", filename: "corporate.jpg" },
+    "maternity": { url: "/media/bookings/maternity.jpg", alt: "Maternity Shoots", category: "sessions", filename: "maternity.jpg" },
+    "bundle-of-joy-0-1": { url: "/media/bookings/bundle-of-joy-0-1.jpg", alt: "Bundle of Joy · 0–1 Year", category: "sessions", filename: "bundle-of-joy-0-1.jpg" },
+    "bundle-of-joy-2-6": { url: "/media/bookings/bundle-of-joy-2-6.jpg", alt: "Bundle of Joy · 2–6 Years", category: "sessions", filename: "bundle-of-joy-2-6.jpg" },
+    "teens-7-15": { url: "/media/bookings/teens-7-15.jpg", alt: "Teens Shoot · 7–15 Years", category: "sessions", filename: "teens-7-15.jpg" },
+    "video-reels": { url: "/media/bookings/video-reels.jpg", alt: "Studio Video Content Sessions", category: "sessions", filename: "video-reels.jpg" },
+    "set-curated-wall": { url: "/media/sets/curated-wall.jpg", alt: "The Curated Wall", category: "sets", filename: "curated-wall.jpg" },
+    "set-curated-cove": { url: "/media/sets/curated-cove.jpg", alt: "The Curated Cove", category: "sets", filename: "curated-cove.jpg" },
+    "set-arched-retreat": { url: "/media/sets/arched-retreat.jpg", alt: "The Arched Retreat", category: "sets", filename: "arched-retreat.jpg" },
+    "set-aurora-wave": { url: "/media/sets/aurora-wave.jpg", alt: "Aurora Wave", category: "sets", filename: "aurora-wave.jpg" },
+    "booth-swing-attitude": { url: "/media/booths/swing-attitude.jpg", alt: "Swing Attitude", category: "booths", filename: "swing-attitude.jpg" },
+    "booth-odogwu-vibes": { url: "/media/booths/odogwu-vibes.jpg", alt: "Odogwu Vibes", category: "booths", filename: "odogwu-vibes.jpg" },
+    "booth-lets-party": { url: "/media/booths/lets-party.jpg", alt: "Let's Party Booth", category: "booths", filename: "lets-party.jpg" },
+    "booth-telephone": { url: "/media/booths/telephone.jpg", alt: "Telephone Booth", category: "booths", filename: "telephone.jpg" },
+    "backdrop-curated-wall": { url: "/media/sets/curated-wall.jpg", alt: "The Curated Wall (Backdrop Rental)", category: "backdrops", filename: "curated-wall.jpg" },
+    "backdrop-curated-cove": { url: "/media/sets/curated-cove.jpg", alt: "The Curated Cove (Backdrop Rental)", category: "backdrops", filename: "curated-cove.jpg" },
+    "backdrop-arched-retreat": { url: "/media/sets/arched-retreat.jpg", alt: "The Arched Retreat (Backdrop Rental)", category: "backdrops", filename: "arched-retreat.jpg" },
+    "backdrop-aurora-wave": { url: "/media/sets/aurora-wave.jpg", alt: "Aurora Wave (Backdrop Rental)", category: "backdrops", filename: "aurora-wave.jpg" },
+    "space-rental": { url: "/media/home/space-rental.jpg", alt: "Studio Space Rental", category: "rentals", filename: "space-rental.jpg" },
+  };
+
+  for (const [slug, meta] of Object.entries(serviceMediaMap)) {
+    const svc = await prisma.service.findUnique({ where: { slug } });
+    const category = svc ? `Service/${svc.name}` : meta.category;
+    let img = await prisma.galleryImage.findFirst({ where: { url: meta.url } });
+    if (!img) {
+      img = await prisma.galleryImage.create({
+        data: {
+          url: meta.url,
+          thumbUrl: meta.url,
+          alt: meta.alt,
+          category,
+          filename: meta.filename,
+          kind: "CONTENT",
+          isActive: true,
+        },
+      });
+    } else {
+      await prisma.galleryImage.update({
+        where: { id: img.id },
+        data: { category },
+      });
+    }
+    if (svc) {
+      const usage = await prisma.mediaUsage.findFirst({
+        where: { entityId: svc.id, usageType: "service" },
+      });
+      if (!usage) {
+        await prisma.mediaUsage.create({
+          data: { entityId: svc.id, usageType: "service", mediaId: img.id, sortOrder: 0 },
+        });
+      }
+    }
+  }
+
   console.log(
     `Seeded OWNER ${email}; ${seedServices.length} services; ${seedFaqs.length} FAQs; ${seedTestimonials.length} unpublished testimonials; ${seedGallery.length} gallery images; settings keys=${Object.keys(settings).length}.`,
   );

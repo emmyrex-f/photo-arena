@@ -5,16 +5,15 @@ import { Button } from "../components/ui/Button";
 import { CameraSpinner } from "../components/ui/CameraSpinner";
 import { Container } from "../components/ui/Container";
 import { Section } from "../components/ui/Section";
-import { BOOK_PAGE_HEADER } from "../data/headerStills";
+import { BOOK_PAGE_SLIDES } from "../data/headerStills";
 import { serviceHeroSrc } from "../data/serviceMedia";
+import { VideoReelsRateCard } from "../components/booking/VideoReelsRateCard";
 import {
   addDaysToKey,
-  formatCountdown,
   formatDateKey,
   formatDuration,
   formatLagosTime,
   lagosToday,
-  msUntil,
 } from "../lib/datetime";
 import {
   createHold,
@@ -28,7 +27,6 @@ import {
   SERVICE_KIND_LABELS,
   sortPublicPackages,
   startCheckout,
-  type HoldResponse,
   type PublicPackage,
   type PublicService,
 } from "../lib/publicApi";
@@ -37,7 +35,7 @@ import { usePolicyValues } from "../lib/policies";
 import { useSiteInfo } from "../lib/settings";
 import { usePublicData } from "../lib/usePublicData";
 
-type Step = "package" | "schedule" | "details" | "hold";
+type Step = "package" | "schedule" | "details";
 
 type FlatPackage = PublicPackage & { serviceName: string; serviceSlug: string };
 
@@ -82,12 +80,8 @@ export function BookPage() {
   const [phone, setPhone] = useState("");
   const [phoneError, setPhoneError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
-  const [hold, setHold] = useState<HoldResponse | null>(null);
-
-  const [holdError, setHoldError] = useState<string | null>(null);
+  const [bookingError, setBookingError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [checkoutError, setCheckoutError] = useState<string | null>(null);
-  const [remainingMs, setRemainingMs] = useState(0);
 
   const selected = packages.find((pkg) => pkg.id === packageId) ?? null;
   const selectedService =
@@ -95,7 +89,7 @@ export function BookPage() {
   const selectedHeroSrc = selectedService ? serviceHeroSrc(selectedService) : undefined;
   const onlinePriceKobo = selected?.onlinePriceKobo ?? null;
   const selectedDeliverables = selected ? formatPackageDeliverables(selected) : null;
-  const showSummary = step === "details" || step === "hold";
+  const showSummary = step === "details";
 
   useEffect(() => {
     if (!selected || step !== "schedule") return;
@@ -124,14 +118,6 @@ export function BookPage() {
     };
   }, [date, selected, step]);
 
-  useEffect(() => {
-    if (!hold?.holdExpiresAt) return;
-    const tick = () => setRemainingMs(msUntil(hold.holdExpiresAt));
-    tick();
-    const id = window.setInterval(tick, 1000);
-    return () => window.clearInterval(id);
-  }, [hold]);
-
   const dateOptions = useMemo(() => {
     const today = lagosToday();
     return Array.from({ length: 28 }, (_, i) => addDaysToKey(today, i));
@@ -158,7 +144,7 @@ export function BookPage() {
     return null;
   }
 
-  async function onHold(event: FormEvent) {
+  async function onSubmitBooking(event: FormEvent) {
     event.preventDefault();
     if (!selected || !slotIso) return;
     const phoneErr = validateBookingPhone(phone);
@@ -167,51 +153,38 @@ export function BookPage() {
       return;
     }
     setSubmitting(true);
-    setHoldError(null);
+    setBookingError(null);
     try {
-      const result = await createHold({
+      const holdResult = await createHold({
         packageId: selected.id,
         startTime: slotIso,
         customerName: name.trim(),
         customerPhone: phone.trim(),
         customerEmail: email.trim(),
       });
-      setHold(result);
-      setStep("hold");
-    } catch (error) {
-      if (error instanceof PublicApiError) {
-        setHoldError(error.message);
-      } else {
-        setHoldError("Booking API unavailable. Please try again later or call the studio.");
-      }
-    } finally {
-      setSubmitting(false);
-    }
-  }
 
-  async function onCheckout() {
-    if (!hold) return;
-    setSubmitting(true);
-    setCheckoutError(null);
-    try {
       const origin = window.location.origin;
-      const returnUrl = `${origin}/book/confirmation?bookingId=${encodeURIComponent(hold.bookingId)}&reference=${encodeURIComponent(hold.reference)}`;
+      const returnUrl = `${origin}/book/confirmation?bookingId=${encodeURIComponent(holdResult.bookingId)}&reference=${encodeURIComponent(holdResult.reference)}`;
       const cancelUrl = `${origin}/book?cancelled=1`;
-      const checkout = await startCheckout(hold.bookingId, hold.reference, returnUrl, cancelUrl);
+      const checkout = await startCheckout(holdResult.bookingId, holdResult.reference, returnUrl, cancelUrl);
       if (checkout.provider === "mock") {
         navigate(
-          `/book/confirmation?bookingId=${encodeURIComponent(hold.bookingId)}&reference=${encodeURIComponent(checkout.reference)}&mock=1`,
+          `/book/confirmation?bookingId=${encodeURIComponent(holdResult.bookingId)}&reference=${encodeURIComponent(checkout.reference)}&mock=1`,
         );
         return;
       }
       window.location.assign(checkout.checkoutUrl);
     } catch (error) {
-      setCheckoutError(
-        error instanceof PublicApiError
-          ? error.message
-          : "Checkout could not start. Booking API may be unavailable.",
-      );
-    } finally {
+      if (error instanceof PublicApiError) {
+        setBookingError(error.message);
+        if (error.status === 409) {
+          setSlots((current) => current.filter((iso) => iso !== slotIso));
+          setSlotIso("");
+          setStep("schedule");
+        }
+      } else {
+        setBookingError("Checkout could not start. Please try again or contact the studio.");
+      }
       setSubmitting(false);
     }
   }
@@ -226,164 +199,232 @@ export function BookPage() {
       <PageHeader
         eyebrow="Book Now"
         title="Reserve a session"
-        image={BOOK_PAGE_HEADER.src}
-        objectPosition={BOOK_PAGE_HEADER.objectPosition}
+        slides={BOOK_PAGE_SLIDES}
+        slidesSettingKey="site.header.book"
       />
-      <Section className="pt-0">
+      <Section className="pt-6 sm:pt-10 lg:pt-12">
         <Container className={showSummary ? "grid min-w-0 gap-grid-lg lg:grid-cols-[1.2fr_0.8fr]" : "min-w-0"}>
           <div className="min-w-0">
-            <p className="mb-stack-md text-sm text-text-muted">
-              Already booked?{" "}
-              <Link to="/booking/lookup" className="text-accent underline-offset-2 hover:underline">
-                Look up or manage your booking
-              </Link>
-            </p>
-            <ol className="mb-stack-xl flex flex-wrap gap-x-4 gap-y-2 text-xs uppercase tracking-[0.16em] text-text-muted">
-              {(
-                [
-                  ["package", "1 · Package"],
-                  ["schedule", "2 · Date & time"],
-                  ["details", "3 · Details"],
-                  ["hold", "4 · Pay"],
-                ] as const
-              ).map(([key, label]) => (
-                <li
-                  key={key}
-                  className={step === key ? "text-accent" : undefined}
-                  aria-current={step === key ? "step" : undefined}
-                >
-                  {label}
-                </li>
-              ))}
-            </ol>
+            <div className="mb-stack-lg flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-elevated pb-5">
+              <ol className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.14em]">
+                {(
+                  [
+                    ["package", "1. Package"],
+                    ["schedule", "2. Date & Time"],
+                    ["details", "3. Details & Pay"],
+                  ] as const
+                ).map(([key, label], idx) => {
+                  const isCurrent = step === key;
+                  const stepOrder = ["package", "schedule", "details"];
+                  const isCompleted = stepOrder.indexOf(step) > stepOrder.indexOf(key);
+                  return (
+                    <li key={key} className="flex items-center gap-2">
+                      <span
+                        className={`inline-flex items-center rounded-full px-3 py-1 font-medium transition ${
+                          isCurrent
+                            ? "bg-accent text-ink font-semibold shadow-xs"
+                            : isCompleted
+                            ? "bg-surface border border-elevated text-text"
+                            : "text-text-muted"
+                        }`}
+                        aria-current={isCurrent ? "step" : undefined}
+                      >
+                        {label}
+                      </span>
+                      {idx < 2 ? <span className="text-text-muted/40">/</span> : null}
+                    </li>
+                  );
+                })}
+              </ol>
+              <p className="text-xs text-text-muted">
+                Already booked?{" "}
+                <Link to="/booking/lookup" className="font-medium text-accent underline-offset-2 hover:underline ml-1">
+                  Look up booking →
+                </Link>
+              </p>
+            </div>
 
             {loading ? <CameraSpinner label="Loading packages" caption="Loading packages…" /> : null}
 
             {step === "package" ? (
-              <div className="min-w-0 space-y-stack-xl overflow-x-hidden">
-                {groupServicesByKind(services ?? []).map((group) => (
-                  <section
-                    key={group.kind}
-                    aria-labelledby={`book-kind-${group.kind}`}
-                    className="min-w-0"
-                  >
-                    <h2
-                      id={`book-kind-${group.kind}`}
-                      className="mb-1 font-display text-2xl text-text"
-                    >
-                      {SERVICE_KIND_LABELS[group.kind].title}
-                    </h2>
-                    <p className="mb-4 text-sm text-text-secondary">
-                      {SERVICE_KIND_LABELS[group.kind].blurb}
-                    </p>
-                    <div className="w-full overflow-x-hidden">
-                      <div className="pa-package-rail">
-                        {group.services.map((service) => {
-                          const options = sortPublicPackages(service.packages);
-                          const selectedPkg = options.find((pkg) => pkg.id === packageId) ?? null;
-                          const active = Boolean(selectedPkg);
-                          const media = serviceHeroSrc(service);
-                          const online = selectedPkg?.onlinePriceKobo;
-                          const discount =
-                            selectedPkg &&
-                            typeof selectedPkg.discountPercent === "number" &&
-                            selectedPkg.discountPercent > 0
-                              ? selectedPkg.discountPercent
-                              : null;
-                          const usesOutfits = options.some((pkg) => pkg.outfitCount != null);
-                          const selectedDeliverables = selectedPkg
-                            ? formatPackageDeliverables(selectedPkg)
-                            : null;
-                          return (
-                            <article
-                              key={service.id}
-                              className={`border p-card-sm ${
-                                active ? "border-accent bg-elevated" : "border-elevated bg-surface"
-                              }`}
-                            >
-                              {media ? (
-                                <img
-                                  src={media}
-                                  alt={`${service.name} at Photo Arena`}
-                                  className="mb-3 aspect-[4/3] w-full object-cover object-top"
-                                />
-                              ) : null}
-                              <h3 className="font-display text-xl text-text">{service.name}</h3>
-                              <div className="mt-3 flex flex-wrap gap-2">
-                                {options.map((pkg) => {
-                                  const pressed = pkg.id === packageId;
-                                  return (
-                                    <button
-                                      key={pkg.id}
-                                      type="button"
-                                      aria-pressed={pressed}
-                                      onClick={() => setPackageId(pkg.id)}
-                                      className={`min-h-11 rounded-full px-3 text-sm transition ${
-                                        pressed
-                                          ? "border border-accent bg-accent text-text-on-accent"
-                                          : "border border-elevated text-text-secondary hover:border-accent hover:text-text"
-                                      }`}
-                                    >
-                                      {packageChipLabel(pkg)}
-                                      <span className="sr-only">, {service.name}</span>
-                                    </button>
-                                  );
-                                })}
+              <div className="min-w-0 space-y-14 sm:space-y-10 overflow-x-hidden">
+                {groupServicesByKind(services ?? []).map((group, groupIdx) => {
+                  const isAlt = groupIdx % 2 === 1;
+                  const groupServices =
+                    group.kind === "SESSION"
+                      ? group.services.filter((s) => s.slug !== "video-reels")
+                      : group.services;
+                  const videoReelsService =
+                    group.kind === "SESSION"
+                      ? group.services.find((s) => s.slug === "video-reels")
+                      : null;
+
+                  return (
+                    <div key={group.kind} className="space-y-14 sm:space-y-10">
+                      <section
+                        aria-labelledby={`book-kind-${group.kind}`}
+                        className={`min-w-0 transition-all sm:rounded-lg sm:border sm:p-7 sm:shadow-xs md:p-8 ${
+                          isAlt
+                            ? "sm:border-border/40 sm:bg-[#f6f6f4] sm:dark:bg-stone-950/70"
+                            : "sm:border-border/30 sm:bg-white sm:dark:bg-stone-900"
+                        }`}
+                      >
+                        <div className="mb-5 sm:mb-6">
+                          <p className="font-subtitle mb-1 text-xs uppercase tracking-[0.18em] text-accent">
+                            {SERVICE_KIND_LABELS[group.kind].eyebrow}
+                          </p>
+                          <h2
+                            id={`book-kind-${group.kind}`}
+                            className="font-display text-2xl sm:text-3xl text-text"
+                          >
+                            {SERVICE_KIND_LABELS[group.kind].title}
+                          </h2>
+                          <p className="mt-1 max-w-2xl text-sm text-text-secondary">
+                            {SERVICE_KIND_LABELS[group.kind].blurb}
+                          </p>
+                        </div>
+                        <div className="w-full overflow-x-hidden">
+                          <div className="pa-package-rail">
+                            {groupServices.map((service) => {
+                              const options = sortPublicPackages(service.packages);
+                              const selectedPkg = options.find((pkg) => pkg.id === packageId) ?? null;
+                              const active = Boolean(selectedPkg);
+                              const media = serviceHeroSrc(service);
+                              const online = selectedPkg?.onlinePriceKobo;
+                              const discount =
+                                selectedPkg &&
+                                typeof selectedPkg.discountPercent === "number" &&
+                                selectedPkg.discountPercent > 0
+                                  ? selectedPkg.discountPercent
+                                  : null;
+                              const usesOutfits = options.some((pkg) => pkg.outfitCount != null);
+                              const selectedDeliverables = selectedPkg
+                                ? formatPackageDeliverables(selectedPkg)
+                                : null;
+                              return (
+                                <article
+                                  key={service.id}
+                                  className={`flex flex-col justify-between rounded-md border p-card-sm transition-shadow ${
+                                    active
+                                      ? "border-accent bg-elevated shadow-sm ring-1 ring-accent/30"
+                                      : isAlt
+                                      ? "border-border sm:border-border/40 lg:border-transparent bg-white dark:bg-stone-900"
+                                      : "border-border sm:border-elevated lg:border-transparent bg-[#fbfbf9] dark:bg-stone-900/60"
+                                  }`}
+                                >
+                              <div>
+                                {media ? (
+                                  <img
+                                    src={media}
+                                    alt={`${service.name} at Photo Arena`}
+                                    className="mb-3 aspect-[4/3] w-full rounded-xs object-cover object-top"
+                                  />
+                                ) : null}
+                                <h3 className="font-display text-xl text-text">{service.name}</h3>
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  {options.map((pkg) => {
+                                    const pressed = pkg.id === packageId;
+                                    return (
+                                      <button
+                                        key={pkg.id}
+                                        type="button"
+                                        aria-pressed={pressed}
+                                        onClick={() => setPackageId(pkg.id)}
+                                        className={`min-h-10 rounded-full px-3 text-xs font-medium transition ${
+                                          pressed
+                                            ? "border border-accent bg-accent text-text-on-accent font-semibold"
+                                            : "border border-elevated text-text-secondary hover:border-accent hover:text-text"
+                                        }`}
+                                      >
+                                        {packageChipLabel(pkg)}
+                                        <span className="sr-only">, {service.name}</span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
                               </div>
-                              {selectedPkg ? (
-                                <>
-                                  <p className="mt-3 text-sm leading-relaxed text-text-secondary">
-                                    {formatDuration(selectedPkg.durationMinutes)}
-                                    {selectedDeliverables ? ` → ${selectedDeliverables}` : ""}
+
+                              <div className="mt-auto pt-4">
+                                {selectedPkg ? (
+                                  <>
+                                    <p className="text-sm leading-relaxed text-text-secondary">
+                                      {formatDuration(selectedPkg.durationMinutes)}
+                                      {selectedDeliverables ? ` → ${selectedDeliverables}` : ""}
+                                    </p>
+                                    {selectedPkg.includes &&
+                                    selectedPkg.includes !== selectedDeliverables &&
+                                    !selectedDeliverables?.includes(selectedPkg.includes) ? (
+                                      <p className="mt-1 text-xs leading-relaxed text-text-muted">
+                                        {selectedPkg.includes}
+                                      </p>
+                                    ) : null}
+                                    {online != null && online !== selectedPkg.priceKobo ? (
+                                      <div className="mt-3 space-y-0.5">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          <span className="font-display text-2xl font-bold text-emerald-800 dark:text-emerald-400">
+                                            {formatNairaFromKobo(online)}
+                                          </span>
+                                          <span className="text-xs font-semibold uppercase tracking-wider text-emerald-900/80 dark:text-emerald-300">
+                                            online
+                                          </span>
+                                          {discount != null && discount > 0 ? (
+                                            <span className="inline-flex items-center rounded-md bg-emerald-700 text-white dark:bg-emerald-500 dark:text-emerald-950 px-2 py-0.5 text-xs font-bold tracking-wide shadow-sm">
+                                              {discount}% OFF
+                                            </span>
+                                          ) : null}
+                                        </div>
+                                        <p className="text-xs text-text-muted">
+                                          Studio price: <span className="line-through decoration-text-muted/70">{formatNairaFromKobo(selectedPkg.priceKobo)}</span>
+                                        </p>
+                                      </div>
+                                    ) : (
+                                      <p className="mt-3 font-medium text-text">
+                                        {formatNairaFromKobo(selectedPkg.priceKobo)}
+                                        <span className="ml-2 text-xs font-normal text-text-muted">
+                                          studio
+                                        </span>
+                                      </p>
+                                    )}
+                                    <Button
+                                      type="button"
+                                      className="mt-stack-sm w-full"
+                                      onClick={() => setStep("schedule")}
+                                    >
+                                      Continue
+                                      <span className="sr-only">
+                                        {" "}
+                                        with {service.name}, {packageChipLabel(selectedPkg)}
+                                      </span>
+                                    </Button>
+                                  </>
+                                ) : (
+                                  <p className="text-sm text-text-muted">
+                                    From {formatNairaFromKobo(service.startingPriceKobo)}
+                                    {usesOutfits ? " · choose an outfit" : ""}
                                   </p>
-                                  {selectedPkg.includes ? (
-                                    <p className="mt-2 text-sm leading-relaxed text-text-secondary">
-                                      {selectedPkg.includes}
-                                    </p>
-                                  ) : null}
-                                  <p className="mt-3 font-medium text-text">
-                                    {formatNairaFromKobo(selectedPkg.priceKobo)}
-                                    <span className="ml-2 text-xs font-normal text-text-muted">
-                                      studio
-                                    </span>
-                                  </p>
-                                  {online != null && online !== selectedPkg.priceKobo ? (
-                                    <p className="mt-1 text-sm text-accent">
-                                      {formatNairaFromKobo(online)} online
-                                      {discount != null ? ` (${discount}% off)` : ""}
-                                    </p>
-                                  ) : (
-                                    <p className="mt-1 text-xs text-text-muted">
-                                      Online discount is applied when you hold the slot.
-                                    </p>
-                                  )}
-                                  <Button
-                                    type="button"
-                                    className="mt-stack-sm w-full"
-                                    onClick={() => setStep("schedule")}
-                                  >
-                                    Continue
-                                    <span className="sr-only">
-                                      {" "}
-                                      with {service.name}, {packageChipLabel(selectedPkg)}
-                                    </span>
-                                  </Button>
-                                </>
-                              ) : (
-                                <p className="mt-3 text-sm text-text-muted">
-                                  From {formatNairaFromKobo(service.startingPriceKobo)}
-                                  {usesOutfits ? " · choose an outfit" : ""}
-                                </p>
-                              )}
+                                )}
+                              </div>
                             </article>
                           );
                         })}
                       </div>
                     </div>
                   </section>
-                ))}
-              </div>
-            ) : null}
+
+                  {videoReelsService ? (
+                    <VideoReelsRateCard
+                      service={videoReelsService}
+                      selectedPackageId={packageId}
+                      onSelectPackage={setPackageId}
+                      onContinue={() => setStep("schedule")}
+                      mode="book"
+                    />
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
 
             {step === "schedule" && selected ? (
               <div className="space-y-form">
@@ -410,20 +451,29 @@ export function BookPage() {
                       {selected.includes}
                     </p>
                   ) : null}
-                  <p className="mt-3 font-medium text-text">
-                    {formatNairaFromKobo(selected.priceKobo)}
-                    <span className="ml-2 text-xs font-normal text-text-muted">studio</span>
-                  </p>
                   {onlinePriceKobo != null && onlinePriceKobo !== selected.priceKobo ? (
-                    <p className="mt-1 text-sm text-accent">
-                      {formatNairaFromKobo(onlinePriceKobo)} online
-                      {typeof selected.discountPercent === "number" && selected.discountPercent > 0
-                        ? ` (${selected.discountPercent}% off)`
-                        : ""}
-                    </p>
+                    <div className="mt-3 space-y-0.5">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-display text-2xl font-bold text-emerald-800 dark:text-emerald-400">
+                          {formatNairaFromKobo(onlinePriceKobo)}
+                        </span>
+                        <span className="text-xs font-semibold uppercase tracking-wider text-emerald-900/80 dark:text-emerald-300">
+                          online
+                        </span>
+                        {typeof selected.discountPercent === "number" && selected.discountPercent > 0 ? (
+                          <span className="inline-flex items-center rounded-md bg-emerald-700 text-white dark:bg-emerald-500 dark:text-emerald-950 px-2 py-0.5 text-xs font-bold tracking-wide shadow-sm">
+                            {selected.discountPercent}% OFF
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="text-xs text-text-muted">
+                        Studio price: <span className="line-through decoration-text-muted/70">{formatNairaFromKobo(selected.priceKobo)}</span>
+                      </p>
+                    </div>
                   ) : (
-                    <p className="mt-1 text-xs text-text-muted">
-                      Online discount is applied when you hold the slot.
+                    <p className="mt-3 font-medium text-text">
+                      {formatNairaFromKobo(selected.priceKobo)}
+                      <span className="ml-2 text-xs font-normal text-text-muted">studio</span>
                     </p>
                   )}
                 </article>
@@ -450,6 +500,7 @@ export function BookPage() {
                     <CameraSpinner size="sm" label="Checking availability" caption="Checking availability…" />
                   ) : null}
                   {slotsError ? <p className="text-sm text-error">{slotsError}</p> : null}
+                  {bookingError ? <p className="text-sm text-error" role="alert">{bookingError}</p> : null}
                   {!slotsLoading && !slotsError && slots.length === 0 ? (
                     <p className="text-sm text-text-muted">No open slots on this date. Try another day.</p>
                   ) : null}
@@ -458,7 +509,10 @@ export function BookPage() {
                       <button
                         key={iso}
                         type="button"
-                        onClick={() => setSlotIso(iso)}
+                        onClick={() => {
+                          setSlotIso(iso);
+                          setBookingError(null);
+                        }}
                         className={`min-h-11 border px-2 text-sm ${
                           slotIso === iso
                             ? "border-accent bg-accent/15 text-text"
@@ -482,7 +536,7 @@ export function BookPage() {
             ) : null}
 
             {step === "details" ? (
-              <form onSubmit={onHold} className="space-y-form">
+              <form onSubmit={onSubmitBooking} className="space-y-form">
                 <div>
                   <label htmlFor="customerName" className="pa-label">
                     Full name
@@ -493,6 +547,7 @@ export function BookPage() {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     className="pa-input"
+                    placeholder="e.g. Chisom Adeleke"
                   />
                 </div>
                 <div>
@@ -541,57 +596,44 @@ export function BookPage() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="pa-input"
+                    placeholder="e.g. chisom@example.com"
                     autoComplete="email"
                   />
                   <p className="mt-1 text-xs text-text-muted">
                     Required for booking confirmation and shoot reminders.
                   </p>
                 </div>
-                {holdError ? <p className="text-sm text-error">{holdError}</p> : null}
-                <div className="flex flex-wrap gap-control">
+
+                {selected ? (
+                  <div className="rounded-xl border border-elevated bg-surface/80 p-4 space-y-2.5 text-sm mt-4">
+                    <div className="flex justify-between gap-4 text-text-muted">
+                      <span>Studio price</span>
+                      <span className="line-through">{formatNairaFromKobo(selected.priceKobo)}</span>
+                    </div>
+                    <div className="flex justify-between gap-4 text-emerald-600 dark:text-emerald-400 font-medium">
+                      <span>Online discount ({policies.onlineDiscountPercent}%)</span>
+                      <span>−{formatNairaFromKobo(selected.priceKobo - (onlinePriceKobo ?? selected.priceKobo))}</span>
+                    </div>
+                    <div className="flex justify-between gap-4 border-t border-elevated pt-2.5 text-base font-semibold text-text">
+                      <span>Total payable</span>
+                      <span className="font-display text-xl font-bold text-emerald-600 dark:text-emerald-400">
+                        {formatNairaFromKobo(onlinePriceKobo ?? selected.priceKobo)}
+                      </span>
+                    </div>
+                  </div>
+                ) : null}
+
+                {bookingError ? <p className="text-sm text-error">{bookingError}</p> : null}
+
+                <div className="flex flex-wrap gap-control pt-2">
                   <Button type="button" variant="ghost" onClick={() => setStep("schedule")}>
                     Back
                   </Button>
                   <Button type="submit" disabled={submitting}>
-                    {submitting ? "Holding slot…" : "Hold slot & see price"}
+                    {submitting ? "Redirecting to payment…" : "Proceed to payment →"}
                   </Button>
                 </div>
               </form>
-            ) : null}
-
-            {step === "hold" && hold ? (
-              <div className="space-y-form">
-                <div className="pa-card">
-                  <p className="text-xs uppercase tracking-[0.16em] text-accent">Hold active</p>
-                  <p className="mt-2 font-display text-3xl text-text">{formatCountdown(remainingMs)}</p>
-                  <p className="mt-2 text-sm text-text-secondary">
-                    Complete payment before the hold expires or the slot is released.
-                  </p>
-                </div>
-                <dl className="space-y-3 text-sm">
-                  <div className="flex justify-between gap-4">
-                    <dt className="text-text-muted">Studio price</dt>
-                    <dd>{formatNairaFromKobo(hold.pricing.baseKobo)}</dd>
-                  </div>
-                  <div className="flex justify-between gap-4">
-                    <dt className="text-text-muted">Online discount ({hold.pricing.discountPercent}%)</dt>
-                    <dd>−{formatNairaFromKobo(hold.pricing.discountKobo)}</dd>
-                  </div>
-                  <div className="flex justify-between gap-4 border-t border-elevated pt-3 text-base">
-                    <dt className="text-text">Payable now</dt>
-                    <dd className="text-accent">{formatNairaFromKobo(hold.pricing.payableKobo)}</dd>
-                  </div>
-                </dl>
-                {checkoutError ? <p className="text-sm text-error">{checkoutError}</p> : null}
-                <div className="flex flex-wrap gap-control">
-                  <Button type="button" disabled={submitting || remainingMs <= 0} onClick={onCheckout}>
-                    {submitting ? "Starting checkout…" : "Pay now"}
-                  </Button>
-                </div>
-                {remainingMs <= 0 ? (
-                  <p className="text-sm text-warning">Hold expired. Go back and choose a new time.</p>
-                ) : null}
-              </div>
             ) : null}
           </div>
 
@@ -632,23 +674,20 @@ export function BookPage() {
                     <dt className="text-text-muted">Studio price</dt>
                     <dd>{formatNairaFromKobo(selected.priceKobo)}</dd>
                   </div>
-                  {onlinePriceKobo != null && !hold ? (
-                    <div className="flex justify-between gap-4">
-                      <dt className="text-text-muted">Online price</dt>
-                      <dd className="text-accent">{formatNairaFromKobo(onlinePriceKobo)}</dd>
-                    </div>
-                  ) : null}
-                  {hold ? (
-                    <div className="flex justify-between gap-4">
-                      <dt className="text-text-muted">Server total</dt>
-                      <dd className="text-accent">{formatNairaFromKobo(hold.pricing.payableKobo)}</dd>
-                    </div>
-                  ) : null}
+                  <div className="flex justify-between gap-4 text-emerald-600 dark:text-emerald-400 font-medium">
+                    <dt>Online discount ({policies.onlineDiscountPercent}%)</dt>
+                    <dd>−{formatNairaFromKobo(selected.priceKobo - (onlinePriceKobo ?? selected.priceKobo))}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4 border-t border-elevated pt-2.5 text-base font-semibold text-text">
+                    <dt>Total payable</dt>
+                    <dd className="font-display text-xl font-bold text-emerald-600 dark:text-emerald-400">
+                      {formatNairaFromKobo(onlinePriceKobo ?? selected.priceKobo)}
+                    </dd>
+                  </div>
                 </dl>
               ) : null}
               <p className="mt-6 text-xs leading-relaxed text-text-muted">
-                Display estimates are not final. The backend sets the charged amount at hold. Bookings are
-                non-refundable; rescheduling attracts {policies.reschedulePercent}%. Times are Africa/Lagos.
+                Bookings are non-refundable; rescheduling attracts {policies.reschedulePercent}%. Times are Africa/Lagos.
               </p>
               <p className="mt-3 text-xs text-text-muted">
                 Prefer to talk? Call{" "}

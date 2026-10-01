@@ -114,6 +114,18 @@ const seeds: Seed[] = [
       { minutes: 90, includes: "3 outfits · 3 themed setups · 12 photos", naira: 60_000 },
     ],
   },
+  {
+    slug: "video-reels",
+    name: "Studio Video Content",
+    kind: "SESSION",
+    summary: "4K luxury video reels & studio content sessions by NUFX.",
+    tiers: [
+      { minutes: 30, includes: "1 outfit · 1 4K Reel (15–30 secs)", naira: 50_000 },
+      { minutes: 60, includes: "2 outfits · 2 4K Reels (30 sec–1 min each)", naira: 90_000 },
+      { minutes: 120, includes: "3 outfits · 3 4K Reels", naira: 140_000 },
+      { minutes: 150, includes: "4 outfits · 4 4K Reels + 1 combo reel of all 4 outfits", naira: 200_000 },
+    ],
+  },
 
   /* ---------------- Signature sets ---------------- */
   {

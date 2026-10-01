@@ -3,7 +3,7 @@ import {
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
-import { Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { promises as fs } from "fs";
 import { absoluteUploadPath, kindDirFor } from "../common/upload-path";
@@ -16,7 +16,7 @@ export class R2StorageProvider implements IStorageProvider {
   private readonly logger = new Logger(R2StorageProvider.name);
   private s3Client: S3Client | null = null;
 
-  constructor(private readonly config: ConfigService) {
+  constructor(@Inject(ConfigService) private readonly config: ConfigService) {
     this.initClient();
   }
 

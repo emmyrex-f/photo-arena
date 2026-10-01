@@ -16,7 +16,14 @@ export class DashboardController {
   }
 
   @Get("revenue")
-  revenue(@Query("weekStart") weekStart?: string) {
+  revenue(
+    @Query("weekStart") weekStart?: string,
+    @Query("month") month?: string,
+    @Query("period") period?: "week" | "month",
+  ) {
+    if (period === "month" || (month && !weekStart)) {
+      return this.dashboard.getMonthlyRevenue(month);
+    }
     return this.dashboard.getWeeklyRevenue(weekStart);
   }
 }

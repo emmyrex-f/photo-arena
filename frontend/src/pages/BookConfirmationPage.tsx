@@ -62,12 +62,12 @@ const COPY: Record<Exclude<UiState, "loading">, { title: string; description: st
   expired: {
     title: "Booking not completed",
     description:
-      "This hold expired before payment was confirmed, so the slot was released. If you believe you were charged, contact the studio with your reference.",
+      "Payment was not completed, so this session was not booked. You can pick a time and book again. If you believe you were charged, contact the studio with your reference.",
   },
   paid_unplaced: {
     title: "Payment received — slot unavailable",
     description:
-      "Your payment arrived after the hold expired and the slot was taken in the meantime. Your booking is not confirmed yet; the studio will contact you to reschedule.",
+      "Your payment arrived after someone else booked this slot. Your payment is safe; the studio will contact you to pick another available time.",
   },
 };
 

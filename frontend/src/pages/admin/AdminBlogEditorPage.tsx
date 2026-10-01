@@ -19,6 +19,7 @@ import {
   Upload,
 } from "lucide-react";
 import { Button } from "../../admin/components/ui/button";
+import { useModal } from "../../admin/components/ui/confirm-dialog";
 import { ErrorBanner } from "../../admin/components/ui/error-banner";
 import { Input } from "../../admin/components/ui/input";
 import { Label } from "../../admin/components/ui/label";
@@ -65,6 +66,7 @@ type SeoPreviewTab = "google" | "social";
 
 export function AdminBlogEditorPage() {
   const api = useAdminApi();
+  const modal = useModal();
   const { resolved: themeMode } = useAdminTheme();
   const navigate = useNavigate();
   const { id } = useParams();
@@ -203,7 +205,15 @@ export function AdminBlogEditorPage() {
 
   async function onDelete() {
     if (!id || isNew) return;
-    if (!window.confirm(`Delete “${form.title || "this post"}”?`)) return;
+    const ok = await modal.confirm({
+      title: "Delete Blog Post",
+      description: `Are you sure you want to delete “${form.title || "this post"}”? This action cannot be undone.`,
+      confirmLabel: "Delete post",
+      destructive: true,
+      tone: "danger",
+      icon: "trash",
+    });
+    if (!ok) return;
     setSaving(true);
     try {
       await api.blog.remove(id);

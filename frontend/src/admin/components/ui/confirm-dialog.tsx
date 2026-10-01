@@ -82,3 +82,11 @@ function ConfirmDialog({
 }
 
 export { ConfirmDialog };
+export { useModal, useConfirm, useAlert, usePrompt, modal } from "../../../components/ui/ModalProvider";
+export type {
+  ModalTone,
+  ModalIconType,
+  ConfirmModalOptions,
+  AlertModalOptions,
+  PromptModalOptions,
+} from "../../../components/ui/ModalProvider";

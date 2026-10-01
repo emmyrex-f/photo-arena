@@ -16,5 +16,15 @@ services:
       timeout: 5s
       retries: 20
 
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: photoarena-tunnel
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN:-eyJhIjoiMGYyNjhlYzhiMGYwMzI3YjQ1MDA0ZDlmMzU5MzZlZjkiLCJ0IjoiNWE0MzgwY2ItNDgyZC00MGU1LTkyNWItYzUwNmFiYmM5ZTAxIiwicyI6IllUbGxORGxsTjJNdE1UUTVZeTAwWW1aa0xXRTRNRFF0WW1ZNU1HUmhOR05qWkdFMyJ9}
+    command: tunnel --no-autoupdate run
+
 volumes:
   photoarena_pg:
+

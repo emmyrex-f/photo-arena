@@ -1,8 +1,9 @@
 import { useLocation } from "react-router-dom";
-import { headerStillForPath } from "../../data/headerStills";
+import { headerStillForPath, type HeaderStill } from "../../data/headerStills";
 import { cn } from "../../lib/cn";
 import { Container } from "../ui/Container";
 import { Heading } from "../ui/Heading";
+import { SlideDots, useImageListSetting, useSlideshow } from "../ui/Slideshow";
 
 /** Home keeps its own video hero — no photo banner. */
 const NO_PHOTO_PATHS = new Set(["/"]);
@@ -16,6 +17,8 @@ export function PageHeader({
   photo = true,
   image,
   objectPosition,
+  slides,
+  slidesSettingKey,
 }: {
   eyebrow?: string;
   title: string;
@@ -28,7 +31,13 @@ export function PageHeader({
   image?: string;
   /** CSS object-position, e.g. "74% 8%". */
   objectPosition?: string;
+  /** Crossfading banner photos; wins over `image`. */
+  slides?: HeaderStill[];
+  /** CMS setting holding a JSON array of image URLs; overrides `slides` when set. */
+  slidesSettingKey?: string;
 }) {
+  const cmsUrls = useImageListSetting(slidesSettingKey);
+  if (cmsUrls.length) slides = cmsUrls.map((src) => ({ src, objectPosition: "center 25%" }));
   const { pathname } = useLocation();
   const usePhoto = photo && !NO_PHOTO_PATHS.has(pathname);
   const still = usePhoto ? headerStillForPath(pathname) : null;
@@ -39,8 +48,12 @@ export function PageHeader({
       ? image || undefined
       : still?.src;
   const position = objectPosition ?? still?.objectPosition ?? "center 24%";
+  const frames: HeaderStill[] =
+    usePhoto && slides?.length ? slides : src ? [{ src, objectPosition: position }] : [];
 
-  if (!src) {
+  const [active, setActive] = useSlideshow(frames.length);
+
+  if (!frames.length) {
     return (
       <div
         className={cn(
@@ -73,13 +86,20 @@ export function PageHeader({
       )}
     >
       <div className="relative isolate min-h-[min(48vh,26rem)] w-full overflow-hidden sm:min-h-[min(52vh,30rem)]">
-        <img
-          src={src}
-          alt=""
-          decoding="async"
-          className="pointer-events-none absolute inset-0 size-full object-cover"
-          style={{ objectPosition: position }}
-        />
+        {frames.map((frame, i) => (
+          <img
+            key={frame.src}
+            src={frame.src}
+            alt=""
+            decoding="async"
+            loading={i === 0 ? "eager" : "lazy"}
+            className={cn(
+              "pointer-events-none absolute inset-0 size-full object-cover transition-opacity duration-1000 ease-in-out",
+              i === active ? "opacity-100" : "opacity-0",
+            )}
+            style={{ objectPosition: frame.objectPosition }}
+          />
+        ))}
         <Container className="relative z-[1] flex min-h-[min(48vh,26rem)] max-w-none flex-col justify-end pb-10 pt-10 sm:min-h-[min(52vh,30rem)] sm:pb-14 sm:pt-12">
           <div className="pa-banner-copy">
             {eyebrow ? (
@@ -97,6 +117,12 @@ export function PageHeader({
             ) : null}
           </div>
         </Container>
+        <SlideDots
+          count={frames.length}
+          active={active}
+          onPick={setActive}
+          className="absolute bottom-2 right-2 sm:bottom-4 sm:right-4"
+        />
       </div>
     </div>
   );

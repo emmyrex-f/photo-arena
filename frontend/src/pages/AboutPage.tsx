@@ -1,5 +1,6 @@
 import { Lightbulb, MapPin, Smartphone, Sparkles, Users, Footprints } from "lucide-react";
 import { PageHeader } from "../components/layout/PageHeader";
+import { ABOUT_PAGE_SLIDES } from "../data/headerStills";
 import { Button } from "../components/ui/Button";
 import { Container } from "../components/ui/Container";
 import { Heading } from "../components/ui/Heading";
@@ -65,6 +66,8 @@ export function AboutPage() {
         eyebrow="About"
         title="A studio built for a world-class photo, without the wait."
         description="Photo Arena is a walk-in portrait studio in Port Harcourt. The room, the lights, and the sets are ready. You bring the occasion."
+        slides={ABOUT_PAGE_SLIDES}
+        slidesSettingKey="site.header.about"
       />
       <Section>
         <Container className="grid gap-grid-lg lg:grid-cols-2">

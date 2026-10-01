@@ -22,7 +22,7 @@ import {
   toLagosYmd,
 } from "./availability";
 import { blockingWhere, expiredHoldWhere } from "./blocking";
-import { lockStudioResource, throwIfOverlap } from "./resource-lock";
+import { SLOT_TAKEN_MESSAGE, lockStudioResource, throwIfOverlap } from "./resource-lock";
 import type { CreateAdminBookingDto } from "./dto/create-admin-booking.dto";
 import type {
   CustomerCancelBookingDto,
@@ -249,7 +249,7 @@ export class BookingsService {
         },
       });
       if (activeHolds >= HOLD_ACTIVE_PER_PHONE) {
-        throw new ConflictException("Too many active holds for this phone number");
+        throw new ConflictException("Too many unpaid bookings for this phone number. Complete one payment first.");
       }
 
       const existing = await tx.booking.findMany({
@@ -257,7 +257,7 @@ export class BookingsService {
         select: { startTime: true, endTime: true },
       });
       if (!slotFits(start, pkg.durationMinutes, new Date(), existing, { requireSameDayNotice: true, cmsHours })) {
-        throw new ConflictException("That slot is not available");
+        throw new ConflictException(SLOT_TAKEN_MESSAGE);
       }
 
       const duplicate = await tx.booking.findFirst({
@@ -310,17 +310,6 @@ export class BookingsService {
         throwIfOverlap(error);
       }
     });
-
-    void this.notifications.notifyEvent(
-      "booking_created",
-      {
-        customerName: booking.customer.name,
-        startTime: booking.startTime.toISOString(),
-        reference,
-        details: `Hold until ${holdExpiresAt.toISOString()}`,
-      },
-      [requireNotifyEmail(booking)],
-    );
 
     return {
       bookingId: booking.id,
@@ -1046,6 +1035,12 @@ export class BookingsService {
       include: { customer: true },
     });
     if (!booking) throw new NotFoundException("Booking not found");
+    if (booking.status === status) {
+      return this.prisma.booking.findUnique({
+        where: { id },
+        include: bookingInclude,
+      });
+    }
 
     const allowed = ALLOWED_STATUS[booking.status];
     if (!allowed.includes(status)) {

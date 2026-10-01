@@ -14,10 +14,27 @@ import { PrismaService } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
 
 const ALLOWED_FORMATS = new Set(["jpeg", "png", "webp"]);
+const ALLOWED_VIDEO_MIMES = new Set([
+  "video/mp4",
+  "video/webm",
+  "video/quicktime",
+  "video/ogg",
+  "video/x-matroska",
+]);
 const USAGE_TYPE = "portfolio";
+
+function getVideoExtension(mimetype: string, originalname: string): string {
+  const lowerName = originalname.toLowerCase();
+  if (lowerName.endsWith(".webm") || mimetype === "video/webm") return ".webm";
+  if (lowerName.endsWith(".mp4") || mimetype === "video/mp4") return ".mp4";
+  if (lowerName.endsWith(".mov") || mimetype === "video/quicktime") return ".mov";
+  if (lowerName.endsWith(".ogg") || lowerName.endsWith(".ogv") || mimetype === "video/ogg") return ".ogg";
+  return ".mp4";
+}
 
 export type GalleryListInput = {
   kind?: string;
+  usageType?: string;
   isActive?: boolean;
   featured?: boolean;
   category?: string;
@@ -40,13 +57,30 @@ export class GalleryService {
     const page = parsePage(opts.page);
     const pageSize = parsePageSize(opts.pageSize, 24);
     const q = opts.q?.trim();
-    const category = opts.category?.trim().toLowerCase();
+    const category = opts.category?.trim();
+
+    const isServicesFilter =
+      category?.toLowerCase() === "service" ||
+      category?.toLowerCase() === "services" ||
+      opts.usageType === "service";
 
     const where: Prisma.GalleryImageWhereInput = {
       ...(opts.kind ? { kind: parseMediaKind(opts.kind) } : {}),
       ...(opts.isActive !== undefined ? { isActive: opts.isActive } : {}),
       ...(opts.featured !== undefined ? { featured: opts.featured } : {}),
-      ...(category ? { category: { equals: category, mode: "insensitive" } } : {}),
+      ...(isServicesFilter
+        ? {
+            OR: [
+              { category: { startsWith: "Service", mode: "insensitive" } },
+              { usages: { some: { usageType: "service" } } },
+            ],
+          }
+        : category
+          ? { category: { equals: category, mode: "insensitive" } }
+          : {}),
+      ...(opts.usageType && !isServicesFilter
+        ? { usages: { some: { usageType: opts.usageType } } }
+        : {}),
       ...(q
         ? {
             OR: [
@@ -96,8 +130,45 @@ export class GalleryService {
     const created = [];
 
     for (const file of files) {
-      if (file.size > 15 * 1024 * 1024) {
-        throw new BadRequestException("Each file must be ≤ 15 MB");
+      if (file.size > 100 * 1024 * 1024) {
+        throw new BadRequestException("Each file must be ≤ 100 MB");
+      }
+
+      const isVideo =
+        file.mimetype?.startsWith("video/") ||
+        ALLOWED_VIDEO_MIMES.has(file.mimetype) ||
+        /\.(mp4|webm|mov|ogg|ogv)$/i.test(file.originalname);
+
+      if (isVideo) {
+        const id = randomUUID();
+        const ext = getVideoExtension(file.mimetype, file.originalname);
+        const filename = `${id}${ext}`;
+
+        const stored = await this.storage.upload({
+          buffer: file.buffer,
+          filename,
+          kind,
+          contentType: file.mimetype || "video/mp4",
+        });
+
+        const row = await this.prisma.galleryImage.create({
+          data: {
+            filename,
+            url: stored.url,
+            thumbUrl: stored.thumbUrl ?? stored.url,
+            width: null,
+            height: null,
+            kind,
+            category: fields.category?.trim() || "video",
+            alt: fields.alt?.trim() || file.originalname || "Uploaded video",
+            sortOrder,
+            featured: false,
+            isActive: true,
+          },
+        });
+        created.push(row);
+        sortOrder += 1;
+        continue;
       }
 
       let format: string | undefined;
@@ -105,10 +176,10 @@ export class GalleryService {
         const meta = await sharp(file.buffer, { failOn: "error" }).metadata();
         format = meta.format;
       } catch {
-        throw new BadRequestException("Only JPEG, PNG, or WebP images are allowed");
+        throw new BadRequestException("Only JPEG, PNG, WebP images or MP4, WebM videos are allowed");
       }
       if (!format || !ALLOWED_FORMATS.has(format)) {
-        throw new BadRequestException("Only JPEG, PNG, or WebP images are allowed");
+        throw new BadRequestException("Only JPEG, PNG, WebP images or MP4, WebM videos are allowed");
       }
 
       const id = randomUUID();
@@ -155,6 +226,55 @@ export class GalleryService {
     }
 
     return created;
+  }
+
+  getPresignedUpload(input: {
+    kind?: string;
+    filename: string;
+    contentType?: string;
+    resourceType?: "image" | "video" | "auto";
+  }) {
+    const kind = parseMediaKind(input.kind);
+    return this.storage.getPresignedUpload({
+      kind,
+      filename: input.filename,
+      contentType: input.contentType,
+      resourceType: input.resourceType,
+    });
+  }
+
+  async completePresigned(input: {
+    url: string;
+    thumbUrl?: string;
+    filename: string;
+    width?: number;
+    height?: number;
+    kind?: string;
+    category?: string;
+    alt?: string;
+  }) {
+    if (!input.url) throw new BadRequestException("Upload URL is required");
+    const kind = parseMediaKind(input.kind);
+    const max = await this.prisma.galleryImage.aggregate({ _max: { sortOrder: true } });
+    const sortOrder = (max._max.sortOrder ?? -1) + 1;
+
+    const row = await this.prisma.galleryImage.create({
+      data: {
+        filename: input.filename || "media",
+        url: input.url,
+        thumbUrl: input.thumbUrl || input.url,
+        width: input.width ?? null,
+        height: input.height ?? null,
+        kind,
+        category: input.category?.trim() || "general",
+        alt: input.alt?.trim() || input.filename || "Uploaded media",
+        sortOrder,
+        featured: false,
+        isActive: true,
+      },
+    });
+
+    return row;
   }
 
   getStorageStatus() {

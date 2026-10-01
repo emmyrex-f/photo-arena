@@ -12,8 +12,8 @@ async function main() {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      email: "saviorisrael@gmail.com",
-      password: "changeme",
+      email: process.env.SEED_OWNER_EMAIL ?? "owner@photoarenang.com",
+      password: process.env.SEED_OWNER_PASSWORD ?? "changeme",
     }),
   });
   assert.ok(loginRes.status === 200 || loginRes.status === 201, `Login failed: ${loginRes.status}`);

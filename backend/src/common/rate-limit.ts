@@ -45,7 +45,7 @@ export const rateLimiter = new MemoryRateLimiter();
 export const RATE_WINDOW_MS = 15 * 60 * 1000;
 export const HOLD_IP_LIMIT = 10;
 export const HOLD_PHONE_LIMIT = 5;
-export const HOLD_ACTIVE_PER_PHONE = 3;
+export const HOLD_ACTIVE_PER_PHONE = 5;
 export const LOGIN_FAIL_LIMIT = 5;
 
 export function rateLimitPhoneKey(phone: string): string {

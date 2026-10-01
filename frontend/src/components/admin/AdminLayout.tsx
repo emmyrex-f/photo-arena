@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronsLeft,
   ChevronsRight,
+  ExternalLink,
   KeyRound,
   LogOut,
   Menu,
@@ -15,6 +16,7 @@ import {
   User,
 } from "lucide-react";
 import { Button } from "../../admin/components/ui/button";
+import { useModal } from "../../admin/components/ui/confirm-dialog";
 import { toast } from "../../admin/components/ui/toaster";
 import {
   DropdownMenu,
@@ -237,6 +239,7 @@ function roleLabel(role: string | undefined) {
 
 export function AdminLayout() {
   const { ready, user, logout, logoutAll } = useAuth();
+  const modal = useModal();
   const location = useLocation();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(() => {
@@ -361,6 +364,18 @@ export function AdminLayout() {
             </Button>
 
             <div className="ml-auto flex shrink-0 items-center gap-2.5 sm:gap-3">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1.5 px-3 text-xs font-medium"
+                asChild
+              >
+                <a href="/" target="_blank" rel="noreferrer">
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">View Public Site</span>
+                </a>
+              </Button>
+
               <ThemeMenu />
 
               {hasDeskPermission(user, "notifications") ? (
@@ -417,7 +432,14 @@ export function AdminLayout() {
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={async () => {
-                      if (window.confirm("Sign out of all devices? This will invalidate all your active sessions.")) {
+                      const ok = await modal.confirm({
+                        title: "Sign Out All Devices?",
+                        description: "This will invalidate all your active login sessions across all devices and browsers.",
+                        confirmLabel: "Sign out all devices",
+                        tone: "danger",
+                        icon: "shield",
+                      });
+                      if (ok) {
                         await logoutAll();
                         toast.info("All active sessions revoked");
                       }

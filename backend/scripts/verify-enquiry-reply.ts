@@ -11,7 +11,7 @@ async function main() {
   const loginRes = await fetch(`${API_URL}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email: "saviorisrael@gmail.com", password: "changeme" }),
+    body: JSON.stringify({ email: process.env.SEED_OWNER_EMAIL ?? "owner@photoarenang.com", password: process.env.SEED_OWNER_PASSWORD ?? "changeme" }),
   });
   assert.ok(loginRes.ok, `Login failed: ${loginRes.status}`);
   const { token } = await loginRes.json();

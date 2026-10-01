@@ -15,7 +15,7 @@ Enforce these rules in backend services, not in React.
 - Packages occupy their full duration (a 90-minute package blocks 90 minutes).
 - 5% online discount (backend `PricingService` only).
 - 15% rescheduling fee (of original package price).
-- 15-minute payment hold (`TEMPORARY_HOLD`); expired holds release the slot.
+- Silent 15-minute slot hold (`TEMPORARY_HOLD`) — no hold email/countdown, never blocks payment. Checkout renews an expired hold if the slot is still free; otherwise the second customer gets 409 "slot just booked, pick another time". Late payments are placed under the studio lock or flagged `PAID_UNPLACED`. Expired holds release the slot.
 - No customer cancellation or refund. Admin may cancel; `NO_SHOW` is distinct from `CANCELLED`.
 
 Availability blockers: `TEMPORARY_HOLD`, `PENDING`, `CONFIRMED`. Timezone: store UTC, display `Africa/Lagos`.

@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import nodemailer from "nodemailer";
 import type { Transporter } from "nodemailer";
@@ -10,8 +10,8 @@ import type { NotificationEvent, NotificationMessage } from "./notification.type
 const TEMPLATES: Array<{ event: NotificationEvent; subject: string; bodyPreview: string }> = [
   {
     event: "booking_created",
-    subject: "Photo Arena — booking hold created",
-    bodyPreview: "A temporary hold was placed for {{customerName}} on {{startTime}}.",
+    subject: "Photo Arena — booking created",
+    bodyPreview: "A booking was created for {{customerName}} on {{startTime}}.",
   },
   {
     event: "booking_confirmed",
@@ -45,8 +45,8 @@ const TEMPLATES: Array<{ event: NotificationEvent; subject: string; bodyPreview:
   },
   {
     event: "checkout_abandoned",
-    subject: "Photo Arena — checkout abandoned (hold released)",
-    bodyPreview: "Checkout for {{customerName}} was abandoned. The temporary hold for {{startTime}} has been released.",
+    subject: "Photo Arena — checkout abandoned",
+    bodyPreview: "Checkout for {{customerName}} was abandoned. The {{startTime}} slot is open again.",
   },
 ];
 
@@ -56,8 +56,8 @@ export class NotificationsService {
   private resend: Resend | null = null;
 
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly config: ConfigService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(ConfigService) private readonly config: ConfigService,
   ) {
     const resendApiKey = this.config.get<string>("RESEND_API_KEY")?.trim();
     if (resendApiKey) {
@@ -93,11 +93,11 @@ export class NotificationsService {
   }
 
   fromAddress() {
-    return (
+    const raw =
       this.config.get<string>("RESEND_FROM")?.trim() ||
       this.config.get<string>("SMTP_FROM")?.trim() ||
-      "Photo Arena <noreply@photoarenang.com>"
-    );
+      "Photo Arena <noreply@photoarenang.com>";
+    return raw.replace(/^["']|["']$/g, "").trim();
   }
 
   templates() {
@@ -110,6 +110,7 @@ export class NotificationsService {
     });
     const raw = (row?.value || this.config.get<string>("NOTIFICATION_EMAIL_RECIPIENTS") || "").trim();
     return raw
+      .replace(/^["']|["']$/g, "")
       .split(",")
       .map((e) => e.trim().toLowerCase())
       .filter(Boolean);
@@ -118,7 +119,11 @@ export class NotificationsService {
   async send(message: NotificationMessage) {
     const provider = this.emailProvider();
     const channel = `email:${provider}`;
-    const to = message.to.length ? message.to : await this.getRecipients();
+    const rawTo = message.to.length ? message.to : await this.getRecipients();
+    const to = rawTo
+      .map((e) => e.trim().toLowerCase())
+      .filter((e) => Boolean(e) && e.includes("@"));
+
     if (!to.length) {
       await this.prisma.notificationLog.create({
         data: {
@@ -133,16 +138,18 @@ export class NotificationsService {
 
     if (this.resend) {
       try {
-        await this.resend.emails.send({
+        const res = await this.resend.emails.send({
           from: this.fromAddress(),
           to,
           subject: message.subject,
           text: message.body,
           html: message.html,
         });
+        if (res.error) {
+          console.error("[resend:error]", res.error);
+        }
       } catch (err) {
         console.error("[resend:error]", err);
-        throw err;
       }
     } else if (this.transporter) {
       await this.transporter.sendMail({
@@ -257,13 +264,17 @@ export class NotificationsService {
     const subject = built.subject || fill(tpl.subject);
     const body = built.text || (fill(tpl.bodyPreview) + (vars.details ? `\n\n${vars.details}` : ""));
 
-    await this.send({
-      event,
-      to: recipients,
-      subject,
-      body,
-      html: built.html,
-    });
+    try {
+      await this.send({
+        event,
+        to: recipients,
+        subject,
+        body,
+        html: built.html,
+      });
+    } catch (err) {
+      console.error(`Failed to send notification for ${event}:`, err);
+    }
   }
 
   async sendManualNotification(input: {

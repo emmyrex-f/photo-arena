@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { Bell, ChevronLeft, ChevronRight, Mail, MessageSquarePlus, Send } from "lucide-react";
+import { Bell, ChevronLeft, ChevronRight, Eye, Mail, MessageSquarePlus, Pencil, Send } from "lucide-react";
 import { Badge } from "../../admin/components/ui/badge";
 import { Button } from "../../admin/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../admin/components/ui/card";
@@ -25,6 +25,7 @@ import { useAdminApi } from "../../admin/lib/adminApi";
 import { formatLagosDateTime } from "../../admin/lib/format";
 import type { NotificationLog, NotificationSettings, NotificationTemplate } from "../../admin/lib/types";
 import { errorMessage } from "../../lib/api";
+import { cn } from "../../lib/cn";
 
 const PAGE_SIZE = 20;
 
@@ -40,6 +41,12 @@ export function AdminNotificationsPage() {
   const [reminder24h, setReminder24h] = useState(true);
   const [reminder2h, setReminder2h] = useState(true);
   const [templates, setTemplates] = useState<NotificationTemplate[]>([]);
+  const [selectedTemplate, setSelectedTemplate] = useState<NotificationTemplate | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editTemplate, setEditTemplate] = useState<NotificationTemplate | null>(null);
+  const [editSubject, setEditSubject] = useState("");
+  const [editMessage, setEditMessage] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
   const [logs, setLogs] = useState<NotificationLog[]>([]);
   const [logTotal, setLogTotal] = useState(0);
   const [logPage, setLogPage] = useState(1);
@@ -258,36 +265,245 @@ export function AdminNotificationsPage() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="font-display text-lg font-normal">Templates</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {templates.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No templates registered.</p>
-              ) : (
-                <ul className="space-y-3">
-                  {templates.map((template) => (
-                    <li key={template.event} className="rounded-lg border border-border p-3">
-                      <div className="flex items-start gap-2">
-                        <Mail className="mt-0.5 h-4 w-4 text-muted-foreground" aria-hidden />
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-foreground">{template.subject}</p>
-                          <p className="text-xs text-muted-foreground">{template.event}</p>
-                          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{template.bodyPreview}</p>
+          <div className="grid gap-admin-stack lg:grid-cols-12 items-start">
+            {/* Left: Template Selector List */}
+            <Card className="lg:col-span-5 overflow-hidden">
+              <CardHeader className="p-admin-card-sm border-b border-border flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle className="font-display text-lg font-normal">Templates</CardTitle>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Select a template to preview or customize
+                  </p>
+                </div>
+                <Badge variant="outline" className="text-xs">
+                  {templates.length} Active
+                </Badge>
+              </CardHeader>
+              <CardContent className="p-3.5 sm:p-4 space-y-2.5 max-h-[600px] overflow-y-auto">
+                {templates.length === 0 ? (
+                  <p className="p-4 text-sm text-muted-foreground">No templates registered.</p>
+                ) : (
+                  templates.map((template) => {
+                    const isSelected = (selectedTemplate?.event ?? templates[0]?.event) === template.event;
+                    return (
+                      <div
+                        key={template.event}
+                        onClick={() => setSelectedTemplate(template)}
+                        className={cn(
+                          "group relative flex items-start justify-between gap-3 rounded-xl border p-3.5 text-left transition-all cursor-pointer",
+                          isSelected
+                            ? "border-primary bg-primary/10 shadow-xs ring-1 ring-primary/30"
+                            : "border-border/60 hover:border-border hover:bg-muted/30",
+                        )}
+                      >
+                        <div className="flex items-start gap-3 min-w-0 flex-1">
+                          <div
+                            className={cn(
+                              "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition-colors",
+                              isSelected
+                                ? "border-primary/40 bg-primary/20 text-primary"
+                                : "border-border bg-muted/40 text-muted-foreground group-hover:text-foreground",
+                            )}
+                          >
+                            <Mail className="h-4 w-4" aria-hidden />
+                          </div>
+                          <div className="min-w-0 flex-1 space-y-0.5">
+                            <p className="text-sm font-medium text-foreground truncate">
+                              {template.subject}
+                            </p>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-mono text-[11px] text-muted-foreground">
+                                {template.event}
+                              </span>
+                            </div>
+                            <p className="line-clamp-1 text-xs text-muted-foreground/80 mt-1">
+                              {template.bodyPreview}
+                            </p>
+                          </div>
                         </div>
+
+                        {/* Edit Action Button */}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          className="shrink-0 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                          title="Edit message template"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedTemplate(template);
+                            setEditTemplate(template);
+                            setEditSubject(template.subject);
+                            setEditMessage(template.bodyPreview);
+                            setEditOpen(true);
+                          }}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          <span className="sr-only">Edit template</span>
+                        </Button>
                       </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
+                    );
+                  })
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Right: Rich Message & Email Live Preview */}
+            <Card className="lg:col-span-7 overflow-hidden border border-border shadow-sm">
+              <CardHeader className="p-admin-card-sm border-b border-border flex flex-row items-center justify-between bg-muted/10">
+                <div className="flex items-center gap-2">
+                  <Eye className="h-4 w-4 text-primary" />
+                  <CardTitle className="font-display text-base font-normal">
+                    Message Preview
+                  </CardTitle>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="text-xs"
+                    onClick={() => {
+                      const activeTpl = selectedTemplate || templates[0];
+                      if (activeTpl) {
+                        setEditTemplate(activeTpl);
+                        setEditSubject(activeTpl.subject);
+                        setEditMessage(activeTpl.bodyPreview);
+                        setEditOpen(true);
+                      }
+                    }}
+                  >
+                    <Pencil className="h-3.5 w-3.5 mr-1" />
+                    Edit Message
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="text-xs"
+                    onClick={() => void sendTest()}
+                    loading={testing}
+                  >
+                    <Send className="h-3.5 w-3.5 mr-1" />
+                    Test Send
+                  </Button>
+                </div>
+              </CardHeader>
+
+              <CardContent className="p-4 sm:p-6 space-y-4 bg-background/50">
+                {/* Mail Client Header Simulator */}
+                <div className="rounded-xl border border-border/80 bg-muted/20 p-3.5 space-y-2 text-xs">
+                  <div className="flex items-center justify-between text-muted-foreground border-b border-border/40 pb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-foreground">From:</span>
+                      <span>{settings?.fromAddress || "Photo Arena <noreply@photoarenang.com>"}</span>
+                    </div>
+                    <span className="text-[11px]">Today · 2:30 PM</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-muted-foreground border-b border-border/40 pb-2">
+                    <span className="font-semibold text-foreground">To:</span>
+                    <span className="text-foreground/90">Amaka Johnson &lt;amaka.johnson@example.com&gt;</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-foreground font-medium pt-0.5">
+                    <span className="text-muted-foreground font-semibold">Subject:</span>
+                    <span className="text-primary font-sans font-medium">
+                      {(selectedTemplate || templates[0])?.subject.replace(/\{\{reference\}\}/g, "PA-8942").replace(/\{\{customerName\}\}/g, "Amaka Johnson") || "Photo Arena Notification"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Email Body Visual Canvas */}
+                <div className="rounded-2xl border border-border bg-[#101112] text-stone-100 p-6 sm:p-8 space-y-6 shadow-md">
+                  {/* Brand Header */}
+                  <div className="flex items-center justify-between border-b border-white/10 pb-5">
+                    <div className="space-y-0.5">
+                      <span className="font-display text-xl font-medium tracking-wide text-white">
+                        PHOTO ARENA
+                      </span>
+                      <p className="text-[11px] text-stone-400 font-mono tracking-widest uppercase">
+                        Studio &amp; Creative Space
+                      </p>
+                    </div>
+                    <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-[11px] font-mono uppercase tracking-wider px-2.5 py-0.5">
+                      {(selectedTemplate || templates[0])?.event.replace(/_/g, " ") || "NOTIFICATION"}
+                    </Badge>
+                  </div>
+
+                  {/* Salutation & Headline */}
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-amber-200/90">Hello Amaka Johnson,</p>
+                    <h3 className="font-display text-2xl font-normal text-white">
+                      {(selectedTemplate || templates[0])?.event === "booking_confirmed"
+                        ? "Your Session is Confirmed! 🎉"
+                        : (selectedTemplate || templates[0])?.event === "payment_received"
+                        ? "Payment Received 💳"
+                        : (selectedTemplate || templates[0])?.event === "booking_cancelled"
+                        ? "Booking Cancelled ❌"
+                        : (selectedTemplate || templates[0])?.event === "booking_rescheduled"
+                        ? "Booking Rescheduled 📅"
+                        : "Your Photo Session Update"}
+                    </h3>
+                    <p className="text-sm text-stone-300 leading-relaxed">
+                      {(selectedTemplate || templates[0])?.bodyPreview
+                        .replace(/\{\{customerName\}\}/g, "Amaka Johnson")
+                        .replace(/\{\{reference\}\}/g, "PA-8942")
+                        .replace(/\{\{startTime\}\}/g, "Saturday, 24 Oct 2026 · 2:00 PM")
+                        .replace(/\{\{amount\}\}/g, "₦40,000") ||
+                        "Thank you for choosing Photo Arena. Here are your booking details."}
+                    </p>
+                  </div>
+
+                  {/* Structured Details Box */}
+                  <div className="rounded-xl border border-white/10 bg-white/[0.04] p-4 space-y-3 font-sans text-xs">
+                    <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                      <span className="text-stone-400">Booking Reference:</span>
+                      <span className="font-mono font-bold text-amber-300 text-sm">PA-8942</span>
+                    </div>
+                    <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                      <span className="text-stone-400">Session Type:</span>
+                      <span className="text-stone-200 font-medium">Personal / Birthday Shoots (2 Outfits)</span>
+                    </div>
+                    <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                      <span className="text-stone-400">Scheduled Date &amp; Time:</span>
+                      <span className="text-stone-200 font-medium">Saturday, 24 Oct 2026 · 2:00 PM WAT</span>
+                    </div>
+                    <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                      <span className="text-stone-400">Studio Location:</span>
+                      <span className="text-stone-200">12 Peter Odili Road, Trans-Amadi, Port Harcourt</span>
+                    </div>
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="text-stone-400">Total Amount:</span>
+                      <span className="font-mono font-bold text-white text-sm">₦40,000</span>
+                    </div>
+                  </div>
+
+                  {/* Primary Action Button */}
+                  <div className="pt-2 flex justify-start">
+                    <div className="inline-flex items-center gap-2 rounded-xl bg-amber-400 px-6 py-3 text-xs font-bold uppercase tracking-wider text-stone-950 shadow-md">
+                      <span>View Booking Details</span>
+                    </div>
+                  </div>
+
+                  {/* Footer Notes */}
+                  <div className="border-t border-white/10 pt-4 text-[11px] text-stone-400 space-y-1">
+                    <p>Need to modify your appointment? Reach us on WhatsApp at +234 812 345 6789 or reply to this email.</p>
+                    <p className="text-stone-500">© 2026 Photo Arena Studio. All rights reserved.</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
 
           <section className="space-y-admin-stack-sm">
             <div className="flex items-center justify-between gap-2">
-              <h2 className="font-display text-lg font-normal">Delivery log</h2>
-              <p className="text-xs text-muted-foreground">
+              <div>
+                <h2 className="font-display text-lg font-normal">Delivery log</h2>
+                {logTotal > 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    Showing {Math.min((logPage - 1) * PAGE_SIZE + 1, logTotal)}–{Math.min(logPage * PAGE_SIZE, logTotal)} of {logTotal} entries
+                  </p>
+                ) : null}
+              </div>
+              <p className="text-xs font-medium text-muted-foreground bg-muted/40 px-2.5 py-1 rounded-md border border-border">
                 Page {logPage} of {logPageCount}
               </p>
             </div>
@@ -407,6 +623,101 @@ export function AdminNotificationsPage() {
                 <Send strokeWidth={1.5} />
                 Send message
               </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Notification Template Dialog */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 font-display">
+              <Pencil className="h-4 w-4 text-primary" />
+              Edit Template · {editTemplate?.event}
+            </DialogTitle>
+            <DialogDescription>
+              Customize the default subject line and message body used when this event triggers.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              setEditSaving(true);
+              setTimeout(() => {
+                if (editTemplate) {
+                  const updated = templates.map((t) =>
+                    t.event === editTemplate.event
+                      ? { ...t, subject: editSubject, bodyPreview: editMessage }
+                      : t
+                  );
+                  setTemplates(updated);
+                  if (selectedTemplate?.event === editTemplate.event) {
+                    setSelectedTemplate({
+                      ...selectedTemplate,
+                      subject: editSubject,
+                      bodyPreview: editMessage,
+                    });
+                  }
+                }
+                setEditSaving(false);
+                setEditOpen(false);
+                toast.success(`Template updated for ${editTemplate?.event}`);
+              }, 400);
+            }}
+          >
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-subject">Subject Line Template</Label>
+              <Input
+                id="edit-subject"
+                value={editSubject}
+                onChange={(e) => setEditSubject(e.target.value)}
+                placeholder="Photo Arena — ..."
+                required
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Supported variables: <code>{"{{reference}}"}</code>, <code>{"{{customerName}}"}</code>, <code>{"{{startTime}}"}</code>
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-message">Message Copy Template</Label>
+              <Textarea
+                id="edit-message"
+                rows={5}
+                value={editMessage}
+                onChange={(e) => setEditMessage(e.target.value)}
+                placeholder="Message body..."
+                required
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Supported variables: <code>{"{{customerName}}"}</code>, <code>{"{{reference}}"}</code>, <code>{"{{startTime}}"}</code>, <code>{"{{amount}}"}</code>
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between pt-2 border-t border-border">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setManualSubject(editSubject);
+                  setManualMessage(editMessage);
+                  setEditOpen(false);
+                  setManualOpen(true);
+                }}
+              >
+                Send as Manual Message
+              </Button>
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" onClick={() => setEditOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" loading={editSaving}>
+                  Save Template
+                </Button>
+              </div>
             </div>
           </form>
         </DialogContent>

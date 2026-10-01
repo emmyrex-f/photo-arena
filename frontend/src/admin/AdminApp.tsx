@@ -16,7 +16,6 @@ import { AdminEnquiriesPage } from "../pages/admin/AdminEnquiriesPage";
 import { AdminGalleryPage } from "../pages/admin/AdminGalleryPage";
 import { AdminNotificationsPage } from "../pages/admin/AdminNotificationsPage";
 import { AdminPaymentsPage } from "../pages/admin/AdminPaymentsPage";
-import { AdminPortfolioPage } from "../pages/admin/AdminPortfolioPage";
 import { AdminServicesPage } from "../pages/admin/AdminServicesPage";
 import { AdminSettingsPage } from "../pages/admin/AdminSettingsPage";
 import { AdminTestimonialsPage } from "../pages/admin/AdminTestimonialsPage";
@@ -51,7 +50,7 @@ export function AdminApp() {
           <Route path="services" element={<AdminServicesPage />} />
           <Route path="packages" element={<Navigate to="/admin/services" replace />} />
           <Route path="gallery" element={<AdminGalleryPage />} />
-          <Route path="portfolio" element={<AdminPortfolioPage />} />
+          <Route path="portfolio" element={<Navigate to="/admin/gallery?tab=portfolio" replace />} />
           <Route path="content" element={<AdminContentPage />} />
           <Route path="testimonials" element={<AdminTestimonialsPage />} />
           <Route path="blog" element={<AdminBlogPage />} />

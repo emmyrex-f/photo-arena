@@ -15,7 +15,7 @@ import {
   X,
   XCircle,
 } from "lucide-react";
-import { addDays, format } from "date-fns";
+import { addDays } from "date-fns";
 import { EnquiryStatusBadge } from "../../admin/components/ui/status-badge";
 import { Avatar, AvatarFallback } from "../../admin/components/ui/avatar";
 import { Badge } from "../../admin/components/ui/badge";
@@ -162,7 +162,6 @@ export function AdminEnquiriesPage() {
   );
 
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const rangeLabel = `${format(parseYmd(from), "MMM d, yyyy")} – ${format(parseYmd(to), "MMM d, yyyy")}`;
 
   function submitSearch(e: FormEvent) {
     e.preventDefault();
@@ -229,9 +228,6 @@ export function AdminEnquiriesPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm text-muted-foreground">
-            <span className="tabular-nums text-foreground">{rangeLabel}</span>
-          </div>
           <Input
             type="date"
             value={from}

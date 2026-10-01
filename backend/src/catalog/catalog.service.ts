@@ -11,6 +11,11 @@ import { PrismaService } from "../prisma/prisma.service";
 
 const SERVICE_USAGE = "service";
 
+/** Rentals, booths and backdrops are hired by time; only sessions and sets count outfits. */
+function usesOutfits(kind: ServiceKind): boolean {
+  return kind === ServiceKind.SESSION || kind === ServiceKind.SET;
+}
+
 export type ServiceMediaDto = {
   id: string;
   url: string;
@@ -68,6 +73,10 @@ export class CatalogService {
         entityId: created.id,
         mediaId: input.mediaId,
       });
+      await this.prisma.galleryImage.update({
+        where: { id: input.mediaId },
+        data: { category: `Service/${created.name}` },
+      }).catch(() => {});
     }
     const decorated = await this.withMedia([created]);
     return decorated[0]!;
@@ -109,6 +118,12 @@ export class CatalogService {
         entityId: id,
         mediaId: input.mediaId,
       });
+      if (input.mediaId) {
+        await this.prisma.galleryImage.update({
+          where: { id: input.mediaId },
+          data: { category: `Service/${updated.name}` },
+        }).catch(() => {});
+      }
     }
     const decorated = await this.withMedia([updated]);
     return decorated[0]!;
@@ -161,7 +176,7 @@ export class CatalogService {
       isProvisional?: boolean;
     },
   ) {
-    await this.requireService(serviceId);
+    const service = await this.requireService(serviceId);
     const max = await this.prisma.package.aggregate({
       where: { serviceId },
       _max: { sortOrder: true },
@@ -171,7 +186,7 @@ export class CatalogService {
         serviceId,
         name: input.name.trim(),
         durationMinutes: input.durationMinutes,
-        outfitCount: input.outfitCount ?? null,
+        outfitCount: usesOutfits(service.kind) ? (input.outfitCount ?? null) : null,
         backdropCount: input.backdropCount ?? null,
         editedPhotoCount: input.editedPhotoCount ?? null,
         includes: (input.includes ?? "").trim(),
@@ -198,10 +213,11 @@ export class CatalogService {
       isProvisional: boolean;
     }>,
   ) {
-    await this.requirePackage(id);
+    const pkg = await this.requirePackage(id);
+    const service = await this.requireService(pkg.serviceId);
     return this.prisma.package.update({
       where: { id },
-      data: input,
+      data: usesOutfits(service.kind) ? input : { ...input, outfitCount: null },
       include: { service: true },
     });
   }

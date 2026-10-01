@@ -1,41 +1,58 @@
 import { ArrowRight } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { PortfolioImage } from "../../data/portfolio.generated";
 import { distinctImageAlt } from "../../lib/imageAlt";
-import { fetchGallery, mediaUrl, type GalleryImage } from "../../lib/publicApi";
-import { Reveal, Stagger, StaggerItem } from "../../lib/motion";
+import { fetchGallery, mediaUrl } from "../../lib/publicApi";
+import { Reveal } from "../../lib/motion";
 import { usePublicData } from "../../lib/usePublicData";
 import { Lightbox } from "../portfolio/Lightbox";
 import { Button } from "../ui/Button";
-import { CameraSpinner } from "../ui/CameraSpinner";
 import { Container } from "../ui/Container";
 import { Eyebrow, Heading } from "../ui/Heading";
 import { Section } from "../ui/Section";
 
-/** Curate 8 images: prefer featured, then fill — balanced editorial grid (not masonry). */
-function curateEight(images: GalleryImage[]): GalleryImage[] {
-  const featured = images.filter((image) => image.featured);
-  const rest = images.filter((image) => !image.featured);
-  const pool = [...featured, ...rest];
-  return pool.slice(0, 8);
+/** Fisher-Yates shuffle for randomized layout on page load */
+function shuffleArray<T>(array: T[]): T[] {
+  const result = [...array];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j]!, result[i]!];
+  }
+  return result;
 }
 
 export function PortfolioPreviewSection() {
-  const { data, loading } = usePublicData(() => fetchGallery(), []);
-  const curated = useMemo(() => curateEight(data ?? []), [data]);
+  const { data } = usePublicData(() => fetchGallery(), []);
+
+  // Strict synchronization: all images marked as featured by admin are shown (no artificial limit)
+  const featuredImages = useMemo(
+    () => (data ?? []).filter((image) => image.featured),
+    [data],
+  );
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
 
-  const lightboxImages: PortfolioImage[] = useMemo(
-    () =>
-      curated.map((image) => ({
+  // Dynamic layout order generated fresh per page reload / device session
+  const [displayImages, setDisplayImages] = useState<PortfolioImage[]>([]);
+
+  useEffect(() => {
+    if (featuredImages.length > 0) {
+      const formatted: PortfolioImage[] = featuredImages.map((image) => ({
         id: image.id,
         src: mediaUrl(image.url || image.thumbUrl),
-        alt: distinctImageAlt(image.alt, image.id, curated),
+        alt: distinctImageAlt(image.alt, image.id, featuredImages),
         category: image.category,
         featured: image.featured,
-      })),
-    [curated],
-  );
+      }));
+      setDisplayImages(shuffleArray(formatted));
+    } else {
+      setDisplayImages([]);
+    }
+  }, [featuredImages]);
+
+  // If there are no featured images (or still loading), remove/hide the entire section
+  if (featuredImages.length === 0) {
+    return null;
+  }
 
   return (
     <Section className="bg-gradient-to-b from-bg to-surface">
@@ -54,45 +71,34 @@ export function PortfolioPreviewSection() {
           </Button>
         </Reveal>
 
-        {loading && curated.length === 0 ? (
-          <CameraSpinner label="Loading gallery" caption="Loading gallery…" />
-        ) : curated.length === 0 ? (
-          <p className="text-text-secondary">
-            Gallery images will appear here once they are published.
-          </p>
-        ) : (
-          <Stagger className="grid grid-cols-2 gap-stack-sm md:grid-cols-4">
-            {lightboxImages.map((image, index) => (
-              <StaggerItem
-                key={image.id}
-                className={
-                  index === 0 || index === 5
-                    ? "col-span-2 row-span-2 aspect-square overflow-hidden rounded-2xl md:aspect-auto md:min-h-[22rem]"
-                    : "aspect-[4/5] overflow-hidden rounded-2xl"
-                }
+        {/* True Multi-Column Masonry (Waterfall layout with max 3 columns) */}
+        <div className="columns-1 sm:columns-2 md:columns-3 gap-5 [column-fill:balance]">
+          {displayImages.map((image, index) => (
+            <div
+              key={image.id}
+              className="break-inside-avoid mb-5 overflow-hidden rounded-2xl group shadow-sm hover:shadow-md transition-all duration-300 bg-surface/50"
+            >
+              <button
+                type="button"
+                onClick={() => setActiveIndex(index)}
+                className="group block w-full overflow-hidden text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent cursor-pointer"
+                aria-label={`View ${image.alt}`}
               >
-                <button
-                  type="button"
-                  onClick={() => setActiveIndex(index)}
-                  className="group block h-full w-full text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-                  aria-label={`View ${image.alt}`}
-                >
-                  <img
-                    src={mediaUrl(curated[index]!.thumbUrl || curated[index]!.url)}
-                    alt=""
-                    loading="lazy"
-                    className="h-full w-full object-cover object-top transition duration-700 group-hover:scale-[1.03]"
-                  />
-                </button>
-              </StaggerItem>
-            ))}
-          </Stagger>
-        )}
+                <img
+                  src={image.src}
+                  alt={image.alt}
+                  loading="lazy"
+                  className="h-auto w-full object-cover transition duration-700 group-hover:scale-[1.03] block"
+                />
+              </button>
+            </div>
+          ))}
+        </div>
       </Container>
 
-      {activeIndex !== null ? (
+      {activeIndex !== null && displayImages[activeIndex] ? (
         <Lightbox
-          images={lightboxImages}
+          images={displayImages}
           index={activeIndex}
           onClose={() => setActiveIndex(null)}
           onIndexChange={setActiveIndex}

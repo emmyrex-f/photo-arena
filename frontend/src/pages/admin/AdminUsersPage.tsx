@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState, type FormEvent } from "react";
 import { KeyRound, MoreHorizontal, Plus, ShieldAlert, Trash2, UserPlus, Users } from "lucide-react";
 import { ActiveBadge, RoleBadge } from "../../admin/components/ui/status-badge";
 import { Button } from "../../admin/components/ui/button";
+import { useModal } from "../../admin/components/ui/confirm-dialog";
 import {
   Dialog,
   DialogContent,
@@ -73,6 +74,7 @@ const EMPTY_FORM: EditorForm = {
 
 export function AdminUsersPage() {
   const api = useAdminApi();
+  const modal = useModal();
   const { user: me, refreshUser } = useAuth();
   const owner = isOwner(me?.role);
 
@@ -217,7 +219,15 @@ export function AdminUsersPage() {
       toast.error("You cannot deactivate yourself");
       return;
     }
-    if (!window.confirm(`Deactivate ${row.name}? Their sessions will end.`)) return;
+    const ok = await modal.confirm({
+      title: "Deactivate User",
+      description: `Are you sure you want to deactivate ${row.name}? Their active sessions will end immediately.`,
+      confirmLabel: "Deactivate user",
+      destructive: true,
+      tone: "danger",
+      icon: "alert",
+    });
+    if (!ok) return;
     setBusyId(row.id);
     try {
       const updated = await api.users.remove(row.id);
@@ -234,7 +244,14 @@ export function AdminUsersPage() {
 
   async function revokeSessions(row: AdminUser) {
     if (!owner) return;
-    if (!window.confirm(`Revoke all active sessions for ${row.name}? They will be forced to log in again.`)) return;
+    const ok = await modal.confirm({
+      title: "Revoke Active Sessions",
+      description: `Revoke all active login sessions for ${row.name}? They will be required to log in again.`,
+      confirmLabel: "Revoke sessions",
+      tone: "warning",
+      icon: "shield",
+    });
+    if (!ok) return;
     setBusyId(row.id);
     try {
       await api.users.revokeSessions(row.id);

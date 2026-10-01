@@ -21,6 +21,8 @@
     "verify:notifications": "tsx scripts/verify-notifications.ts",
     "verify:admin-booking": "tsx scripts/verify-admin-booking.ts",
     "verify:auth": "tsx scripts/verify-auth-features.ts",
+    "verify:no-hold-email": "tsx scripts/verify-no-hold-email.ts",
+    "test:cloudinary": "tsx scripts/test-cloudinary.ts",
     "test:system": "tsx scripts/run-complete-system-test.ts"
   },
   "prisma": {
@@ -38,6 +40,7 @@
     "bcryptjs": "^3.0.3",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
+    "cloudinary": "^2.11.0",
     "multer": "^2.3.0",
     "nodemailer": "^10.0.9",
     "reflect-metadata": "^0.2.2",

@@ -22,7 +22,7 @@ import { PaymentsService } from "../payments/payments.service";
 @Controller("bookings")
 export class BookingsController {
   constructor(
-    private readonly bookings: BookingsService,
+    @Inject(BookingsService) private readonly bookings: BookingsService,
     @Inject(forwardRef(() => PaymentsService))
     private readonly payments: PaymentsService,
   ) {}

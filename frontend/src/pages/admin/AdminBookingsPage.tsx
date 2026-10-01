@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { useSearchParams } from "react-router-dom";
 import {
   AlertTriangle,
+  Archive,
   Banknote,
   Calendar as CalendarIcon,
   CalendarPlus,
@@ -9,7 +10,6 @@ import {
   ChevronRight,
   Mail,
   MapPin,
-  MoreHorizontal,
   Phone,
   Plus,
 } from "lucide-react";
@@ -18,7 +18,7 @@ import { Avatar, AvatarFallback } from "../../admin/components/ui/avatar";
 import { Badge } from "../../admin/components/ui/badge";
 import { Button } from "../../admin/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../admin/components/ui/card";
-import { ConfirmDialog } from "../../admin/components/ui/confirm-dialog";
+import { ConfirmDialog, useModal } from "../../admin/components/ui/confirm-dialog";
 import { CreateBookingDialog } from "../../components/admin/CreateBookingDialog";
 import { RecordPaymentDialog } from "../../components/admin/RecordPaymentDialog";
 import { EmptyState } from "../../admin/components/ui/empty-state";
@@ -69,7 +69,7 @@ import { cn } from "../../lib/cn";
 
 const PAGE_SIZE = 8;
 
-type StatusTab = "ALL" | "CONFIRMED" | "PENDING" | "COMPLETED" | "CANCELLED" | "NO_SHOW";
+type StatusTab = "ALL" | "CONFIRMED" | "PENDING" | "COMPLETED" | "CANCELLED" | "NO_SHOW" | "ARCHIVED";
 
 const STATUS_TABS: Array<{ id: StatusTab; label: string }> = [
   { id: "ALL", label: "All Bookings" },
@@ -78,6 +78,7 @@ const STATUS_TABS: Array<{ id: StatusTab; label: string }> = [
   { id: "COMPLETED", label: "Completed" },
   { id: "CANCELLED", label: "Cancelled" },
   { id: "NO_SHOW", label: "No Show" },
+  { id: "ARCHIVED", label: "Archived" },
 ];
 
 function signedDelta(n: number): string {
@@ -150,7 +151,7 @@ function BoardStatusBadge({ status }: { status: BookingRecord["status"] }) {
       case "PENDING":
         return "rounded-full border-transparent bg-amber-500 px-2.5 text-[11px] font-semibold text-amber-950";
       case "COMPLETED":
-        return "rounded-full border-transparent bg-blue-600 px-2.5 text-[11px] font-semibold text-white";
+        return "rounded-full border-transparent bg-primary px-2.5 text-[11px] font-semibold text-primary-foreground";
       case "CANCELLED":
         return "rounded-full border-transparent bg-muted px-2.5 text-[11px] font-semibold text-muted-foreground";
       case "NO_SHOW":
@@ -238,6 +239,7 @@ function packageBoardMeta(pkg: BookingRecord["package"] | null | undefined): str
 export function AdminBookingsPage() {
   const api = useAdminApi();
   const { user } = useAuth();
+  const modal = useModal();
   const [params, setParams] = useSearchParams();
   const today = lagosToday();
 
@@ -247,6 +249,7 @@ export function AdminBookingsPage() {
   const selectedId = params.get("id");
   const q = (params.get("q") ?? "").trim();
   const statusTab = (params.get("tab") as StatusTab) || "ALL";
+  const paymentParam = params.get("payment");
 
   const [monthCursor, setMonthCursor] = useState(() => selectedDate.slice(0, 7) + "-01");
   const [stats, setStats] = useState<BookingsDeskStats | null>(null);
@@ -256,15 +259,31 @@ export function AdminBookingsPage() {
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [page, setPage] = useState(1);
+  const [tabPages, setTabPages] = useState<Record<StatusTab, number>>({
+    ALL: 1,
+    CONFIRMED: 1,
+    PENDING: 1,
+    COMPLETED: 1,
+    CANCELLED: 1,
+    NO_SHOW: 1,
+    ARCHIVED: 1,
+  });
   const [serviceFilter, setServiceFilter] = useState<string>("all");
   const [packageFilter, setPackageFilter] = useState<string>("all");
-  const [paymentFilter, setPaymentFilter] = useState<string>("all");
+  const [paymentFilter, setPaymentFilter] = useState<string>(() => paymentParam || "all");
   const [notesDraft, setNotesDraft] = useState("");
   const [editingNotes, setEditingNotes] = useState(false);
   const [markPaidOpen, setMarkPaidOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [createBookingOpen, setCreateBookingOpen] = useState(false);
+
+  useEffect(() => {
+    if (paymentParam) {
+      setPaymentFilter(paymentParam);
+    } else {
+      setPaymentFilter("all");
+    }
+  }, [paymentParam]);
 
   const canMutate = hasDeskPermission(user, "bookings") && (user?.role === "OWNER" || user?.role === "ADMIN");
 
@@ -345,8 +364,16 @@ export function AdminBookingsPage() {
   }, [selectedDate]);
 
   useEffect(() => {
-    setPage(1);
-  }, [selectedDate, statusTab, serviceFilter, packageFilter, paymentFilter, q]);
+    setTabPages({
+      ALL: 1,
+      CONFIRMED: 1,
+      PENDING: 1,
+      COMPLETED: 1,
+      CANCELLED: 1,
+      NO_SHOW: 1,
+      ARCHIVED: 1,
+    });
+  }, [selectedDate, serviceFilter, packageFilter, paymentFilter, q]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -362,6 +389,11 @@ export function AdminBookingsPage() {
           setDetail(b);
           setNotesDraft(b.notes ?? "");
           setEditingNotes(false);
+          const bDate = lagosYmd(b.startTime);
+          if (bDate !== selectedDate) {
+            setParam({ date: bDate, id: selectedId });
+            setMonthCursor(bDate.slice(0, 7) + "-01");
+          }
         }
       })
       .catch((err) => {
@@ -376,7 +408,7 @@ export function AdminBookingsPage() {
     return () => {
       cancelled = true;
     };
-  }, [api, selectedId, setParam]);
+  }, [api, selectedId, selectedDate, setParam]);
 
   const weekRange = useMemo(() => weekRangeContaining(selectedDate), [selectedDate]);
 
@@ -391,7 +423,11 @@ export function AdminBookingsPage() {
 
   const filtered = useMemo(() => {
     return weekRows.filter((b) => {
-      if (statusTab !== "ALL" && b.status !== statusTab) return false;
+      if (statusTab === "ARCHIVED") {
+        if (b.status !== "CANCELLED") return false;
+      } else if (statusTab !== "ALL" && b.status !== statusTab) {
+        return false;
+      }
       if (serviceFilter !== "all" && b.package.service?.id !== serviceFilter) return false;
       if (packageFilter !== "all" && b.package.id !== packageFilter) return false;
       const pay = paymentDisplay(b);
@@ -400,9 +436,52 @@ export function AdminBookingsPage() {
     });
   }, [weekRows, statusTab, serviceFilter, packageFilter, paymentFilter]);
 
+  const tabCounts = useMemo(() => {
+    const counts: Record<StatusTab, number> = {
+      ALL: 0,
+      CONFIRMED: 0,
+      PENDING: 0,
+      COMPLETED: 0,
+      CANCELLED: 0,
+      NO_SHOW: 0,
+      ARCHIVED: 0,
+    };
+
+    for (const b of weekRows) {
+      if (serviceFilter !== "all" && b.package.service?.id !== serviceFilter) continue;
+      if (packageFilter !== "all" && b.package.id !== packageFilter) continue;
+      const pay = paymentDisplay(b);
+      if (paymentFilter !== "all" && pay !== paymentFilter) continue;
+
+      counts.ALL++;
+      if (b.status === "CONFIRMED") counts.CONFIRMED++;
+      if (b.status === "PENDING") counts.PENDING++;
+      if (b.status === "COMPLETED") counts.COMPLETED++;
+      if (b.status === "CANCELLED") {
+        counts.CANCELLED++;
+        counts.ARCHIVED++;
+      }
+      if (b.status === "NO_SHOW") counts.NO_SHOW++;
+    }
+
+    return counts;
+  }, [weekRows, serviceFilter, packageFilter, paymentFilter]);
+
+  const page = tabPages[statusTab] || 1;
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount);
   const pageRows = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  const setPage = (nextPage: number | ((prev: number) => number)) => {
+    setTabPages((prev) => {
+      const current = prev[statusTab] || 1;
+      const resolved = typeof nextPage === "function" ? nextPage(current) : nextPage;
+      return {
+        ...prev,
+        [statusTab]: Math.max(1, resolved),
+      };
+    });
+  };
 
   const services = useMemo(() => {
     const map = new Map<string, string>();
@@ -436,6 +515,39 @@ export function AdminBookingsPage() {
     const updated = await api.bookings.setStatus(detail.id, "CANCELLED");
     setDetail(updated);
     await loadList();
+  }
+
+  async function handleArchiveRow(booking: BookingRecord, event: React.MouseEvent) {
+    event.stopPropagation();
+    event.preventDefault();
+    if (!canMutate) return;
+    if (booking.status === "CANCELLED") {
+      toast.info("This booking is already archived");
+      return;
+    }
+    const ok = await modal.confirm({
+      title: "Archive Booking",
+      description: (
+        <>
+          Are you sure you want to archive / cancel the booking for{" "}
+          <strong>{booking.customer.name}</strong>?
+        </>
+      ),
+      confirmLabel: "Archive booking",
+      tone: "warning",
+      icon: "archive",
+    });
+    if (!ok) return;
+    try {
+      await api.bookings.setStatus(booking.id, "CANCELLED");
+      toast.success("Booking archived");
+      if (selectedId === booking.id && detail) {
+        setDetail({ ...detail, status: "CANCELLED" });
+      }
+      await loadList();
+    } catch (err) {
+      toast.error(errorMessage(err, "Failed to archive booking"));
+    }
   }
 
   const monthLabel = format(parseYmd(monthStart), "MMMM yyyy");
@@ -526,31 +638,32 @@ export function AdminBookingsPage() {
         />
       </section>
 
-      <div className="flex flex-col gap-3 border-b border-border sm:flex-row sm:items-center sm:justify-between">
+      <div className="border-b border-border">
         <Tabs
           value={statusTab}
           onValueChange={(v) => setParam({ tab: v === "ALL" ? null : v })}
-          className="min-w-0 flex-1"
+          className="min-w-0"
         >
           <TabsList className="h-auto w-full flex-wrap justify-start gap-0 rounded-none border-0 bg-transparent p-0">
-            {STATUS_TABS.map((tab) => (
-              <TabsTrigger
-                key={tab.id}
-                value={tab.id}
-                className="rounded-none border-b-2 border-transparent px-3 py-3 text-sm text-muted-foreground shadow-none data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none"
-              >
-                {tab.label}
-              </TabsTrigger>
-            ))}
+            {STATUS_TABS.map((tab) => {
+              const count = tabCounts[tab.id];
+              return (
+                <TabsTrigger
+                  key={tab.id}
+                  value={tab.id}
+                  className="group rounded-none border-b-2 border-transparent px-3 py-3 text-sm text-muted-foreground shadow-none data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none"
+                >
+                  <span>{tab.label}</span>
+                  {count > 0 && (
+                    <span className="ml-1.5 inline-flex items-center justify-center rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground group-data-[state=active]:bg-primary/10 group-data-[state=active]:text-primary">
+                      {count}
+                    </span>
+                  )}
+                </TabsTrigger>
+              );
+            })}
           </TabsList>
         </Tabs>
-        <div
-          className="mb-px inline-flex shrink-0 items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground"
-          aria-label={`Week range ${formatWeekRangeLabel(weekRange.from, weekRange.to)}`}
-        >
-          <CalendarIcon className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
-          <span className="tabular-nums">{formatWeekRangeLabel(weekRange.from, weekRange.to)}</span>
-        </div>
       </div>
 
       <div
@@ -661,7 +774,13 @@ export function AdminBookingsPage() {
                   ))}
                 </SelectContent>
               </Select>
-              <Select value={paymentFilter} onValueChange={setPaymentFilter}>
+              <Select
+                value={paymentFilter}
+                onValueChange={(v) => {
+                  setPaymentFilter(v);
+                  setParam({ payment: v === "all" ? null : v });
+                }}
+              >
                 <SelectTrigger aria-label="Filter by payment status" className="h-10">
                   <SelectValue placeholder="All Payment Status" />
                 </SelectTrigger>
@@ -718,7 +837,9 @@ export function AdminBookingsPage() {
                       <TableHead className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                         Payment
                       </TableHead>
-                      <TableHead className="w-10" />
+                      <TableHead className="w-12 text-right">
+                        <span className="sr-only">Actions</span>
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -767,8 +888,25 @@ export function AdminBookingsPage() {
                           <TableCell>
                             <PaymentPill status={paymentDisplay(row)} />
                           </TableCell>
-                          <TableCell>
-                            <MoreHorizontal className="h-4 w-4 text-muted-foreground" aria-hidden />
+                          <TableCell className="text-right p-1.5" onClick={(e) => e.stopPropagation()}>
+                            {canMutate ? (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon-sm"
+                                disabled={row.status === "CANCELLED"}
+                                className={`relative z-10 transition-colors ${
+                                  row.status === "CANCELLED"
+                                    ? "text-muted-foreground/30 cursor-not-allowed"
+                                    : "text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                                }`}
+                                title={row.status === "CANCELLED" ? "Booking is already archived / cancelled" : "Archive / Cancel booking"}
+                                aria-label={`Archive booking for ${row.customer.name}`}
+                                onClick={(e) => void handleArchiveRow(row, e)}
+                              >
+                                <Archive className="h-4 w-4" />
+                              </Button>
+                            ) : null}
                           </TableCell>
                         </TableRow>
                       );
@@ -781,8 +919,7 @@ export function AdminBookingsPage() {
             {!loading && filtered.length > 0 ? (
               <div className="flex flex-col gap-3 border-t border-border px-admin-card-sm py-3 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-xs text-muted-foreground">
-                  Showing {pageRows.length} of {filtered.length} booking
-                  {filtered.length === 1 ? "" : "s"}
+                  Showing {filtered.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, filtered.length)} of {filtered.length} {statusTab === "ALL" ? "total bookings" : `${STATUS_TABS.find((t) => t.id === statusTab)?.label.toLowerCase()} bookings`}
                 </p>
                 <div className="flex items-center gap-1">
                   <Button

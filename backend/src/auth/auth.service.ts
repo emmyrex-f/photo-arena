@@ -20,10 +20,10 @@ import type { UpdateAccountDto } from "./dto/update-account.dto";
 @Injectable()
 export class AuthService {
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly jwt: JwtService,
-    private readonly config: ConfigService,
-    private readonly notifications: NotificationsService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(JwtService) private readonly jwt: JwtService,
+    @Inject(ConfigService) private readonly config: ConfigService,
+    @Inject(NotificationsService) private readonly notifications: NotificationsService,
   ) {}
 
   async deskEmail() {

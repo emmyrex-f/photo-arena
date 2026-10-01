@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Save, Settings } from "lucide-react";
+import { Pencil, Save, Settings } from "lucide-react";
 import { Button } from "../../admin/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../admin/components/ui/card";
 import { ErrorBanner } from "../../admin/components/ui/error-banner";
@@ -105,6 +105,17 @@ export function AdminSettingsPage() {
     return ([...POLICY_KEYS, ...ANALYTICS_KEYS] as EditableKey[]).some((key) => draft[key] !== saved[key]);
   }, [draft, saved]);
 
+  const [editing, setEditing] = useState<"policies" | "analytics" | null>(null);
+
+  function cancelEdit(keys: readonly EditableKey[]) {
+    setDraft((prev) => {
+      const next = { ...prev };
+      for (const key of keys) next[key] = saved[key];
+      return next;
+    });
+    setEditing(null);
+  }
+
   async function onSave() {
     setSaving(true);
     try {
@@ -116,6 +127,7 @@ export function AdminSettingsPage() {
       const next = pick(map);
       setSaved(next);
       setDraft(next);
+      setEditing(null);
       toast.success("Settings saved");
     } catch (err) {
       toast.error(errorMessage(err, "Could not save settings"));
@@ -142,10 +154,6 @@ export function AdminSettingsPage() {
           <Button type="button" variant="outline" asChild>
             <Link to="/admin/notifications">Notifications</Link>
           </Button>
-          <Button type="button" onClick={() => void onSave()} disabled={!dirty || loading} loading={saving}>
-            <Save strokeWidth={1.5} />
-            Save changes
-          </Button>
         </div>
       </header>
 
@@ -158,10 +166,18 @@ export function AdminSettingsPage() {
         </div>
       ) : (
         <>
+          <div className="grid items-start gap-admin-stack lg:grid-cols-2">
           <Card>
-            <CardHeader>
-              <CardTitle className="font-display text-lg font-normal">Studio policies</CardTitle>
-            </CardHeader>
+            <EditableCardHeader
+              title="Studio policies"
+              editing={editing === "policies"}
+              onEdit={() => setEditing("policies")}
+            />
+            {editing !== "policies" ? (
+              <CardContent>
+                <SettingsSummary keys={POLICY_KEYS} values={saved} />
+              </CardContent>
+            ) : (
             <CardContent className="grid gap-admin-gap sm:grid-cols-2">
               {POLICY_KEYS.map((key) => {
                 if (key === "policies.nonRefundable") {
@@ -206,13 +222,28 @@ export function AdminSettingsPage() {
                   </div>
                 );
               })}
+              <EditActions
+                saving={saving}
+                dirty={dirty}
+                onCancel={() => cancelEdit(POLICY_KEYS)}
+                onSave={() => void onSave()}
+              />
             </CardContent>
+            )}
           </Card>
 
           <Card>
-            <CardHeader>
-              <CardTitle className="font-display text-lg font-normal">Analytics</CardTitle>
-            </CardHeader>
+            <EditableCardHeader
+              title="Analytics"
+              editing={editing === "analytics"}
+              onEdit={() => setEditing("analytics")}
+            />
+            {editing !== "analytics" ? (
+              <CardContent>
+                <SettingsSummary keys={ANALYTICS_KEYS} values={saved} />
+                <p className="mt-3 text-xs text-muted-foreground">IDs load on the public site only after cookie consent.</p>
+              </CardContent>
+            ) : (
             <CardContent className="grid gap-admin-gap sm:grid-cols-2">
               {ANALYTICS_KEYS.map((key) => (
                 <div key={key} className="space-y-1.5">
@@ -228,8 +259,16 @@ export function AdminSettingsPage() {
               <p className="text-xs text-muted-foreground sm:col-span-2">
                 IDs load on the public site only after cookie consent.
               </p>
+              <EditActions
+                saving={saving}
+                dirty={dirty}
+                onCancel={() => cancelEdit(ANALYTICS_KEYS)}
+                onSave={() => void onSave()}
+              />
             </CardContent>
+            )}
           </Card>
+          </div>
 
           <p className="flex items-center gap-2 text-xs text-muted-foreground">
             <Settings className="h-3.5 w-3.5" aria-hidden />
@@ -237,6 +276,89 @@ export function AdminSettingsPage() {
           </p>
         </>
       )}
+    </div>
+  );
+}
+
+const PERCENT_KEYS = new Set<EditableKey>([
+  "policies.expressPercent",
+  "policies.vatPercent",
+  "policies.rescheduleFeePercent",
+  "policies.onlineDiscountPercent",
+]);
+
+function displayValue(key: EditableKey, value: string): string {
+  if (!value.trim()) return "—";
+  if (key === "policies.nonRefundable") return value === "true" ? "Yes" : "No";
+  if (key === "policies.extraImageKobo") {
+    const kobo = Number(value);
+    return Number.isFinite(kobo) ? `₦${(kobo / 100).toLocaleString("en-NG")}` : value;
+  }
+  return PERCENT_KEYS.has(key) ? `${value}%` : value;
+}
+
+function SettingsSummary({
+  keys,
+  values,
+}: {
+  keys: readonly EditableKey[];
+  values: Record<EditableKey, string>;
+}) {
+  return (
+    <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2">
+      {keys.map((key) => (
+        <div key={key} className="min-w-0">
+          <dt className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            {key === "policies.extraImageKobo" ? "Extra image" : LABELS[key]}
+          </dt>
+          <dd className="mt-0.5 break-words text-sm text-foreground">{displayValue(key, values[key])}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function EditableCardHeader({
+  title,
+  editing,
+  onEdit,
+}: {
+  title: string;
+  editing: boolean;
+  onEdit: () => void;
+}) {
+  return (
+    <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
+      <CardTitle className="font-display text-lg font-normal">{title}</CardTitle>
+      {editing ? null : (
+        <Button type="button" variant="outline" size="icon-sm" aria-label={`Edit ${title.toLowerCase()}`} onClick={onEdit}>
+          <Pencil className="h-3.5 w-3.5" />
+        </Button>
+      )}
+    </CardHeader>
+  );
+}
+
+function EditActions({
+  saving,
+  dirty,
+  onCancel,
+  onSave,
+}: {
+  saving: boolean;
+  dirty: boolean;
+  onCancel: () => void;
+  onSave: () => void;
+}) {
+  return (
+    <div className="flex justify-end gap-2 border-t border-border pt-4 sm:col-span-2">
+      <Button type="button" variant="outline" onClick={onCancel} disabled={saving}>
+        Cancel
+      </Button>
+      <Button type="button" onClick={onSave} disabled={!dirty} loading={saving}>
+        <Save strokeWidth={1.5} />
+        Save changes
+      </Button>
     </div>
   );
 }

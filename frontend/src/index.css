@@ -64,11 +64,11 @@
   }
 }
 
-/* Book Now: contained package rail on small screens, grid on large. */
+/* Book Now: contained package rail on small screens, grid on medium and large screens. */
 .pa-package-rail {
   display: flex;
   align-items: stretch;
-  gap: var(--pa-stack-sm);
+  gap: 1.25rem;
   width: 100%;
   max-width: 100%;
   min-width: 0;
@@ -87,8 +87,8 @@
 
 .pa-package-rail > article {
   display: flex;
-  width: min(20rem, calc(100% - 1.25rem));
-  flex: 0 0 min(20rem, calc(100% - 1.25rem));
+  width: min(21rem, calc(100% - 1.5rem));
+  flex: 0 0 min(21rem, calc(100% - 1.5rem));
   flex-direction: column;
   min-width: 0;
   scroll-snap-align: start;
@@ -96,14 +96,15 @@
 }
 
 .pa-package-rail > article:last-child {
-  width: min(20rem, 100%);
-  flex-basis: min(20rem, 100%);
+  width: min(21rem, 100%);
+  flex-basis: min(21rem, 100%);
 }
 
-@media (min-width: 1024px) {
+@media (min-width: 768px) {
   .pa-package-rail {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.5rem;
     overflow: visible;
     contain: none;
     scroll-snap-type: none;
@@ -113,12 +114,14 @@
   .pa-package-rail > article:last-child {
     width: auto;
     flex: none;
+    height: 100%;
   }
 }
 
-@media (min-width: 1280px) {
+@media (min-width: 1200px) {
   .pa-package-rail {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1.75rem;
   }
 }
 
@@ -173,12 +176,32 @@
   --shadow-soft: 0 1px 2px rgba(32, 31, 31, 0.08), 0 18px 44px -24px rgba(32, 31, 31, 0.35);
   --shadow-nav: 0 1px 0 rgba(235, 188, 113, 0.28), 0 12px 32px -18px rgba(32, 31, 31, 0.55);
 
+  /* Base UI / Portal tokens (ensures modals, dialogs, and overlays have opaque backgrounds) */
+  --background: 210 18% 5%;
+  --foreground: 210 17% 96%;
+  --card: 228 7% 10%;
+  --card-foreground: 210 17% 96%;
+  --popover: 228 7% 10%;
+  --popover-foreground: 210 17% 96%;
+  --primary: 38 52% 66%;
+  --primary-foreground: 0 0% 7%;
+  --secondary: 220 5% 12%;
+  --secondary-foreground: 210 17% 96%;
+  --muted: 220 5% 12%;
+  --muted-foreground: 220 3% 47%;
+  --destructive: 0 70% 62%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 0 0% 100% / 0.12;
+  --input: 0 0% 100% / 0.12;
+  --ring: 38 52% 66%;
+  --radius: 0.75rem;
+
   /*
    * 8px public spacing scale (see src/lib/theme.ts layout.spacing).
    * Tailwind aliases: px-gutter, py-section-y, mt-stack, p-card, gap-grid-lg, …
    */
   --pa-gutter: 1.25rem;
-  --pa-section-y: 5rem;
+  --pa-section-y: 3rem;
   --pa-header-y: 4rem;
   /* Logo 40px + vertical padding; 2rem shorter than the previous 80px bar. */
   --pa-nav-h: calc(40px + (var(--pa-eyebrow) * 2));
@@ -905,7 +928,7 @@ textarea.pa-input {
 }
 @media (min-width: 1440px) {
   .masonry {
-    column-count: 4;
+    column-count: 3;
   }
 }
 

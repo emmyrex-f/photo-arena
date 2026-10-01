@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { BookingStatus, PaymentStatus, Prisma } from "@prisma/client";
 import { parsePage, parsePageSize, paginate } from "../common/pagination";
 import { toCsv } from "../common/utils";
@@ -44,7 +44,7 @@ function deriveIsActive(
 
 @Injectable()
 export class CustomersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async summary() {
     const now = new Date();

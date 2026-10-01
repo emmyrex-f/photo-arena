@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
+  AlertTriangle,
   ArrowDown,
   ArrowUp,
   ChevronLeft,
@@ -14,6 +16,7 @@ import {
 import { ActiveBadge } from "../../admin/components/ui/status-badge";
 import { Badge } from "../../admin/components/ui/badge";
 import { Button } from "../../admin/components/ui/button";
+import { useModal } from "../../admin/components/ui/confirm-dialog";
 import {
   Dialog,
   DialogContent,
@@ -57,10 +60,27 @@ const MAX_FILES = 10;
 const PAGE_SIZE = 24;
 const ACCEPT = "image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp";
 
+export type MediaHubTab = "all" | "portfolio" | "services" | "content" | "blog";
+
+const TABS: Array<{
+  id: MediaHubTab;
+  label: string;
+  description: string;
+  kind?: MediaKind;
+  category?: string;
+  usageType?: string;
+}> = [
+  { id: "all", label: "All Media", description: "Central asset store for all studio images across every department." },
+  { id: "portfolio", label: "Portfolio Showcase", description: "Manage photos displayed in the client-facing portfolio and homepage highlight reel.", kind: "GALLERY" },
+  { id: "services", label: "Services", description: "Thumbnails, covers, and promotional visuals linked to studio services.", usageType: "service", category: "services", kind: "CONTENT" },
+  { id: "content", label: "Website Content", description: "Hero banners, tour clips, promotional graphics, and about section assets.", kind: "CONTENT" },
+  { id: "blog", label: "Blog Assets", description: "Featured visuals and supporting graphics for blog articles.", kind: "BLOG" },
+];
+
 const KIND_OPTIONS: Array<{ value: MediaKind; label: string }> = [
-  { value: "GALLERY", label: "Gallery" },
-  { value: "CONTENT", label: "Content" },
-  { value: "BLOG", label: "Blog" },
+  { value: "GALLERY", label: "Gallery / Portfolio" },
+  { value: "CONTENT", label: "Website Content" },
+  { value: "BLOG", label: "Blog Asset" },
 ];
 
 const SUGGESTED_CATEGORIES = ["birthdays", "portraits", "corporate", "kids", "general"] as const;
@@ -99,31 +119,65 @@ function usageTypeLabel(usageType: string): string {
   }
 }
 
+/** Public site hides images under 64px on either edge. */
+function isPublicSized(image: GalleryImage): boolean {
+  if (image.width == null && image.height == null) return true;
+  if (image.width != null && image.width < 64) return false;
+  if (image.height != null && image.height < 64) return false;
+  return true;
+}
+
+function isMediaHubTab(val: string | null): val is MediaHubTab {
+  return TABS.some((t) => t.id === val);
+}
+
 type EditForm = {
   alt: string;
   category: string;
   featured: boolean;
   isActive: boolean;
+  kind?: MediaKind;
 };
 
 export function AdminGalleryPage() {
   const api = useAdminApi();
+  const modal = useModal();
   const fileRef = useRef<HTMLInputElement>(null);
+  const [params, setParams] = useSearchParams();
+
+  const tabParam = params.get("tab");
+  const tab: MediaHubTab = isMediaHubTab(tabParam) ? tabParam : "all";
+
+  const activeTabConfig = TABS.find((t) => t.id === tab) ?? TABS[0];
 
   const [kindFilter, setKindFilter] = useState<"ALL" | MediaKind>("ALL");
-  const [statusFilter, setStatusFilter] = useState<"ALL" | "active" | "inactive">("ALL");
+  const [statusFilter, setStatusFilter] = useState<"ALL" | "active" | "inactive" | "featured">("ALL");
   const [categoryFilter, setCategoryFilter] = useState("ALL");
   const [query, setQuery] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
   const [page, setPage] = useState(1);
-  const [uploadKind, setUploadKind] = useState<MediaKind>("GALLERY");
-  const [uploadCategory, setUploadCategory] = useState("general");
   const [progress, setProgress] = useState<number | null>(null);
-  const [dragOver, setDragOver] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [editing, setEditing] = useState<GalleryImage | null>(null);
   const [editForm, setEditForm] = useState<EditForm | null>(null);
   const [editSaving, setEditSaving] = useState(false);
+
+  // Sync tab changes to URL params
+  const setTab = useCallback(
+    (next: MediaHubTab) => {
+      setParams(
+        (prev) => {
+          const copy = new URLSearchParams(prev);
+          if (next === "all") copy.delete("tab");
+          else copy.set("tab", next);
+          return copy;
+        },
+        { replace: true },
+      );
+      setPage(1);
+    },
+    [setParams],
+  );
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedQ(query.trim()), 300);
@@ -132,20 +186,34 @@ export function AdminGalleryPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [kindFilter, statusFilter, categoryFilter, debouncedQ]);
+  }, [tab, kindFilter, statusFilter, categoryFilter, debouncedQ]);
+
+  // Compute effective kind from active tab or explicit dropdown
+  const effectiveKind: MediaKind | undefined = useMemo(() => {
+    if (tab === "portfolio") return "GALLERY";
+    if (tab === "content" || tab === "services") return "CONTENT";
+    if (tab === "blog") return "BLOG";
+    return kindFilter !== "ALL" ? kindFilter : undefined;
+  }, [tab, kindFilter]);
 
   const listQuery = useQuery(
     () =>
       api.gallery.list({
         page,
         pageSize: PAGE_SIZE,
-        ...(kindFilter !== "ALL" ? { kind: kindFilter } : {}),
+        ...(effectiveKind ? { kind: effectiveKind } : {}),
+        ...(activeTabConfig.usageType ? { usageType: activeTabConfig.usageType } : {}),
         ...(statusFilter === "active" ? { isActive: true } : {}),
         ...(statusFilter === "inactive" ? { isActive: false } : {}),
-        ...(categoryFilter !== "ALL" ? { category: categoryFilter } : {}),
+        ...(statusFilter === "featured" ? { featured: true, isActive: true } : {}),
+        ...(categoryFilter !== "ALL"
+          ? { category: categoryFilter }
+          : activeTabConfig.category
+            ? { category: activeTabConfig.category }
+            : {}),
         ...(debouncedQ ? { q: debouncedQ } : {}),
       }),
-    [kindFilter, statusFilter, categoryFilter, debouncedQ, page],
+    [effectiveKind, activeTabConfig, statusFilter, categoryFilter, debouncedQ, page],
   );
 
   const pageData = listQuery.data;
@@ -157,7 +225,7 @@ export function AdminGalleryPage() {
   const categories = useMemo(() => {
     const set = new Set<string>(SUGGESTED_CATEGORIES);
     for (const image of images) {
-      if (image.category?.trim()) set.add(image.category.trim().toLowerCase());
+      if (image.category?.trim()) set.add(image.category.trim());
     }
     return [...set].sort((a, b) => a.localeCompare(b));
   }, [images]);
@@ -174,6 +242,7 @@ export function AdminGalleryPage() {
       category: image.category,
       featured: image.featured,
       isActive: image.isActive,
+      kind: image.kind,
     });
   }, []);
 
@@ -203,8 +272,10 @@ export function AdminGalleryPage() {
       }
 
       const form = new FormData();
-      form.append("kind", uploadKind);
-      form.append("category", uploadCategory.trim() || "general");
+      const targetKind =
+        activeTabConfig.kind ?? (tab === "portfolio" ? "GALLERY" : tab === "blog" ? "BLOG" : "CONTENT");
+      form.append("kind", targetKind);
+      form.append("category", activeTabConfig.category ?? (tab === "services" ? "Service/general" : "general"));
       for (const file of files) form.append("files", file);
 
       setProgress(0);
@@ -219,16 +290,7 @@ export function AdminGalleryPage() {
         setProgress(null);
       }
     },
-    [api, listQuery, uploadCategory, uploadKind],
-  );
-
-  const onDrop = useCallback(
-    (event: DragEvent<HTMLDivElement>) => {
-      event.preventDefault();
-      setDragOver(false);
-      if (event.dataTransfer.files?.length) void uploadFiles(event.dataTransfer.files);
-    },
-    [uploadFiles],
+    [activeTabConfig.category, activeTabConfig.kind, api, listQuery, tab],
   );
 
   async function saveEdit(event: FormEvent) {
@@ -251,6 +313,11 @@ export function AdminGalleryPage() {
           : current,
       );
       toast.success("Image updated");
+      if (updated.featured && counts.featured >= 14) {
+        toast.warning(
+          `You now have ${counts.featured + 1} featured images. Having 15 or more may slow down homepage loading.`,
+        );
+      }
       closeEdit();
     } catch (err) {
       toast.error(errorMessage(err, "Could not update image"));
@@ -271,6 +338,11 @@ export function AdminGalleryPage() {
           : current,
       );
       await listQuery.refetch();
+      if (patch.featured === true && counts.featured >= 14) {
+        toast.warning(
+          `You have ${counts.featured + 1} featured images. Consider keeping it to 8–12 for optimal homepage loading speed.`,
+        );
+      }
     } catch (err) {
       toast.error(errorMessage(err, "Could not update image"));
     } finally {
@@ -279,9 +351,15 @@ export function AdminGalleryPage() {
   }
 
   async function removeImage(image: GalleryImage) {
-    if (!window.confirm(`Delete “${image.alt || image.filename || "this image"}”? This cannot be undone.`)) {
-      return;
-    }
+    const ok = await modal.confirm({
+      title: "Delete Image",
+      description: `Delete “${image.alt || image.filename || "this image"}”? This action cannot be undone.`,
+      confirmLabel: "Delete image",
+      destructive: true,
+      tone: "danger",
+      icon: "trash",
+    });
+    if (!ok) return;
     setBusyId(image.id);
     try {
       await api.gallery.remove(image.id);
@@ -336,34 +414,69 @@ export function AdminGalleryPage() {
     <div className="pa-gallery space-y-admin-stack">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="font-display text-3xl font-normal tracking-tight text-foreground sm:text-[2rem]">
-            Media Library
-          </h1>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h1 className="font-display text-3xl font-normal tracking-tight text-foreground sm:text-[2rem]">
+              Media Hub
+            </h1>
+            <Badge variant="outline" className="text-xs font-normal">
+              {activeTabConfig.label}
+            </Badge>
+          </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            Upload and manage images for the portfolio, services, and content.
+            {activeTabConfig.description}
           </p>
         </div>
-        <Button
-          type="button"
-          onClick={() => fileRef.current?.click()}
-          disabled={progress != null}
-          loading={progress != null}
-        >
-          <Upload strokeWidth={1.5} />
-          Upload images
-        </Button>
-        <input
-          ref={fileRef}
-          type="file"
-          accept={ACCEPT}
-          multiple
-          className="sr-only"
-          onChange={(event) => {
-            if (event.target.files?.length) void uploadFiles(event.target.files);
-            event.target.value = "";
-          }}
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={progress != null}
+            loading={progress != null}
+          >
+            <Upload strokeWidth={1.5} />
+            Upload images
+          </Button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept={ACCEPT}
+            multiple
+            className="sr-only"
+            onChange={(event) => {
+              if (event.target.files?.length) void uploadFiles(event.target.files);
+              event.target.value = "";
+            }}
+          />
+        </div>
       </header>
+
+      {/* Media Hub Tab Switcher */}
+      <div
+        role="tablist"
+        aria-label="Media Hub categories"
+        className="flex flex-wrap gap-1 border-b border-border"
+      >
+        {TABS.map((item) => {
+          const active = item.id === tab;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setTab(item.id)}
+              className={cn(
+                "-mb-px border-b-2 px-3 py-2.5 text-sm font-medium transition-colors",
+                active
+                  ? "border-primary text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {item.label}
+            </button>
+          );
+        })}
+      </div>
 
       <ErrorBanner message={listQuery.error} onRetry={() => void listQuery.refetch()} retrying={listQuery.fetching} />
 
@@ -374,62 +487,23 @@ export function AdminGalleryPage() {
         <StatCard label="Inactive" icon={ImageIcon} loading={listQuery.loading} value={counts.inactive} />
       </section>
 
-      <section
-        className={cn(
-          "rounded-xl border border-dashed bg-card/40 p-admin-card-sm transition-colors",
-          dragOver ? "border-primary bg-primary/5" : "border-border",
-        )}
-        onDragOver={(event) => {
-          event.preventDefault();
-          setDragOver(true);
-        }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={onDrop}
-        aria-label="Upload drop zone"
-      >
-        <div className="flex flex-col gap-admin-gap lg:flex-row lg:items-end lg:justify-between">
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-foreground">Drop images here</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              JPEG, PNG, or WebP · up to {MAX_FILES} files · 15 MB each
-              {progress != null ? ` · Uploading ${progress}%` : ""}
+      {counts.featured >= 15 ? (
+        <div
+          role="alert"
+          className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-amber-900 dark:text-amber-200"
+        >
+          <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+          <div className="space-y-1 text-xs sm:text-sm">
+            <p className="font-semibold text-foreground">
+              High Number of Featured Images ({counts.featured})
+            </p>
+            <p className="text-muted-foreground leading-relaxed">
+              You have {counts.featured} images marked as featured. All of them will be displayed on the homepage portfolio preview. Having 15 or more may affect page load speed. We recommend keeping featured items to 8–12 images for optimal curation and fast loading.
             </p>
           </div>
-          <div className="flex flex-wrap items-end gap-admin-gap">
-            <div className="space-y-1.5">
-              <Label htmlFor="upload-kind">Kind</Label>
-              <Select value={uploadKind} onValueChange={(value) => setUploadKind(value as MediaKind)}>
-                <SelectTrigger id="upload-kind" className="w-[9.5rem]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {KIND_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="upload-category">Category</Label>
-              <Input
-                id="upload-category"
-                value={uploadCategory}
-                onChange={(event) => setUploadCategory(event.target.value)}
-                className="w-[10rem]"
-                list="gallery-category-suggestions"
-                placeholder="general"
-              />
-            </div>
-          </div>
         </div>
-        <datalist id="gallery-category-suggestions">
-          {categories.map((category) => (
-            <option key={category} value={category} />
-          ))}
-        </datalist>
-      </section>
+      ) : null}
+
 
       <section className="flex flex-col gap-admin-gap sm:flex-row sm:flex-wrap sm:items-center" aria-label="Filters">
         <Input
@@ -439,22 +513,24 @@ export function AdminGalleryPage() {
           className="sm:max-w-sm"
           aria-label="Search media"
         />
-        <Select value={kindFilter} onValueChange={(value) => setKindFilter(value as "ALL" | MediaKind)}>
-          <SelectTrigger className="w-[9.5rem]" aria-label="Filter by kind">
-            <SelectValue placeholder="Kind" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="ALL">All kinds</SelectItem>
-            {KIND_OPTIONS.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {tab === "all" ? (
+          <Select value={kindFilter} onValueChange={(value) => setKindFilter(value as "ALL" | MediaKind)}>
+            <SelectTrigger className="w-[10.5rem]" aria-label="Filter by kind">
+              <SelectValue placeholder="Kind" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All kinds</SelectItem>
+              {KIND_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : null}
         <Select
           value={statusFilter}
-          onValueChange={(value) => setStatusFilter(value as "ALL" | "active" | "inactive")}
+          onValueChange={(value) => setStatusFilter(value as "ALL" | "active" | "inactive" | "featured")}
         >
           <SelectTrigger className="w-[9.5rem]" aria-label="Filter by status">
             <SelectValue placeholder="Status" />
@@ -462,15 +538,17 @@ export function AdminGalleryPage() {
           <SelectContent>
             <SelectItem value="ALL">All status</SelectItem>
             <SelectItem value="active">Active</SelectItem>
+            <SelectItem value="featured">Featured only</SelectItem>
             <SelectItem value="inactive">Inactive</SelectItem>
           </SelectContent>
         </Select>
         <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-          <SelectTrigger className="w-[10.5rem]" aria-label="Filter by category">
+          <SelectTrigger className="w-[12rem]" aria-label="Filter by category">
             <SelectValue placeholder="Category" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="ALL">All categories</SelectItem>
+            <SelectItem value="services">All Services (Service/*)</SelectItem>
             {categories.map((category) => (
               <SelectItem key={category} value={category}>
                 {category}
@@ -489,11 +567,11 @@ export function AdminGalleryPage() {
       ) : images.length === 0 ? (
         <EmptyState
           icon={ImageIcon}
-          title={total || debouncedQ || categoryFilter !== "ALL" ? "No matches" : "No images yet"}
+          title={total || debouncedQ || categoryFilter !== "ALL" ? "No matches" : `No ${activeTabConfig.label} images yet`}
           description={
             total || debouncedQ || categoryFilter !== "ALL"
               ? "Try a different search or filter."
-              : "Upload JPEG, PNG, or WebP files to start building the library."
+              : `Upload JPEG, PNG, or WebP files to add to ${activeTabConfig.label.toLowerCase()}.`
           }
           action={
             !total && !debouncedQ && categoryFilter === "ALL" ? (
@@ -513,204 +591,265 @@ export function AdminGalleryPage() {
             const orderIndex = orderedIds.indexOf(image.id);
             const canMoveEarlier = orderIndex > 0;
             const canMoveLater = orderIndex >= 0 && orderIndex < orderedIds.length - 1;
+            const publicSized = isPublicSized(image);
+
             return (
               <li
                 key={image.id}
                 className={cn(
-                  "group relative overflow-hidden rounded-xl border border-border bg-card",
-                  !image.isActive && "opacity-70",
+                  "group relative flex flex-col overflow-hidden rounded-xl border bg-card transition-shadow hover:shadow-md",
+                  !image.isActive ? "border-border/60 opacity-60" : "border-border",
                 )}
               >
-                <button
-                  type="button"
-                  className="block w-full cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={() => openEdit(image)}
-                  aria-label={`Edit ${image.alt || "image"}`}
-                >
-                  <div className="aspect-[4/5] bg-muted">
-                    {src ? (
-                      <img
-                        src={src}
-                        alt=""
-                        className="h-full w-full object-cover"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <div className="flex h-full items-center justify-center text-muted-foreground">
-                        <ImageIcon className="h-8 w-8" aria-hidden />
-                      </div>
-                    )}
+                <div className="relative aspect-[4/5] w-full overflow-hidden bg-muted">
+                  <img
+                    src={src}
+                    alt={image.alt || "Studio asset"}
+                    loading="lazy"
+                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+                  />
+                  <div className="absolute top-2 left-2 flex flex-wrap gap-1">
+                    <ActiveBadge active={image.isActive} />
+                    {image.featured ? (
+                      <Badge variant="warning" className="gap-1 bg-amber-500/90 text-white hover:bg-amber-500">
+                        <Star className="h-3 w-3 fill-current" />
+                        Featured
+                      </Badge>
+                    ) : null}
+                    {tab === "all" ? (
+                      <Badge variant="outline" className="bg-background/80 text-[10px] backdrop-blur-sm">
+                        {kindLabel(image.kind)}
+                      </Badge>
+                    ) : null}
+                    {tab === "portfolio" && !publicSized ? (
+                      <Badge variant="destructive" className="text-[10px]" title="Image smaller than 64px on one edge; hidden on public portfolio">
+                        Too small
+                      </Badge>
+                    ) : null}
                   </div>
-                </button>
-
-                <div className="absolute left-2 top-2 flex flex-wrap gap-1">
-                  {image.featured ? (
-                    <Badge variant="default" className="gap-1">
-                      <Star className="h-3 w-3" aria-hidden />
-                      Featured
-                    </Badge>
-                  ) : null}
-                  <ActiveBadge active={image.isActive} />
+                  <div className="absolute top-2 right-2 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="icon-sm"
+                          disabled={busy}
+                          aria-label="Image actions"
+                        >
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => openEdit(image)}>
+                          <Pencil className="h-4 w-4" />
+                          Edit details
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => void toggleFlag(image, { featured: !image.featured })}>
+                          <Star className="h-4 w-4" />
+                          {image.featured ? "Unfeature" : "Mark featured"}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => void toggleFlag(image, { isActive: !image.isActive })}>
+                          <ActiveBadge active={!image.isActive} />
+                          {image.isActive ? "Deactivate" : "Activate"}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={() => void removeImage(image)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </div>
 
-                <div className="absolute right-2 top-2">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
+                <div className="flex flex-1 flex-col justify-between gap-2 p-3 text-xs">
+                  <div className="min-w-0 space-y-1">
+                    <p className="truncate font-medium text-foreground" title={image.alt}>
+                      {image.alt || <span className="text-muted-foreground italic">No caption</span>}
+                    </p>
+                    <div className="flex items-center justify-between gap-1 text-[11px] text-muted-foreground">
+                      {image.category?.startsWith("Service/") ? (
+                        <span
+                          className="inline-flex items-center gap-1 font-mono text-[10px] text-primary bg-primary/10 px-1.5 py-0.5 rounded border border-primary/20 truncate max-w-[170px]"
+                          title={image.category}
+                        >
+                          {image.category}
+                        </span>
+                      ) : (
+                        <span className="capitalize truncate max-w-[150px]">{image.category}</span>
+                      )}
+                      {image.width && image.height ? (
+                        <span className="shrink-0 text-[10px]">
+                          {image.width}×{image.height}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between border-t border-border/60 pt-2">
+                    <div className="flex items-center gap-0.5">
                       <Button
                         type="button"
+                        variant="ghost"
                         size="icon-sm"
-                        variant="secondary"
-                        className="bg-background/90 shadow-sm"
-                        aria-label={`Actions for ${image.alt || "image"}`}
-                        disabled={busy}
-                      >
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => openEdit(image)}>
-                        <Pencil className="h-4 w-4" />
-                        Edit details
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        disabled={!canMoveEarlier || busy}
+                        disabled={busy || !canMoveEarlier}
                         onClick={() => void moveImage(image, -1)}
+                        title="Move earlier"
+                        aria-label="Move earlier"
                       >
-                        <ArrowUp className="h-4 w-4" />
-                        Move earlier
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        disabled={!canMoveLater || busy}
+                        <ArrowUp className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        disabled={busy || !canMoveLater}
                         onClick={() => void moveImage(image, 1)}
+                        title="Move later"
+                        aria-label="Move later"
                       >
-                        <ArrowDown className="h-4 w-4" />
-                        Move later
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        disabled={busy}
-                        onClick={() => void toggleFlag(image, { featured: !image.featured })}
-                      >
-                        <Star className="h-4 w-4" />
-                        {image.featured ? "Unfeature" : "Feature"}
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        className="text-destructive focus:text-destructive"
-                        disabled={busy}
-                        onClick={() => void removeImage(image)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
+                        <ArrowDown className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
 
-                <div className="space-y-1 border-t border-border p-admin-control">
-                  <p className="truncate text-sm text-foreground">{image.alt || "Untitled"}</p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {image.category} · {kindLabel(image.kind)}
-                    {image.width && image.height ? ` · ${image.width}×${image.height}` : ""}
-                  </p>
+                    <button
+                      type="button"
+                      onClick={() => void toggleFlag(image, { featured: !image.featured })}
+                      disabled={busy}
+                      className={cn(
+                        "flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-medium transition-colors",
+                        image.featured
+                          ? "text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted",
+                      )}
+                      title={image.featured ? "Featured on homepage" : "Click to feature"}
+                    >
+                      <Star className={cn("h-3.5 w-3.5", image.featured && "fill-current")} />
+                      <span>{image.featured ? "Featured" : "Feature"}</span>
+                    </button>
+                  </div>
                 </div>
               </li>
             );
           })}
         </ul>
 
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-xs text-muted-foreground">
-            Page {page} of {pageCount}
-            {total ? ` · ${total} asset${total === 1 ? "" : "s"}` : ""}
-          </p>
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={page <= 1 || listQuery.fetching}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-            >
-              <ChevronLeft className="h-4 w-4" />
-              Prev
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={page >= pageCount || listQuery.fetching}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              Next
-              <ChevronRight className="h-4 w-4" />
-            </Button>
+        {pageCount > 1 ? (
+          <div className="flex items-center justify-between gap-2 border-t border-border pt-4">
+            <p className="text-xs text-muted-foreground">
+              Page {page} of {pageCount} ({total} total assets)
+            </p>
+            <div className="flex gap-1.5">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={page <= 1 || listQuery.fetching}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Previous
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={page >= pageCount || listQuery.fetching}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                Next
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
-        </div>
+        ) : null}
         </>
       )}
 
-      <Dialog open={Boolean(editing && editForm)} onOpenChange={(open) => !open && closeEdit()}>
-        <DialogContent>
+      {/* Edit Image Details Dialog */}
+      <Dialog open={editing != null} onOpenChange={(open) => (!open ? closeEdit() : undefined)}>
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Edit image</DialogTitle>
-            <DialogDescription>Update alt text, category, and visibility. Kind is set at upload.</DialogDescription>
+            <DialogTitle>Edit Image Details</DialogTitle>
+            <DialogDescription>
+              Update the caption, category tag, and display options.
+            </DialogDescription>
           </DialogHeader>
+
           {editing && editForm ? (
-            <form className="space-y-admin-stack-sm" onSubmit={(event) => void saveEdit(event)}>
-              <div className="overflow-hidden rounded-lg border border-border bg-muted">
+            <form onSubmit={(e) => void saveEdit(e)} className="space-y-4">
+              <div className="overflow-hidden rounded-lg border border-border bg-muted/40 aspect-[4/3]">
                 <img
                   src={mediaUrl(editing.thumbUrl || editing.url)}
-                  alt={editing.alt}
-                  className="max-h-56 w-full object-contain"
+                  alt={editing.alt || "Editing asset"}
+                  className="h-full w-full object-cover"
                 />
               </div>
+
               <div className="space-y-1.5">
-                <Label htmlFor="edit-alt">Alt text</Label>
+                <Label htmlFor="edit-alt">Caption / Alt text</Label>
                 <Input
                   id="edit-alt"
                   value={editForm.alt}
-                  onChange={(event) => setEditForm({ ...editForm, alt: event.target.value })}
-                  required
+                  onChange={(e) => setEditForm({ ...editForm, alt: e.target.value })}
+                  placeholder="Describe this image"
                 />
               </div>
+
               <div className="space-y-1.5">
                 <Label htmlFor="edit-category">Category</Label>
                 <Input
                   id="edit-category"
                   value={editForm.category}
-                  onChange={(event) => setEditForm({ ...editForm, category: event.target.value })}
-                  list="gallery-category-suggestions"
-                  required
+                  onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
+                  list="edit-category-suggestions"
+                  placeholder="e.g. portraits, birthdays"
                 />
+                <datalist id="edit-category-suggestions">
+                  {categories.map((c) => (
+                    <option key={c} value={c} />
+                  ))}
+                </datalist>
               </div>
-              <p className="text-xs text-muted-foreground">
-                Kind: {kindLabel(editing.kind)}
-                {editing.filename ? ` · ${editing.filename}` : ""}
-              </p>
-              <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
-                <div>
-                  <p className="text-sm text-foreground">Featured</p>
-                  <p className="text-xs text-muted-foreground">Highlight on public surfaces that use featured media.</p>
+
+              <div className="flex items-center justify-between rounded-lg border border-border p-3">
+                <div className="space-y-0.5">
+                  <Label htmlFor="edit-featured" className="text-sm font-medium">
+                    Featured on Homepage
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Shows in the homepage portfolio preview highlight reel.
+                  </p>
                 </div>
                 <Switch
+                  id="edit-featured"
                   checked={editForm.featured}
-                  onCheckedChange={(featured) => setEditForm({ ...editForm, featured })}
-                  aria-label="Featured"
+                  onCheckedChange={(checked) => setEditForm({ ...editForm, featured: checked })}
                 />
               </div>
-              <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
-                <div>
-                  <p className="text-sm text-foreground">Active</p>
-                  <p className="text-xs text-muted-foreground">Inactive assets stay in the library but are hidden from picks.</p>
+
+              <div className="flex items-center justify-between rounded-lg border border-border p-3">
+                <div className="space-y-0.5">
+                  <Label htmlFor="edit-active" className="text-sm font-medium">
+                    Active Status
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Controls whether this asset is visible on the site.
+                  </p>
                 </div>
                 <Switch
+                  id="edit-active"
                   checked={editForm.isActive}
-                  onCheckedChange={(isActive) => setEditForm({ ...editForm, isActive })}
-                  aria-label="Active"
+                  onCheckedChange={(checked) => setEditForm({ ...editForm, isActive: checked })}
                 />
               </div>
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={closeEdit} disabled={editSaving}>
+
+              <DialogFooter className="pt-2">
+                <Button type="button" variant="outline" onClick={closeEdit}>
                   Cancel
                 </Button>
                 <Button type="submit" loading={editSaving}>

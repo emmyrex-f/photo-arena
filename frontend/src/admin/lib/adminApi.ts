@@ -9,10 +9,12 @@ import type {
   BookingRecord,
   BookingStatus,
   BookingsDeskStats,
+  CompletePresignedPayload,
   CustomerDetail,
   CustomerListItem,
   CustomersSummary,
   DashboardData,
+  DashboardRevenueData,
   Enquiry,
   EnquiryStatus,
   EnquiriesSummary,
@@ -30,6 +32,7 @@ import type {
   PaymentMethod,
   PaymentsSummary,
   PaymentStatus,
+  PresignedUploadResponse,
   PricingRule,
   Role,
   Service,
@@ -97,8 +100,8 @@ export function createAdminApi({ token, onUnauthorized }: ClientOptions) {
     dashboard: {
       get: (params?: { weekStart?: string }) =>
         get<DashboardData>(`/admin/dashboard${qs(params ?? {})}`),
-      revenue: (params?: { weekStart?: string }) =>
-        get<DashboardData["weeklyRevenue"]>(`/admin/dashboard/revenue${qs(params ?? {})}`),
+      revenue: (params?: { weekStart?: string; month?: string; period?: "week" | "month" }) =>
+        get<DashboardRevenueData>(`/admin/dashboard/revenue${qs(params ?? {})}`),
     },
 
     bookings: {
@@ -215,6 +218,7 @@ export function createAdminApi({ token, onUnauthorized }: ClientOptions) {
     gallery: {
       list: (params?: {
         kind?: MediaKind;
+        usageType?: string;
         isActive?: boolean;
         featured?: boolean;
         category?: string;
@@ -225,6 +229,95 @@ export function createAdminApi({ token, onUnauthorized }: ClientOptions) {
         get<Paginated<GalleryImage> & { counts?: { active: number; featured: number; inactive: number } }>(
           `/admin/gallery${qs(params)}`,
         ),
+      presign: (body: {
+        filename: string;
+        kind?: MediaKind;
+        contentType?: string;
+        resourceType?: "image" | "video" | "auto";
+      }) => post<PresignedUploadResponse>("/admin/gallery/presign", body),
+      completePresigned: (body: CompletePresignedPayload) =>
+        post<GalleryImage>("/admin/gallery/complete-presigned", body),
+      /**
+       * High performance direct client upload.
+       * 1. Obtains presigned credentials from backend.
+       * 2. Uploads binary directly to Cloudinary CDN with progress callbacks.
+       * 3. Persists media record into backend database.
+       * 4. Gracefully falls back to multipart server stream if presign is disabled/local.
+       */
+      uploadDirect: async (
+        file: File,
+        options?: {
+          kind?: MediaKind;
+          category?: string;
+          alt?: string;
+          onProgress?: (percent: number) => void;
+        },
+      ): Promise<GalleryImage> => {
+        try {
+          const presignRes = await post<PresignedUploadResponse>("/admin/gallery/presign", {
+            filename: file.name,
+            kind: options?.kind,
+            contentType: file.type,
+            resourceType: file.type.startsWith("video/") ? "video" : "image",
+          });
+
+          if (presignRes?.direct && presignRes.provider === "cloudinary" && presignRes.fields) {
+            const formData = new FormData();
+            Object.entries(presignRes.fields).forEach(([k, v]) => {
+              formData.append(k, String(v));
+            });
+            formData.append("file", file);
+
+            const cloudRes = await new Promise<any>((resolve, reject) => {
+              const xhr = new XMLHttpRequest();
+              xhr.open("POST", presignRes.uploadUrl);
+              if (options?.onProgress) {
+                xhr.upload.onprogress = (e) => {
+                  if (e.lengthComputable) {
+                    const pct = Math.round((e.loaded / e.total) * 100);
+                    options.onProgress?.(pct);
+                  }
+                };
+              }
+              xhr.onload = () => {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                  try {
+                    resolve(JSON.parse(xhr.responseText));
+                  } catch {
+                    resolve(xhr.response);
+                  }
+                } else {
+                  reject(new Error(xhr.responseText || `Upload failed with status ${xhr.status}`));
+                }
+              };
+              xhr.onerror = () => reject(new Error("Network error during direct Cloudinary upload"));
+              xhr.send(formData);
+            });
+
+            return await post<GalleryImage>("/admin/gallery/complete-presigned", {
+              url: cloudRes.secure_url || cloudRes.url,
+              thumbUrl: cloudRes.secure_url || cloudRes.url,
+              filename: file.name,
+              width: cloudRes.width,
+              height: cloudRes.height,
+              kind: options?.kind || "GALLERY",
+              category: options?.category,
+              alt: options?.alt || file.name,
+            });
+          }
+        } catch (presignErr) {
+          console.warn("Direct upload fallback to server stream:", presignErr);
+        }
+
+        // Fallback to server stream
+        const fallbackForm = new FormData();
+        fallbackForm.append("files", file);
+        if (options?.kind) fallbackForm.append("kind", options.kind);
+        if (options?.category) fallbackForm.append("category", options.category);
+        if (options?.alt) fallbackForm.append("alt", options.alt);
+        const rows = await apiUpload<GalleryImage[]>("/admin/gallery/upload", fallbackForm, token, options?.onProgress);
+        return rows[0];
+      },
       upload: (formData: FormData, onProgress?: (percent: number) => void) =>
         apiUpload<GalleryImage[]>("/admin/gallery/upload", formData, token, onProgress),
       update: (

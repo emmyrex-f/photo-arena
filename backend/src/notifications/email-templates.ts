@@ -41,10 +41,10 @@ const EVENT_THEMES: Record<NotificationEvent, EventTheme> = {
     badgeBg: "rgba(226, 177, 104, 0.15)",
     badgeText: "#e2b168",
     badgeBorder: "#d29922",
-    badgeLabel: "TEMPORARY HOLD",
-    headline: "Booking Hold Placed ⏳",
+    badgeLabel: "BOOKING RECEIVED",
+    headline: "Booking Received 📸",
     description:
-      "A temporary hold has been reserved for your photoshoot. Please complete your payment before the hold expires to confirm your slot.",
+      "The studio has booked a photoshoot for you. Please review your booking details below.",
   },
   booking_rescheduled: {
     badgeBg: "rgba(226, 177, 104, 0.15)",
@@ -89,7 +89,7 @@ const EVENT_THEMES: Record<NotificationEvent, EventTheme> = {
     badgeLabel: "ABANDONED",
     headline: "Checkout Incomplete ⏳",
     description:
-      "Your photoshoot booking checkout was not completed and the temporary slot hold has been released. If you would like to secure this session, please visit our booking page to re-book.",
+      "Your photoshoot booking checkout was not completed, so the session was not booked. If you would like this session, please visit our booking page to book again.",
   },
   password_reset: {
     badgeBg: "rgba(226, 177, 104, 0.15)",

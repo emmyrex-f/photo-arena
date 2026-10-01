@@ -13,7 +13,7 @@ import {
   X,
   XCircle,
 } from "lucide-react";
-import { addDays, format } from "date-fns";
+import { addDays } from "date-fns";
 import { Avatar, AvatarFallback } from "../../admin/components/ui/avatar";
 import { Button } from "../../admin/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../admin/components/ui/card";
@@ -189,7 +189,6 @@ export function AdminPaymentsPage() {
   );
 
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const rangeLabel = `${format(parseYmd(from), "MMM d, yyyy")} – ${format(parseYmd(to), "MMM d, yyyy")}`;
 
   async function onExport() {
     setExporting(true);
@@ -224,9 +223,6 @@ export function AdminPaymentsPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm text-muted-foreground">
-            <span className="tabular-nums text-foreground">{rangeLabel}</span>
-          </div>
           <Input
             type="date"
             value={from}

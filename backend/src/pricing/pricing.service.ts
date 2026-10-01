@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit } from "@nestjs/common";
+import { Inject, Injectable, OnModuleInit } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 
 export type BookingSource = "ONLINE" | "WALK_IN" | "ADMIN";
@@ -10,7 +10,7 @@ export class PricingService implements OnModuleInit {
   /** Photo Arena operates a strict no-refund policy on cancellations (100% forfeit / non-refundable deposit). */
   private cancellationPenaltyBps = 10000;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async onModuleInit() {
     await this.refresh();

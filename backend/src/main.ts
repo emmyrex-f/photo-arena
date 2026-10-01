@@ -15,6 +15,10 @@ function uploadContentType(filePath: string): string {
   if (ext === ".webp") return "image/webp";
   if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
   if (ext === ".png") return "image/png";
+  if (ext === ".mp4") return "video/mp4";
+  if (ext === ".webm") return "video/webm";
+  if (ext === ".mov") return "video/quicktime";
+  if (ext === ".ogg" || ext === ".ogv") return "video/ogg";
   return "application/octet-stream";
 }
 

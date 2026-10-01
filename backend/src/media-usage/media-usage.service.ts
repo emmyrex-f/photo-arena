@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
@@ -41,7 +42,7 @@ export type ReorderMediaUsagesInput = {
 
 @Injectable()
 export class MediaUsageService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async attach(input: AttachMediaInput) {
     const mediaId = parseMediaId(input.mediaId);

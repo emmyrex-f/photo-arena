@@ -122,7 +122,7 @@ export function Footer() {
         </div>
       </div>
 
-      <div className="px-gutter pb-stack-sm text-center text-xs text-text-muted lg:pb-stack-lg">
+      <div className="px-gutter pb-6 pt-2 text-center text-[11px] sm:text-xs text-text-muted/70 tracking-normal lg:pb-8">
         © {new Date().getFullYear()} {info.name}. Port Harcourt, Nigeria. All rights reserved.
       </div>
     </footer>

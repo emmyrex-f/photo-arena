@@ -24,8 +24,18 @@ export function assertCriticalEnv(env: NodeJS.ProcessEnv = process.env): void {
       }
     }
 
-    const storageProvider = (env.STORAGE_PROVIDER ?? "local").trim().toLowerCase();
-    if (storageProvider === "r2" || storageProvider === "s3") {
+    const storageProvider = (env.STORAGE_PROVIDER ?? "cloudinary").trim().toLowerCase();
+    if (storageProvider === "cloudinary") {
+      const hasUrl = Boolean((env.CLOUDINARY_URL ?? "").trim());
+      const hasCloudName = Boolean((env.CLOUDINARY_CLOUD_NAME ?? "").trim());
+      const hasApiKey = Boolean((env.CLOUDINARY_API_KEY ?? "").trim());
+      const hasApiSecret = Boolean((env.CLOUDINARY_API_SECRET ?? "").trim());
+      if (!hasUrl && (!hasCloudName || !hasApiKey || !hasApiSecret)) {
+        throw new Error(
+          "STORAGE_PROVIDER=cloudinary in production requires CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET (or CLOUDINARY_URL)",
+        );
+      }
+    } else if (storageProvider === "r2" || storageProvider === "s3") {
       const hasKey = Boolean(env.R2_ACCESS_KEY_ID || env.S3_ACCESS_KEY_ID);
       const hasSecret = Boolean(env.R2_SECRET_ACCESS_KEY || env.S3_SECRET_ACCESS_KEY);
       const hasBucket = Boolean(env.R2_BUCKET || env.S3_BUCKET);
