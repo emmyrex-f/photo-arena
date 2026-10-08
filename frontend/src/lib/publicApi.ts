@@ -67,6 +67,8 @@ export type PublicPackage = {
   priceKobo: number;
   /** Server-calculated online payable. Absent on offline fallback catalogue. */
   onlinePriceKobo?: number;
+  /** Server minimum for an online card payment, in kobo. */
+  minCustomerTransactionKobo?: number;
   discountPercent?: number;
   isProvisional: boolean;
   sortOrder: number;
@@ -199,7 +201,7 @@ export function fetchServices(): Promise<WithSource<PublicService[]>> {
   return withFallback(
     () => request<PublicService[]>("/public/services"),
     fallbackServices,
-    (value) => Array.isArray(value) && value.length > 0,
+    (value) => Array.isArray(value),
   );
 }
 

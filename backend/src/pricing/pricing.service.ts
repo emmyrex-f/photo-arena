@@ -3,6 +3,25 @@ import { PrismaService } from "../prisma/prisma.service";
 
 export type BookingSource = "ONLINE" | "WALK_IN" | "ADMIN";
 
+/** Bachs rejects an NGN checkout below 100.00. Customer online payments cannot go under this. */
+export const MIN_CUSTOMER_TRANSACTION_KOBO = 10_000;
+
+export function isBelowCustomerMinimum(amountKobo: number): boolean {
+  return !Number.isInteger(amountKobo) || amountKobo < MIN_CUSTOMER_TRANSACTION_KOBO;
+}
+
+export function customerMinimumMessage(amountKobo?: number): string {
+  const minimum = "₦100";
+  if (amountKobo == null || !Number.isInteger(amountKobo)) {
+    return `Online payments must be at least ${minimum}.`;
+  }
+  const naira = (amountKobo / 100).toLocaleString("en-NG", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  return `Online payments must be at least ${minimum}. This charge is ₦${naira}.`;
+}
+
 @Injectable()
 export class PricingService implements OnModuleInit {
   private onlineDiscountBps = 500;
@@ -44,10 +63,8 @@ export class PricingService implements OnModuleInit {
   }
 
   calculatePayableKobo(basePriceKobo: number, source: BookingSource): number {
-    if (source === "ONLINE") {
-      return Math.floor((basePriceKobo * (10_000 - this.onlineDiscountBps)) / 10_000);
-    }
-    return basePriceKobo;
+    if (source !== "ONLINE") return basePriceKobo;
+    return Math.floor((basePriceKobo * (10_000 - this.onlineDiscountBps)) / 10_000);
   }
 
   calculateDiscountKobo(basePriceKobo: number, source: BookingSource): number {

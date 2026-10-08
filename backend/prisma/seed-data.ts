@@ -536,6 +536,68 @@ export function buildSeedSettings(env: NodeJS.ProcessEnv): Record<string, string
     "booking.sameDayMinimumNoticeMinutes": "0",
     "booking.timezone": "Africa/Lagos",
 
+    // services.* — portrait cards on /services. Later edits come from Content → Services.
+    "services.cards": JSON.stringify([
+      {
+        title: "Birthday Photography",
+        description:
+          "Celebrate your special day with stunning, joyful photos that capture the energy, excitement, and pure happiness of your birthday moment.",
+        tag: "Walk-In Available",
+        image: "/media/services/birthday.jpg",
+        link: "personal-birthday",
+      },
+      {
+        title: "Children Photography",
+        description:
+          "Capture the magic of childhood with fun, vibrant kids' shoots designed to bring out natural smiles and precious expressions in a safe, playful environment.",
+        tag: "Family Friendly",
+        image: "/media/services/children.jpg",
+        link: "bundle-of-joy-0-1",
+      },
+      {
+        title: "Pre-Wedding Photos",
+        description:
+          "Tell your love story before the big day. Our pre-wedding shoots are intimate, romantic, and beautifully crafted for couples who want something truly special.",
+        tag: "Couples",
+        image: "/media/services/pre-wedding.jpg",
+        link: "pre-wedding",
+      },
+      {
+        title: "Professional Indoor Portraits",
+        description:
+          "Elevate your personal brand with polished, studio-lit portraits. Perfect for profiles, portfolios, and anyone who wants to look their absolute best.",
+        tag: "Studio Quality",
+        image: "/media/services/portraits.jpg",
+        link: "personal-birthday",
+      },
+      {
+        title: "Passport / Visa Photos",
+        description:
+          "Get compliant, professional passport and visa photos quickly. We know the requirements so your photos are accepted on the first try — every time.",
+        tag: "Same Day Ready",
+        image: "/media/services/passport.jpg",
+        link: "contact",
+      },
+      {
+        title: "Corporate Headshots",
+        description:
+          "First impressions matter. Our corporate headshots are sharp, confident, and polished — ideal for LinkedIn, company websites, and executive profiles.",
+        tag: "Professional",
+        image: "/media/services/corporate.jpg",
+        link: "corporate",
+      },
+    ]),
+
+    "services.video": JSON.stringify({
+      eyebrow: "Video content",
+      title: "Studio Video Content Sessions",
+      paragraphs: [
+        "At Photo Arena, we offer crisp & clean in-studio video shoots that complement your personality, add motion to the occasion & allow you to express your vibe.",
+        "Do well to book one of our sessions.",
+      ],
+      notes: ["Delivery: within 72 hours", "24-hour delivery: express fee 50% of bill"],
+    }),
+
     // notifications.* (admin-only)
     "notifications.recipients": (env.NOTIFICATION_EMAIL_RECIPIENTS ?? "").trim(),
     "notifications.reminder24h": "true",

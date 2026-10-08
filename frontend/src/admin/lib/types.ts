@@ -412,6 +412,31 @@ export type DashboardData = {
   needsAttention: DashboardAttentionItem[];
   tomorrowsBookings: DashboardTomorrowBooking[];
   upcomingBookings: DashboardUpcomingBooking[];
+  audit: {
+    eventCount: number;
+    needsPurge: boolean;
+  };
+};
+
+export type AuditPurgeJob = {
+  id: string;
+  percent: number;
+  status: "PENDING" | "RUNNING" | "DONE" | "FAILED";
+  totalAtRequest: number;
+  targetCount: number;
+  deletedCount: number;
+  requestedAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+};
+
+export type AuditPurgeStatus = {
+  total: number;
+  eligible: boolean;
+  nextAllowedAt: string | null;
+  lastFinishedAt: string | null;
+  previews: { percent: 20 | 40 | 70 | 100; count: number }[];
+  job: AuditPurgeJob | null;
 };
 
 export type DashboardRevenuePoint = {

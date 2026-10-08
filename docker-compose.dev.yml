@@ -1,0 +1,26 @@
+# Local development: Postgres only (published on localhost:5432).
+# Usage: docker compose -f docker-compose.dev.yml up -d
+#
+# Point backend DATABASE_URL at:
+#   postgresql://photoarena:photoarena@localhost:5432/photoarena
+
+services:
+  db:
+    image: postgres:16
+    container_name: photoarena-postgres-dev
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: photoarena
+      POSTGRES_PASSWORD: photoarena
+      POSTGRES_DB: photoarena
+    volumes:
+      - photoarena_pg_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U photoarena -d photoarena"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  photoarena_pg_dev:

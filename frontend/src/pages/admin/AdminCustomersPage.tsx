@@ -1,23 +1,13 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import {
-  CalendarClock,
-  ChevronLeft,
-  ChevronRight,
-  Download,
-  Eye,
-  Instagram,
-  Mail,
-  Phone,
-  UserPlus,
-  Users,
-  X,
-} from "lucide-react";
+import { Calendar, CalendarClock, ChevronLeft, ChevronRight, Download, Eye, Instagram, Mail, Phone, UserPlus, Users, X } from "lucide-react";
 import { addDays } from "date-fns";
 import { ActiveBadge, BookingStatusBadge } from "../../admin/components/ui/status-badge";
 import { Avatar, AvatarFallback } from "../../admin/components/ui/avatar";
 import { Badge } from "../../admin/components/ui/badge";
 import { Button } from "../../admin/components/ui/button";
+import { DateRangeCalendar, formatRangeLabel } from "../../admin/components/DateRangeCalendar";
+import { Popover, PopoverContent, PopoverTrigger } from "../../admin/components/ui/popover";
 import { Card, CardContent, CardHeader, CardTitle } from "../../admin/components/ui/card";
 import { EmptyState } from "../../admin/components/ui/empty-state";
 import { ErrorBanner } from "../../admin/components/ui/error-banner";
@@ -116,6 +106,10 @@ export function AdminCustomersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchDraft, setSearchDraft] = useState(q);
+  const [dateOpen, setDateOpen] = useState(false);
+  const [compactDate, setCompactDate] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches,
+  );
   const [exporting, setExporting] = useState(false);
   const [detail, setDetail] = useState<CustomerDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -140,6 +134,17 @@ export function AdminCustomersPage() {
   useEffect(() => {
     setSearchDraft(q);
   }, [q]);
+
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 767px)");
+    const sync = () => {
+      setCompactDate(query.matches);
+      if (!query.matches) setDateOpen(false);
+    };
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -235,22 +240,23 @@ export function AdminCustomersPage() {
             Manage customer information, view history and track bookings.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Input
-            type="date"
-            value={from}
-            aria-label="From date"
-            className="w-[9.5rem]"
-            onChange={(e) => setParam({ from: e.target.value || null })}
-          />
-          <Input
-            type="date"
-            value={to}
-            aria-label="To date"
-            className="w-[9.5rem]"
-            onChange={(e) => setParam({ to: e.target.value || null })}
-          />
-        </div>
+        {compactDate ? (
+          <Popover open={dateOpen} onOpenChange={setDateOpen}>
+            <PopoverTrigger asChild>
+              <Button type="button" variant="outline" className="gap-2">
+                <Calendar className="h-4 w-4" />
+                {formatRangeLabel(from <= to ? from : to, from <= to ? to : from)}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-72 p-3">
+              <DateRangeCalendar
+                from={from <= to ? from : to}
+                to={from <= to ? to : from}
+                onChange={(nextFrom, nextTo) => setParam({ from: nextFrom, to: nextTo, page: "1" })}
+              />
+            </PopoverContent>
+          </Popover>
+        ) : null}
       </header>
 
       <ErrorBanner message={error} onRetry={() => void load()} retrying={loading} />
@@ -287,9 +293,21 @@ export function AdminCustomersPage() {
       <div
         className={cn(
           "grid gap-admin-stack",
-          selectedId ? "xl:grid-cols-[minmax(0,1fr)_21rem]" : "grid-cols-1",
+          selectedId
+            ? "md:grid-cols-[17.5rem_minmax(0,1fr)] xl:grid-cols-[17.5rem_minmax(0,1fr)_21rem]"
+            : "md:grid-cols-[17.5rem_minmax(0,1fr)]",
         )}
       >
+        {compactDate ? null : (
+          <aside>
+            <DateRangeCalendar
+              framed
+              from={from <= to ? from : to}
+              to={from <= to ? to : from}
+              onChange={(nextFrom, nextTo) => setParam({ from: nextFrom, to: nextTo, page: "1" })}
+            />
+          </aside>
+        )}
         <Card className="min-w-0 overflow-hidden">
           <div className="flex flex-col gap-2 border-b border-border p-admin-card-sm sm:flex-row sm:items-center">
             <form onSubmit={submitSearch} className="min-w-0 flex-1">
@@ -479,12 +497,14 @@ export function AdminCustomersPage() {
         </Card>
 
         {selectedId ? (
-          <CustomerDetailPanel
-            listRow={selectedListRow}
-            detail={detail}
-            loading={detailLoading}
-            onClose={() => setParam({ id: null })}
-          />
+          <div className="md:col-span-2 xl:col-span-1 xl:col-start-3">
+            <CustomerDetailPanel
+              listRow={selectedListRow}
+              detail={detail}
+              loading={detailLoading}
+              onClose={() => setParam({ id: null })}
+            />
+          </div>
         ) : null}
       </div>
     </div>

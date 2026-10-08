@@ -34,9 +34,14 @@ import { Skeleton } from "../../admin/components/ui/skeleton";
 import { Textarea } from "../../admin/components/ui/textarea";
 import { toast } from "../../admin/components/ui/toaster";
 import { useAdminApi } from "../../admin/lib/adminApi";
+import { koboToNairaInput, nairaInputToKobo } from "../../admin/lib/format";
 import type { SettingsMap } from "../../admin/lib/types";
 import { ApiError, errorMessage } from "../../lib/api";
 import { cn } from "../../lib/cn";
+import { DEFAULT_SERVICE_PAGE_CARDS } from "../../data/servicePageCards";
+import { DEFAULT_SERVICE_VIDEO_CONTENT } from "../../data/serviceVideoContent";
+import { ServicePageCardsEditor, editorServicePageCards } from "./ServicePageCardsEditor";
+import { ServiceVideoContentEditor, type VideoPackagePrice } from "./ServiceVideoContentEditor";
 import { site } from "../../lib/site";
 import {
   ABOUT_PAGE_SLIDES,
@@ -120,6 +125,8 @@ const EDITABLE_KEYS = [
   "site.header.portfolio",
   "site.header.book",
   "about.images",
+  "services.cards",
+  "services.video",
 ] as const;
 
 type EditableKey = (typeof EDITABLE_KEYS)[number];
@@ -159,6 +166,8 @@ const DEFAULTS: Record<EditableKey, string> = {
   "site.header.portfolio": "",
   "site.header.book": "",
   "about.images": "",
+  "services.cards": JSON.stringify(DEFAULT_SERVICE_PAGE_CARDS),
+  "services.video": JSON.stringify(DEFAULT_SERVICE_VIDEO_CONTENT),
 };
 
 function pickEditable(source: SettingsMap): Record<EditableKey, string> {
@@ -190,6 +199,10 @@ export function AdminContentPage() {
   const [editingContact, setEditingContact] = useState(false);
   const [editingSeo, setEditingSeo] = useState(false);
   const [assetPickerField, setAssetPickerField] = useState<EditableKey | null>(null);
+  const [cardImageIndex, setCardImageIndex] = useState<number | null>(null);
+  const [catalog, setCatalog] = useState<{ slug: string; name: string }[]>([]);
+  const [videoPackages, setVideoPackages] = useState<VideoPackagePrice[]>([]);
+  const [videoPrices, setVideoPrices] = useState<Record<string, string>>({});
   const [bannerPickerKey, setBannerPickerKey] = useState<BannerKey | null>(null);
   const aboutCarouselFallback = [draft["about.imageUrl"] || site.about.imageUrl, ...HOME_ABOUT_EXTRA_IMAGES];
   const bannerFallback = (key: BannerKey) =>
@@ -200,6 +213,24 @@ export function AdminContentPage() {
   const [uploadingSeo, setUploadingSeo] = useState(false);
   const fileInputAboutRef = useRef<HTMLInputElement>(null);
   const fileInputSeoRef = useRef<HTMLInputElement>(null);
+
+  const handlePageVideoUpload = async (
+    file: File,
+    slot: "hero" | "tour",
+    setUploading: (loading: boolean) => void,
+  ) => {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const uploaded = await api.settings.uploadPageVideo(slot, file);
+      setField(slot === "hero" ? "hero.videoUrl" : "tour.videoUrl", uploaded.url);
+      toast.success("Video uploaded");
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const handleFileUpload = async (
     file: File,
@@ -259,10 +290,41 @@ export function AdminContentPage() {
     void load();
   }, [load]);
 
-  const dirty = useMemo(
+  useEffect(() => {
+    if (tab !== "services") return;
+    let cancelled = false;
+    api.services
+      .list()
+      .then((rows) => {
+        if (cancelled) return;
+        setCatalog(rows.filter((row) => row.isActive).map((row) => ({ slug: row.slug, name: row.name })));
+        const video = rows.find((row) => row.slug === "video-reels");
+        const packages = (video?.packages ?? [])
+          .filter((pkg) => pkg.isActive)
+          .map((pkg) => ({
+            id: pkg.id,
+            name: pkg.name,
+            includes: pkg.includes,
+            durationMinutes: pkg.durationMinutes,
+            priceKobo: pkg.priceKobo,
+          }));
+        setVideoPackages(packages);
+        setVideoPrices(Object.fromEntries(packages.map((pkg) => [pkg.id, koboToNairaInput(pkg.priceKobo)])));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, api]);
+
+  const settingsDirty = useMemo(
     () => EDITABLE_KEYS.some((key) => (draft[key] ?? "") !== (saved[key] ?? "")),
     [draft, saved],
   );
+  const pricesDirty = videoPackages.some(
+    (pkg) => (videoPrices[pkg.id] ?? "") !== koboToNairaInput(pkg.priceKobo),
+  );
+  const dirty = settingsDirty || pricesDirty;
 
   function setField(key: EditableKey, value: string) {
     setDraft((prev) => ({ ...prev, [key]: value }));
@@ -273,19 +335,46 @@ export function AdminContentPage() {
       toast.message("No changes to save");
       return;
     }
+    const priceUpdates: { id: string; priceKobo: number }[] = [];
+    for (const pkg of videoPackages) {
+      const raw = videoPrices[pkg.id] ?? "";
+      if (raw === koboToNairaInput(pkg.priceKobo)) continue;
+      const priceKobo = nairaInputToKobo(raw);
+      if (priceKobo == null || priceKobo < 0) {
+        toast.error("Enter a studio price in naira for each outfit row");
+        return;
+      }
+      priceUpdates.push({ id: pkg.id, priceKobo });
+    }
     setSaving(true);
     try {
-      const payload: SettingsMap = {};
-      for (const key of EDITABLE_KEYS) {
-        if ((draft[key] ?? "") !== (saved[key] ?? "")) {
-          payload[key] = draft[key] ?? "";
+      if (settingsDirty) {
+        const payload: SettingsMap = {};
+        for (const key of EDITABLE_KEYS) {
+          if ((draft[key] ?? "") !== (saved[key] ?? "")) {
+            payload[key] = draft[key] ?? "";
+          }
         }
+        const map = await api.settings.put(payload);
+        const next = pickEditable(map);
+        setSaved(next);
+        setDraft(next);
       }
-      const map = await api.settings.put(payload);
-      const next = pickEditable(map);
-      setSaved(next);
-      setDraft(next);
-      toast.success("Content saved");
+      if (priceUpdates.length) {
+        await Promise.all(priceUpdates.map((row) => api.services.updatePackage(row.id, { priceKobo: row.priceKobo })));
+        setVideoPackages((current) =>
+          current.map((pkg) => {
+            const next = priceUpdates.find((row) => row.id === pkg.id);
+            return next ? { ...pkg, priceKobo: next.priceKobo } : pkg;
+          }),
+        );
+        setVideoPrices((current) => {
+          const next = { ...current };
+          for (const row of priceUpdates) next[row.id] = koboToNairaInput(row.priceKobo);
+          return next;
+        });
+      }
+      toast.success(priceUpdates.length ? "Content and prices saved" : "Content saved");
     } catch (err) {
       toast.error(errorMessage(err));
     } finally {
@@ -407,13 +496,12 @@ export function AdminContentPage() {
                               </FormField>
                               <MediaPickerField
                                 label="Background video / media"
-                                hint="Pick from media library, upload from device, or enter path (e.g. /LANDSCAPE.mp4)."
+                                hint="Upload a video for the hero only. It is not added to the media library."
                                 value={draft["hero.videoUrl"]}
                                 onChange={(val) => setField("hero.videoUrl", val)}
-                                onBrowseLibrary={() => setAssetPickerField("hero.videoUrl")}
-                                onUploadFile={(file) => void handleFileUpload(file, "hero.videoUrl", setUploadingHero)}
+                                onUploadFile={(file) => void handlePageVideoUpload(file, "hero", setUploadingHero)}
                                 uploading={uploadingHero}
-                                accept="video/mp4,video/webm,video/*,image/*"
+                                accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov"
                                 placeholder="/LANDSCAPE.mp4"
                               />
                             </div>
@@ -448,13 +536,12 @@ export function AdminContentPage() {
                               </FormField>
                               <MediaPickerField
                                 label="Studio tour video clip"
-                                hint="Pick from media library, upload from device, or enter path (e.g. /tour.mp4)."
+                                hint="Upload a video for the studio tour only. It is not added to the media library."
                                 value={draft["tour.videoUrl"]}
                                 onChange={(val) => setField("tour.videoUrl", val)}
-                                onBrowseLibrary={() => setAssetPickerField("tour.videoUrl")}
-                                onUploadFile={(file) => void handleFileUpload(file, "tour.videoUrl", setUploadingTour)}
+                                onUploadFile={(file) => void handlePageVideoUpload(file, "tour", setUploadingTour)}
                                 uploading={uploadingTour}
-                                accept="video/mp4,video/webm,video/*,image/*"
+                                accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov"
                                 placeholder="/tour.mp4"
                               />
                             </div>
@@ -816,18 +903,46 @@ export function AdminContentPage() {
           {!loading && tab === "services" ? (
             <Card>
               <CardHeader className="p-admin-card-sm">
-                <CardTitle className="font-display text-lg font-normal">Services catalog</CardTitle>
+                <CardTitle className="font-display text-lg font-normal">Services page cards</CardTitle>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  These are the portrait cards on the public Services page. Choose which catalogue service each card opens. Packages and prices stay in the Services desk.
+                </p>
               </CardHeader>
               <CardContent className="space-y-4">
-                <p className="text-sm text-muted-foreground">
-                  Packages, pricing, and durations live in the Services desk — not in content settings.
-                </p>
-                <Button type="button" asChild>
+                <ServicePageCardsEditor
+                  raw={draft["services.cards"]}
+                  services={catalog}
+                  onChange={(json) => setField("services.cards", json)}
+                  onPickImage={setCardImageIndex}
+                />
+                <Button type="button" variant="outline" asChild>
                   <Link to="/admin/services">
                     <LayoutGrid className="h-4 w-4" />
-                    Open Services
+                    Open Services desk
                   </Link>
                 </Button>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {!loading && tab === "services" ? (
+            <Card>
+              <CardHeader className="p-admin-card-sm">
+                <CardTitle className="font-display text-lg font-normal">Studio Video Content Sessions</CardTitle>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Heading, intro, bullet lines, footer, and studio prices on the Services page.
+                </p>
+              </CardHeader>
+              <CardContent>
+                <ServiceVideoContentEditor
+                  raw={draft["services.video"]}
+                  onChange={(json) => setField("services.video", json)}
+                  packages={videoPackages}
+                  prices={videoPrices}
+                  onPriceChange={(packageId, naira) =>
+                    setVideoPrices((current) => ({ ...current, [packageId]: naira }))
+                  }
+                />
               </CardContent>
             </Card>
           ) : null}
@@ -1576,6 +1691,25 @@ export function AdminContentPage() {
       />
 
       <BlogAssetPickerModal
+        open={cardImageIndex !== null}
+        onOpenChange={(open) => !open && setCardImageIndex(null)}
+        onSelect={(url) => {
+          if (cardImageIndex === null) return;
+          const next = editorServicePageCards(draft["services.cards"]);
+          if (!next[cardImageIndex]) return;
+          next[cardImageIndex] = { ...next[cardImageIndex], image: url };
+          setField("services.cards", JSON.stringify(next));
+          setCardImageIndex(null);
+        }}
+        title="Card photo"
+        currentUrl={
+          cardImageIndex === null
+            ? ""
+            : (editorServicePageCards(draft["services.cards"])[cardImageIndex]?.image ?? "")
+        }
+      />
+
+      <BlogAssetPickerModal
         open={bannerPickerKey !== null}
         onOpenChange={(open) => !open && setBannerPickerKey(null)}
         onSelect={(url) => {
@@ -1705,7 +1839,7 @@ function MediaPickerField({
   hint?: string;
   value: string;
   onChange: (next: string) => void;
-  onBrowseLibrary: () => void;
+  onBrowseLibrary?: () => void;
   onUploadFile: (file: File) => void;
   uploading?: boolean;
   accept?: string;
@@ -1728,16 +1862,18 @@ function MediaPickerField({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={onBrowseLibrary}
-          className="h-8 gap-1.5 px-3 text-xs"
-        >
-          <ImageIcon className="h-3.5 w-3.5 text-primary" />
-          Browse Library
-        </Button>
+        {onBrowseLibrary ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onBrowseLibrary}
+            className="h-8 gap-1.5 px-3 text-xs"
+          >
+            <ImageIcon className="h-3.5 w-3.5 text-primary" />
+            Browse Library
+          </Button>
+        ) : null}
 
         <Button
           type="button"

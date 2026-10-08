@@ -39,6 +39,11 @@ type Step = "package" | "schedule" | "details";
 
 type FlatPackage = PublicPackage & { serviceName: string; serviceSlug: string };
 
+function belowCustomerMinimum(pkg: PublicPackage | null | undefined): boolean {
+  if (!pkg || pkg.onlinePriceKobo == null || pkg.minCustomerTransactionKobo == null) return false;
+  return pkg.onlinePriceKobo < pkg.minCustomerTransactionKobo;
+}
+
 function flattenPackages(services: PublicService[]): FlatPackage[] {
   return services.flatMap((service) =>
     service.packages.map((pkg) => ({
@@ -71,6 +76,19 @@ export function BookPage() {
     const fromService = packages.find((pkg) => pkg.serviceSlug === serviceParam);
     if (fromService) setPackageId(fromService.id);
   }, [packageParam, serviceParam, packages]);
+
+  useEffect(() => {
+    if (!serviceParam || loading) return;
+    const scroll = () => {
+      document.getElementById(`book-service-${serviceParam}`)?.scrollIntoView({
+        behavior: "auto",
+        block: "center",
+      });
+    };
+    scroll();
+    const retry = window.setTimeout(scroll, 400);
+    return () => window.clearTimeout(retry);
+  }, [serviceParam, loading, services]);
   const [date, setDate] = useState(lagosToday());
   const [slotIso, setSlotIso] = useState<string>("");
   const [slots, setSlots] = useState<string[]>([]);
@@ -147,6 +165,10 @@ export function BookPage() {
   async function onSubmitBooking(event: FormEvent) {
     event.preventDefault();
     if (!selected || !slotIso) return;
+    if (belowCustomerMinimum(selected)) {
+      setBookingError("Online payments must be at least ₦100. Choose another package or book at the studio.");
+      return;
+    }
     const phoneErr = validateBookingPhone(phone);
     if (phoneErr) {
       setPhoneError(phoneErr);
@@ -303,6 +325,7 @@ export function BookPage() {
                                 : null;
                               return (
                                 <article
+                                  id={`book-service-${service.slug}`}
                                   key={service.id}
                                   className={`flex flex-col justify-between rounded-md border p-card-sm transition-shadow ${
                                     active
@@ -388,6 +411,7 @@ export function BookPage() {
                                     <Button
                                       type="button"
                                       className="mt-stack-sm w-full"
+                                      disabled={belowCustomerMinimum(selectedPkg)}
                                       onClick={() => setStep("schedule")}
                                     >
                                       Continue
@@ -396,6 +420,11 @@ export function BookPage() {
                                         with {service.name}, {packageChipLabel(selectedPkg)}
                                       </span>
                                     </Button>
+                                    {belowCustomerMinimum(selectedPkg) ? (
+                                      <p className="mt-2 text-xs text-error">
+                                        Online payments must be at least ₦100. This session is below that, so it cannot be booked online.
+                                      </p>
+                                    ) : null}
                                   </>
                                 ) : (
                                   <p className="text-sm text-text-muted">
@@ -412,13 +441,15 @@ export function BookPage() {
                   </section>
 
                   {videoReelsService ? (
-                    <VideoReelsRateCard
-                      service={videoReelsService}
-                      selectedPackageId={packageId}
-                      onSelectPackage={setPackageId}
-                      onContinue={() => setStep("schedule")}
-                      mode="book"
-                    />
+                    <div id={`book-service-${videoReelsService.slug}`} className="scroll-mt-28">
+                      <VideoReelsRateCard
+                        service={videoReelsService}
+                        selectedPackageId={packageId}
+                        onSelectPackage={setPackageId}
+                        onContinue={() => setStep("schedule")}
+                        mode="book"
+                      />
+                    </div>
                   ) : null}
                 </div>
               );
@@ -528,10 +559,15 @@ export function BookPage() {
                   <Button type="button" variant="ghost" onClick={() => setStep("package")}>
                     Back
                   </Button>
-                  <Button type="button" disabled={!slotIso} onClick={() => setStep("details")}>
+                  <Button type="button" disabled={!slotIso || belowCustomerMinimum(selected)} onClick={() => setStep("details")}>
                     Continue
                   </Button>
                 </div>
+                {belowCustomerMinimum(selected) ? (
+                  <p className="text-sm text-error">
+                    Online payments must be at least ₦100. This session cannot be booked online.
+                  </p>
+                ) : null}
               </div>
             ) : null}
 
@@ -629,7 +665,7 @@ export function BookPage() {
                   <Button type="button" variant="ghost" onClick={() => setStep("schedule")}>
                     Back
                   </Button>
-                  <Button type="submit" disabled={submitting}>
+                  <Button type="submit" disabled={submitting || belowCustomerMinimum(selected)}>
                     {submitting ? "Redirecting to payment…" : "Proceed to payment →"}
                   </Button>
                 </div>

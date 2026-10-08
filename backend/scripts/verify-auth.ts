@@ -68,11 +68,16 @@ async function main() {
   assert.deepEqual(created.data.permissions, ["dashboard", "bookings"]);
   console.log("ADMIN permissions persisted on create ✓");
 
-  const badEmail = await api("POST", "/auth/login", {
+  const ownEmail = await api<{ user: { role: string } }>("POST", "/auth/login", {
     body: { email: `auth-admin-${stamp}@example.com`, password: adminPass },
   });
-  assert.equal(badEmail.status, 401);
-  console.log("AUTH-1 non-desk email rejected ✓");
+  assert.ok(ownEmail.status < 300, `own-email login ${ownEmail.status}`);
+  assert.equal(ownEmail.data.user.role, "ADMIN");
+  const unknownEmail = await api("POST", "/auth/login", {
+    body: { email: `nobody-${stamp}@example.com`, password: adminPass },
+  });
+  assert.equal(unknownEmail.status, 401);
+  console.log("AUTH-1 account email signs in, unknown email rejected ✓");
 
   const adminLogin = await api<{ token: string; user: { role: string; permissions: string[] } }>(
     "POST",

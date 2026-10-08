@@ -35,16 +35,16 @@ See `docs/` for the full record.
 | Admin UI | shadcn/ui-style components (Radix + cva), recharts, sonner — light/dark mode |
 | Backend | NestJS 11, TypeScript, Prisma, PostgreSQL, nodemailer, @nestjs/schedule, sharp |
 | Payments | Bachs via provider abstraction + mock provider |
-| Uploads | Local disk (`backend/uploads/`), served at `/uploads/*` |
-| Hosting | VPS + Nginx |
+| Uploads | Local disk (`backend/uploads/` or Docker volume), served at `/uploads/*` |
+| Hosting | VPS + Docker Compose (Postgres + NestJS + Nginx) |
 
 ---
 
 ## Local development
 
 ```bash
-# database
-docker compose up -d
+# database only (published on localhost:5432)
+docker compose -f docker-compose.dev.yml up -d
 
 # backend (http://localhost:3001/api)
 cd backend
@@ -71,8 +71,31 @@ Admin portal: http://localhost:5173/admin — sign in with the seeded owner (`SE
 | `PAYMENTS_MOCK` | `true` enables mock checkout **only** when `NODE_ENV` is not `production`. Production refuses to boot if this is on, or if `BACHS_API_KEY` is missing. |
 | `TRUST_PROXY` | `true` behind Nginx/Cloudflare so rate limits use `X-Forwarded-For`. Leave false if the API is exposed directly. |
 | `PUBLIC_SITE_ORIGINS` | Comma-separated origins allowed as Bachs `returnUrl` / `cancelUrl` (default includes `http://localhost:5173`). |
+| `STORAGE_PROVIDER` | `local` (VPS disk volume), `cloudinary`, or `r2`. |
 
 Do not commit `.env` files or Bachs keys.
+
+---
+
+## VPS Docker deploy (`photo_vps` / photoarenang.com)
+
+Target path on the server: `/var/www/photo-arena`.
+
+```bash
+# On the VPS (after Docker Engine + Compose plugin are installed):
+cd /var/www/photo-arena
+cp .env.production.example .env
+# Edit .env: strong POSTGRES_PASSWORD, JWT_SECRET (>=32 chars),
+# PUBLIC_SITE_ORIGINS, STORAGE_PROVIDER=local, TRUST_PROXY=true,
+# live BACHS_API_KEY + webhook secret, and RESEND_API_KEY (or SMTP).
+
+docker compose up -d --build
+curl -sS http://127.0.0.1/api/health
+```
+
+Stack: `db` (Postgres, no public port) · `api` (NestJS) · `web` (Nginx SPA + proxy `/api` and `/uploads`).
+
+Uploads persist in the Docker volume `photoarena_uploads`. Sample TLS host config: `deploy/nginx/photoarenang.com.conf`. Missing live Bachs/email keys are listed in `deploy/HUMAN-INPUT-REQUIRED.md` — production boot fails closed until they are set.
 
 ---
 

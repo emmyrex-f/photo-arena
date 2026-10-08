@@ -13,13 +13,14 @@ import {
   Phone,
   Plus,
 } from "lucide-react";
-import { addDays, format, getDaysInMonth, startOfMonth } from "date-fns";
+import { format } from "date-fns";
 import { Avatar, AvatarFallback } from "../../admin/components/ui/avatar";
 import { Badge } from "../../admin/components/ui/badge";
 import { Button } from "../../admin/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../admin/components/ui/card";
 import { ConfirmDialog, useModal } from "../../admin/components/ui/confirm-dialog";
 import { CreateBookingDialog } from "../../components/admin/CreateBookingDialog";
+import { DateRangeCalendar, formatRangeLabel, monthBounds } from "../../admin/components/DateRangeCalendar";
 import { RecordPaymentDialog } from "../../components/admin/RecordPaymentDialog";
 import { EmptyState } from "../../admin/components/ui/empty-state";
 import { ErrorBanner } from "../../admin/components/ui/error-banner";
@@ -54,7 +55,6 @@ import {
   lagosToday,
   lagosYmd,
   parseYmd,
-  toYmd,
 } from "../../admin/lib/format";
 import { hasDeskPermission } from "../../admin/lib/permissions";
 import type {
@@ -179,16 +179,12 @@ function formatCompactDate(iso: string): string {
   return format(parseYmd(lagosYmd(iso)), "MMM d");
 }
 
-/** Monday–Sunday week containing Lagos YMD. */
-function weekRangeContaining(ymd: string): { from: string; to: string } {
-  const day = parseYmd(ymd);
-  const mondayOffset = (day.getDay() + 6) % 7;
-  const from = addDays(day, -mondayOffset);
-  return { from: toYmd(from), to: toYmd(addDays(from, 6)) };
+function readYmd(value: string | null): string | null {
+  return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
 }
 
-function formatWeekRangeLabel(from: string, to: string): string {
-  return `${format(parseYmd(from), "MMM d, yyyy")} – ${format(parseYmd(to), "MMM d, yyyy")}`;
+function orderedRange(from: string, to: string): { from: string; to: string } {
+  return from <= to ? { from, to } : { from: to, to: from };
 }
 
 function pageItems(current: number, total: number): Array<number | "ellipsis"> {
@@ -201,21 +197,6 @@ function pageItems(current: number, total: number): Array<number | "ellipsis"> {
   if (end < total - 1) items.push("ellipsis");
   items.push(total);
   return items;
-}
-
-function monthMatrix(ymd: string): Array<Array<string | null>> {
-  const start = startOfMonth(parseYmd(ymd.slice(0, 7) + "-01"));
-  const days = getDaysInMonth(start);
-  const firstWeekday = (start.getDay() + 6) % 7; // Mon=0
-  const cells: Array<string | null> = [];
-  for (let i = 0; i < firstWeekday; i++) cells.push(null);
-  for (let d = 1; d <= days; d++) {
-    cells.push(toYmd(addDays(start, d - 1)));
-  }
-  while (cells.length % 7 !== 0) cells.push(null);
-  const rows: Array<Array<string | null>> = [];
-  for (let i = 0; i < cells.length; i += 7) rows.push(cells.slice(i, i + 7));
-  return rows;
 }
 
 function packageMeta(pkg: BookingRecord["package"]): string {
@@ -243,15 +224,18 @@ export function AdminBookingsPage() {
   const [params, setParams] = useSearchParams();
   const today = lagosToday();
 
-  const selectedDate = params.get("date") && /^\d{4}-\d{2}-\d{2}$/.test(params.get("date")!)
-    ? params.get("date")!
-    : today;
+  const legacyDate = readYmd(params.get("date"));
+  const range = orderedRange(
+    readYmd(params.get("from")) ?? legacyDate ?? today,
+    readYmd(params.get("to")) ?? legacyDate ?? readYmd(params.get("from")) ?? today,
+  );
   const selectedId = params.get("id");
   const q = (params.get("q") ?? "").trim();
   const statusTab = (params.get("tab") as StatusTab) || "ALL";
   const paymentParam = params.get("payment");
 
-  const [monthCursor, setMonthCursor] = useState(() => selectedDate.slice(0, 7) + "-01");
+  const [visibleMonth, setVisibleMonth] = useState(() => monthBounds(range.from));
+  const [calendarFocus, setCalendarFocus] = useState<string | null>(null);
   const [stats, setStats] = useState<BookingsDeskStats | null>(null);
   const [rows, setRows] = useState<BookingRecord[]>([]);
   const [packages, setPackages] = useState<PackageOption[]>([]);
@@ -304,8 +288,16 @@ export function AdminBookingsPage() {
     [setParams],
   );
 
-  const monthStart = monthCursor.slice(0, 7) + "-01";
-  const monthEnd = toYmd(addDays(startOfMonth(parseYmd(monthStart)), getDaysInMonth(parseYmd(monthStart)) - 1));
+  const fetchFrom = visibleMonth.start < range.from ? visibleMonth.start : range.from;
+  const fetchTo = visibleMonth.end > range.to ? visibleMonth.end : range.to;
+
+  const setRange = useCallback(
+    (nextFrom: string, nextTo: string) => {
+      const next = orderedRange(nextFrom, nextTo);
+      setParam({ from: next.from, to: next.to, date: null, id: null });
+    },
+    [setParam],
+  );
 
   const loadList = useCallback(async () => {
     setLoading(true);
@@ -314,8 +306,8 @@ export function AdminBookingsPage() {
       const [statsRes, listRes, pkgs] = await Promise.all([
         api.bookings.stats(),
         api.bookings.range({
-          from: monthStart,
-          to: monthEnd,
+          from: fetchFrom,
+          to: fetchTo,
           q: q || undefined,
         }),
         api.bookings.packages(),
@@ -353,15 +345,11 @@ export function AdminBookingsPage() {
     } finally {
       setLoading(false);
     }
-  }, [api, monthEnd, monthStart, q]);
+  }, [api, fetchFrom, fetchTo, q]);
 
   useEffect(() => {
     void loadList();
   }, [loadList]);
-
-  useEffect(() => {
-    setMonthCursor(selectedDate.slice(0, 7) + "-01");
-  }, [selectedDate]);
 
   useEffect(() => {
     setTabPages({
@@ -373,7 +361,7 @@ export function AdminBookingsPage() {
       NO_SHOW: 1,
       ARCHIVED: 1,
     });
-  }, [selectedDate, serviceFilter, packageFilter, paymentFilter, q]);
+  }, [range.from, range.to, serviceFilter, packageFilter, paymentFilter, q]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -390,9 +378,9 @@ export function AdminBookingsPage() {
           setNotesDraft(b.notes ?? "");
           setEditingNotes(false);
           const bDate = lagosYmd(b.startTime);
-          if (bDate !== selectedDate) {
-            setParam({ date: bDate, id: selectedId });
-            setMonthCursor(bDate.slice(0, 7) + "-01");
+          if (bDate < range.from || bDate > range.to) {
+            setParam({ from: bDate, to: bDate, date: null, id: selectedId });
+            setCalendarFocus(`${bDate}|${selectedId}`);
           }
         }
       })
@@ -408,21 +396,19 @@ export function AdminBookingsPage() {
     return () => {
       cancelled = true;
     };
-  }, [api, selectedId, selectedDate, setParam]);
+  }, [api, selectedId, range.from, range.to, setParam]);
 
-  const weekRange = useMemo(() => weekRangeContaining(selectedDate), [selectedDate]);
-
-  const weekRows = useMemo(
+  const rangeRows = useMemo(
     () =>
       rows.filter((b) => {
         const y = lagosYmd(b.startTime);
-        return y >= weekRange.from && y <= weekRange.to;
+        return y >= range.from && y <= range.to;
       }),
-    [rows, weekRange.from, weekRange.to],
+    [rows, range.from, range.to],
   );
 
   const filtered = useMemo(() => {
-    return weekRows.filter((b) => {
+    return rangeRows.filter((b) => {
       if (statusTab === "ARCHIVED") {
         if (b.status !== "CANCELLED") return false;
       } else if (statusTab !== "ALL" && b.status !== statusTab) {
@@ -434,7 +420,7 @@ export function AdminBookingsPage() {
       if (paymentFilter !== "all" && pay !== paymentFilter) return false;
       return true;
     });
-  }, [weekRows, statusTab, serviceFilter, packageFilter, paymentFilter]);
+  }, [rangeRows, statusTab, serviceFilter, packageFilter, paymentFilter]);
 
   const tabCounts = useMemo(() => {
     const counts: Record<StatusTab, number> = {
@@ -447,7 +433,7 @@ export function AdminBookingsPage() {
       ARCHIVED: 0,
     };
 
-    for (const b of weekRows) {
+    for (const b of rangeRows) {
       if (serviceFilter !== "all" && b.package.service?.id !== serviceFilter) continue;
       if (packageFilter !== "all" && b.package.id !== packageFilter) continue;
       const pay = paymentDisplay(b);
@@ -465,7 +451,7 @@ export function AdminBookingsPage() {
     }
 
     return counts;
-  }, [weekRows, serviceFilter, packageFilter, paymentFilter]);
+  }, [rangeRows, serviceFilter, packageFilter, paymentFilter]);
 
   const page = tabPages[statusTab] || 1;
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
@@ -550,7 +536,6 @@ export function AdminBookingsPage() {
     }
   }
 
-  const monthLabel = format(parseYmd(monthStart), "MMMM yyyy");
   const canMarkPaid =
     canMutate &&
     Boolean(detail) &&
@@ -675,73 +660,17 @@ export function AdminBookingsPage() {
         )}
       >
         <aside className="space-y-admin-stack-sm">
-          <Card className="overflow-hidden">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 p-admin-card-sm pb-2">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Previous month"
-                onClick={() =>
-                  setMonthCursor(toYmd(addDays(startOfMonth(parseYmd(monthStart)), -1)))
-                }
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <CardTitle className="text-sm font-medium">{monthLabel}</CardTitle>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Next month"
-                onClick={() =>
-                  setMonthCursor(
-                    toYmd(addDays(startOfMonth(parseYmd(monthStart)), getDaysInMonth(parseYmd(monthStart)))),
-                  )
-                }
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </CardHeader>
-            <CardContent className="p-admin-card-sm pt-0">
-              <div className="mb-1 grid grid-cols-7 gap-0.5 text-center text-[10px] font-medium text-muted-foreground">
-                {["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map((d) => (
-                  <span key={d}>{d}</span>
-                ))}
-              </div>
-              <div className="grid grid-cols-7 gap-0.5">
-                {monthMatrix(monthStart).flatMap((week, wi) =>
-                  week.map((day, di) => {
-                    if (!day) return <span key={`${wi}-${di}`} className="h-8" />;
-                    const isSelected = day === selectedDate;
-                    const isToday = day === today;
-                    const inWeek = day >= weekRange.from && day <= weekRange.to;
-                    const has = daysWithBookings.has(day);
-                    return (
-                      <button
-                        key={day}
-                        type="button"
-                        onClick={() => setParam({ date: day, id: null })}
-                        className={cn(
-                          "relative flex h-8 cursor-pointer items-center justify-center text-xs tabular-nums transition-colors",
-                          isSelected
-                            ? "rounded-full bg-primary font-semibold text-primary-foreground"
-                            : "rounded-full text-foreground hover:bg-muted/50",
-                          inWeek && !isSelected && "bg-primary/10",
-                          isToday && !isSelected && "ring-1 ring-primary/40",
-                        )}
-                      >
-                        {Number(day.slice(8))}
-                        {has && !isSelected ? (
-                          <span className="absolute bottom-0.5 h-1 w-1 rounded-full bg-primary" />
-                        ) : null}
-                      </button>
-                    );
-                  }),
-                )}
-              </div>
-            </CardContent>
-          </Card>
+          <DateRangeCalendar
+            framed
+            from={range.from}
+            to={range.to}
+            markedDays={daysWithBookings}
+            onVisibleMonthChange={(start, end) =>
+              setVisibleMonth((current) => (current.start === start && current.end === end ? current : { start, end }))
+            }
+            focusMonth={calendarFocus}
+            onChange={(from, to) => setRange(from, to)}
+          />
 
           <Card>
             <CardHeader className="p-admin-card-sm pb-2">
@@ -810,8 +739,8 @@ export function AdminBookingsPage() {
                 title="No bookings"
                 description={
                   q
-                    ? `No matches for “${q}” in this week.`
-                    : `Nothing scheduled for ${formatWeekRangeLabel(weekRange.from, weekRange.to)}.`
+                    ? `No matches for “${q}” in this range.`
+                    : `Nothing scheduled for ${formatRangeLabel(range.from, range.to)}.`
                 }
               />
             ) : (
@@ -1000,11 +929,13 @@ export function AdminBookingsPage() {
       <CreateBookingDialog
         open={createBookingOpen}
         onOpenChange={setCreateBookingOpen}
-        defaultDate={selectedDate}
+        defaultDate={range.from}
         onSuccess={(created) => {
+          const ymd = lagosYmd(created.startTime);
           setDetail(created);
           void loadList();
-          setParam({ id: created.id, date: lagosYmd(created.startTime) });
+          setParam({ id: created.id, from: ymd, to: ymd, date: null });
+          setCalendarFocus(`${ymd}|${created.id}`);
         }}
       />
 

@@ -2,8 +2,13 @@ import { Injectable, NotFoundException } from "@nestjs/common";
 import { MediaKind, Prisma } from "@prisma/client";
 import { parsePage, parsePageSize, paginate } from "../common/pagination";
 import { plainTextPreview } from "../common/utils";
-import { PricingService } from "../pricing/pricing.service";
+import { MIN_CUSTOMER_TRANSACTION_KOBO, PricingService } from "../pricing/pricing.service";
 import { PrismaService } from "../prisma/prisma.service";
+
+function lowestPackagePriceKobo(packages: Array<{ priceKobo: number }>): number | null {
+  if (packages.length === 0) return null;
+  return Math.min(...packages.map((pkg) => pkg.priceKobo));
+}
 
 const PUBLIC_PREFIXES = [
   "site.",
@@ -16,6 +21,7 @@ const PUBLIC_PREFIXES = [
   "analytics.",
   "seo.",
   "policies.",
+  "services.",
 ];
 
 @Injectable()
@@ -74,7 +80,7 @@ export class PublicService {
       kind: s.kind,
       summary: s.summary,
       description: s.description,
-      startingPriceKobo: s.startingPriceKobo,
+      startingPriceKobo: lowestPackagePriceKobo(s.packages) ?? s.startingPriceKobo,
       isProvisional: s.isProvisional,
       sortOrder: s.sortOrder,
       media: publicServiceMedia.get(s.id) ?? null,
@@ -88,6 +94,7 @@ export class PublicService {
         includes: p.includes,
         priceKobo: p.priceKobo,
         onlinePriceKobo: this.pricing.calculatePayableKobo(p.priceKobo, "ONLINE"),
+        minCustomerTransactionKobo: MIN_CUSTOMER_TRANSACTION_KOBO,
         discountPercent,
         isProvisional: p.isProvisional,
         sortOrder: p.sortOrder,

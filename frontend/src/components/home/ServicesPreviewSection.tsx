@@ -39,7 +39,7 @@ export function ServicesPreviewSection() {
           <Eyebrow>Our Services</Eyebrow>
           <Heading className="mt-stack-sm">What we photograph</Heading>
           <p className="mt-stack text-text-secondary">
-            The major session types. Full package details and duration options are on the services page.
+            The major session types. Open one to book it.
           </p>
         </Reveal>
         {loading && preview.length === 0 ? (
@@ -80,7 +80,7 @@ export function ServicesPreviewSection() {
                         {service.kind === "RENTAL" ? "/hr" : ""}
                       </p>
                     </div>
-                    <span className="sr-only">View {service.name} on the services page</span>
+                    <span className="sr-only">Book {service.name}</span>
                   </Link>
                 </StaggerItem>
               );

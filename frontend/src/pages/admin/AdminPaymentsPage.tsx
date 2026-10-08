@@ -502,7 +502,6 @@ function PaymentDetailPanel({
       <CardHeader className="flex flex-row items-start justify-between space-y-0 p-admin-card-sm">
         <div className="space-y-2">
           <CardTitle className="font-display text-lg font-normal">Payment Details</CardTitle>
-          <p className="text-xs font-medium tabular-nums text-muted-foreground">{payment.reference}</p>
           <div className="flex items-center gap-2">
             <PaymentStatusBadge status={payment.status} />
             <span className="text-[11px] text-muted-foreground">
@@ -574,6 +573,7 @@ function PaymentDetailPanel({
             {payment.channel ? ` (${payment.channel})` : ""}
             {payment.provider ? ` · ${payment.provider}` : ""}
           </p>
+          <p className="min-w-0 break-all font-medium tabular-nums">{payment.reference}</p>
           {source ? <p>Source · {source === "ONLINE" ? "Website" : source.replace("_", " ")}</p> : null}
           <p>Created · {formatLagosDateTime(payment.createdAt)}</p>
           {payment.paidAt ? <p>Paid · {formatLagosDateTime(payment.paidAt)}</p> : null}

@@ -382,13 +382,18 @@ async function main() {
     assert.equal(stale.status, 401);
     console.log("13. Password change invalidates old token ✓");
 
-    // AUTH: non-owner email must not authenticate even with a valid desk password
-    const wrongEmailLogin = await api("POST", "/auth/login", {
+    const ownEmailLogin = await api<{ user: { id: string } }>("POST", "/auth/login", {
       body: { email: adminEmail, password: adminPass },
       ip: "10.255.1.46",
     });
-    assert.equal(wrongEmailLogin.status, 401, "non-desk email must fail");
-    console.log("13b. Non-desk email rejected (Sanctum) ✓");
+    assert.ok(ownEmailLogin.status < 300, "account email must sign in");
+    assert.equal(ownEmailLogin.data.user.id, adminUser.data.id);
+    const unknownEmailLogin = await api("POST", "/auth/login", {
+      body: { email: `nobody-sec-${Date.now()}@example.com`, password: adminPass },
+      ip: "10.255.1.46",
+    });
+    assert.equal(unknownEmailLogin.status, 401, "unknown email must fail");
+    console.log("13b. Account email signs in, unknown email rejected ✓");
 
     // AUTH: limited ADMIN permissions reload from DB on /auth/me and guarded routes
     const limitedEmail = `limited-sec-${Date.now()}@example.com`;

@@ -1,0 +1,11 @@
+node_modules
+dist
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+uploads
+.git
+*.log
+audit-raw.json
+scripts

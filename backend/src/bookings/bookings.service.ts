@@ -10,7 +10,11 @@ import { Cron, CronExpression } from "@nestjs/schedule";
 import { BookingStatus, PaymentMethod, PaymentStatus, Prisma } from "@prisma/client";
 import { newPaymentReference } from "../common/utils";
 import { NotificationsService } from "../notifications/notifications.service";
-import { PricingService } from "../pricing/pricing.service";
+import {
+  customerMinimumMessage,
+  isBelowCustomerMinimum,
+  PricingService,
+} from "../pricing/pricing.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { PublicService } from "../public/public.service";
 import {
@@ -235,6 +239,9 @@ export class BookingsService {
     const baseKobo = pkg.priceKobo;
     const discountKobo = this.pricing.calculateDiscountKobo(baseKobo, "ONLINE");
     const payableKobo = this.pricing.calculatePayableKobo(baseKobo, "ONLINE");
+    if (isBelowCustomerMinimum(payableKobo)) {
+      throw new BadRequestException(customerMinimumMessage(payableKobo));
+    }
     const reference = newPaymentReference();
 
     const booking = await this.prisma.$transaction(async (tx) => {

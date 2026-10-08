@@ -181,7 +181,7 @@ export class CatalogService {
       where: { serviceId },
       _max: { sortOrder: true },
     });
-    return this.prisma.package.create({
+    const created = await this.prisma.package.create({
       data: {
         serviceId,
         name: input.name.trim(),
@@ -197,6 +197,8 @@ export class CatalogService {
       },
       include: { service: true },
     });
+    await this.syncStartingPrice(serviceId);
+    return created;
   }
 
   async updatePackage(
@@ -215,24 +217,29 @@ export class CatalogService {
   ) {
     const pkg = await this.requirePackage(id);
     const service = await this.requireService(pkg.serviceId);
-    return this.prisma.package.update({
+    const updated = await this.prisma.package.update({
       where: { id },
       data: usesOutfits(service.kind) ? input : { ...input, outfitCount: null },
       include: { service: true },
     });
+    await this.syncStartingPrice(pkg.serviceId);
+    return updated;
   }
 
   async deletePackage(id: string) {
-    await this.requirePackage(id);
+    const pkg = await this.requirePackage(id);
     const bookingCount = await this.prisma.booking.count({ where: { packageId: id } });
     if (bookingCount > 0) {
-      return this.prisma.package.update({
+      const updated = await this.prisma.package.update({
         where: { id },
         data: { isActive: false },
         include: { service: true },
       });
+      await this.syncStartingPrice(pkg.serviceId);
+      return updated;
     }
     await this.prisma.package.delete({ where: { id } });
+    await this.syncStartingPrice(pkg.serviceId);
     return { ok: true as const };
   }
 
@@ -246,6 +253,20 @@ export class CatalogService {
       where: { id: { in: ids } },
       include: { service: true },
       orderBy: { sortOrder: "asc" },
+    });
+  }
+
+  /** The public “From” price is the cheapest active package, not a separate field. */
+  private async syncStartingPrice(serviceId: string) {
+    const active = await this.prisma.package.findMany({
+      where: { serviceId, isActive: true },
+      select: { priceKobo: true },
+    });
+    if (active.length === 0) return;
+    const startingPriceKobo = Math.min(...active.map((pkg) => pkg.priceKobo));
+    await this.prisma.service.update({
+      where: { id: serviceId },
+      data: { startingPriceKobo },
     });
   }
 

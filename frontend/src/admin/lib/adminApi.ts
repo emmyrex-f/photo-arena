@@ -4,6 +4,8 @@ import { useAuth } from "../../lib/auth";
 import type {
   AdminUser,
   AuditLog,
+  AuditPurgeJob,
+  AuditPurgeStatus,
   AvailabilityResponse,
   BlogPost,
   BookingRecord,
@@ -338,6 +340,12 @@ export function createAdminApi({ token, onUnauthorized }: ClientOptions) {
     settings: {
       get: () => get<SettingsMap>("/admin/settings"),
       put: (values: SettingsMap) => put<SettingsMap>("/admin/settings", values),
+      uploadPageVideo: (slot: "hero" | "tour", file: File) => {
+        const form = new FormData();
+        form.append("slot", slot);
+        form.append("file", file);
+        return apiUpload<{ url: string }>("/admin/settings/page-video", form, token);
+      },
     },
 
     testimonials: {
@@ -440,12 +448,15 @@ export function createAdminApi({ token, onUnauthorized }: ClientOptions) {
       resetPassword: (id: string, password: string) =>
         post<{ ok: true }>(`/admin/users/${id}/reset-password`, { password }),
       revokeSessions: (id: string) => post<{ ok: true }>(`/admin/users/${id}/revoke-sessions`),
-      remove: (id: string) => del<AdminUser>(`/admin/users/${id}`),
+      remove: (id: string) => del<{ ok: true }>(`/admin/users/${id}`),
     },
 
     audit: {
       list: (params: { page?: number; pageSize?: number; entity?: string; q?: string }) =>
         get<Paginated<AuditLog>>(`/admin/audit${qs(params)}`),
+      purgeStatus: () => get<AuditPurgeStatus>("/admin/audit/purge"),
+      purge: (body: { percent: 20 | 40 | 70 | 100; password: string }) =>
+        post<AuditPurgeJob>("/admin/audit/purge", body),
     },
 
     newsletter: {

@@ -291,6 +291,32 @@ model AuditLog {
   @@index([entity, entityId])
 }
 
+/// One desk purge at a time. The row is the queue: the API inserts it and returns, then a background worker deletes oldest audit rows in short batches.
+model AuditPurge {
+  id                String           @id @default(cuid())
+  percent           Int
+  status            AuditPurgeStatus @default(PENDING)
+  totalAtRequest    Int
+  targetCount       Int
+  deletedCount      Int              @default(0)
+  requestedByUserId String?
+  requestedByEmail  String
+  requestedAt       DateTime         @default(now())
+  startedAt         DateTime?
+  finishedAt        DateTime?
+  error             String?
+
+  @@index([status, requestedAt])
+  @@index([finishedAt])
+}
+
+enum AuditPurgeStatus {
+  PENDING
+  RUNNING
+  DONE
+  FAILED
+}
+
 /// Reusable attachment of a media asset to any CMS/content entity.
 /// Deleting a usage unlinks the asset; the GalleryImage remains until deleted separately.
 model MediaUsage {

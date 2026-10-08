@@ -48,6 +48,7 @@ import {
   TableRow,
 } from "../../admin/components/ui/table";
 import { useAdminApi } from "../../admin/lib/adminApi";
+import { hasDeskPermission } from "../../admin/lib/permissions";
 import {
   formatNairaFromKobo,
   initials,
@@ -60,6 +61,7 @@ import type {
   DashboardWeeklyRevenue,
 } from "../../admin/lib/types";
 import { ApiError, errorMessage } from "../../lib/api";
+import { useAuth } from "../../lib/auth";
 import { CreateBookingDialog } from "../../components/admin/CreateBookingDialog";
 import { addDaysToKey, formatDateKey, lagosDateKey, LAGOS } from "../../lib/datetime";
 import { useSetting } from "../../lib/settings";
@@ -245,6 +247,7 @@ function SiteBrandTitle({ name }: { name: string }) {
 
 export function AdminDashboardPage() {
   const api = useAdminApi();
+  const { user } = useAuth();
   const siteName = useSetting("site.name");
   const siteTagline = useSetting("site.tagline");
   const [data, setData] = useState<DashboardData | null>(null);
@@ -441,6 +444,16 @@ export function AdminDashboardPage() {
       </div>
 
       <div className="pa-dash-body space-y-admin-stack">
+      {data?.audit?.needsPurge && hasDeskPermission(user, "audit") ? (
+        <div className="flex flex-col gap-3 rounded-xl border border-border bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm">
+            The audit log has {data.audit.eventCount.toLocaleString()} events. Open the audit page to delete the oldest share.
+          </p>
+          <Button type="button" variant="outline" size="sm" asChild>
+            <Link to="/admin/audit">Open audit</Link>
+          </Button>
+        </div>
+      ) : null}
       <div className="pa-dash-grid grid items-stretch gap-admin-stack xl:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="flex min-w-0 flex-col gap-admin-stack">
           {/* Unified Row: Today's Bookings (60%) + Revenue (40%) */}

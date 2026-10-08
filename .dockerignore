@@ -1,0 +1,48 @@
+# Dependencies & builds
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+**/.vite
+
+# VCS / IDE / agent
+.git
+.gitignore
+.cursor
+.idea
+.vscode
+
+# Secrets — never bake into images
+.env
+.env.*
+!**/.env.example
+!.env.production.example
+ssh_secrecret
+ssh_secret*
+**/*.pem
+**/*.key
+
+# Local uploads & DB data
+uploads
+backend/uploads
+.pgdata
+tmp-audit-imgs
+
+# Docs & audits (optional; not needed at runtime)
+docs
+**/audit-raw.json
+backend/audit-raw.json
+docs/snapshots
+
+# Frontend design refs / large unused assets
+frontend/public/admin-sidebar-*-ref.png
+frontend/public/admin-sidebar-wordmark.png
+video_mp4.mp4
+photo-arena-logo.svg
+PROJECT-SNAPSHOT.txt
+
+# Logs / OS
+**/*.log
+.DS_Store
+Thumbs.db
+README.md
+**/.gitkeep

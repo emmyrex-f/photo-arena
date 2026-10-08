@@ -1,9 +1,11 @@
 import {
+  BadGatewayException,
   BadRequestException,
   ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   UnauthorizedException,
   forwardRef,
@@ -20,16 +22,19 @@ import { blockingWhere } from "../bookings/blocking";
 import { SLOT_TAKEN_MESSAGE, lockStudioResource, throwIfOverlap } from "../bookings/resource-lock";
 import { slotFits } from "../bookings/availability";
 import { PAYMENT_PROVIDER } from "./payment.constants";
-import type { PaymentProvider, WebhookParseInput } from "./payment-provider";
+import { PaymentProviderError, type PaymentProvider, type WebhookParseInput } from "./payment-provider";
 import { AuditService } from "../audit/audit.service";
 import { MockPaymentProvider } from "./mock-payment.provider";
 import { providerAmountMatches } from "./payment-amount";
+import { customerMinimumMessage, isBelowCustomerMinimum } from "../pricing/pricing.service";
 
 /** Payment page stays open past the slot hold; late payments are placed in confirmPayment under the studio lock. */
 const PAYMENT_PAGE_MINUTES = 30;
 
 @Injectable()
 export class PaymentsService {
+  private readonly logger = new Logger(PaymentsService.name);
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(ConfigService) private readonly config: ConfigService,
@@ -120,18 +125,35 @@ export class PaymentsService {
     const existingPending = booking.payments.find(
       (p) => p.status === PaymentStatus.PENDING || p.status === PaymentStatus.PROCESSING,
     );
+    const chargeKobo = existingPending?.amountKobo ?? amountKobo;
+    if (isBelowCustomerMinimum(chargeKobo)) {
+      await this.releaseUnpaidHold(booking.id);
+      throw new BadRequestException(customerMinimumMessage(chargeKobo));
+    }
 
-    const session = await this.provider.createCheckoutSession({
-      reference: existingPending?.reference ?? paymentReference,
-      amountKobo: existingPending?.amountKobo ?? amountKobo,
-      currency: "NGN",
-      customerEmail: email,
-      customerName: booking.customer.name,
-      customerPhone: booking.customer.phone,
-      returnUrl: safeReturn,
-      cancelUrl: safeCancel,
-      expiresInMinutes: PAYMENT_PAGE_MINUTES,
-    });
+    let session;
+    try {
+      session = await this.provider.createCheckoutSession({
+        reference: existingPending?.reference ?? paymentReference,
+        amountKobo: chargeKobo,
+        currency: "NGN",
+        customerEmail: email,
+        customerName: booking.customer.name,
+        customerPhone: booking.customer.phone,
+        returnUrl: safeReturn,
+        cancelUrl: safeCancel,
+        expiresInMinutes: PAYMENT_PAGE_MINUTES,
+      });
+    } catch (error) {
+      if (error instanceof PaymentProviderError) {
+        this.logger.error(error.message);
+        await this.releaseUnpaidHold(booking.id);
+        throw new BadGatewayException(
+          "Payment could not start, so the time slot was released. Please choose the time again.",
+        );
+      }
+      throw error;
+    }
 
     if (existingPending) {
       await this.prisma.payment.update({
@@ -167,6 +189,18 @@ export class PaymentsService {
       checkoutUrl: session.checkoutUrl,
       reference: paymentReference,
     };
+  }
+
+  /** Checkout never opened, so the silent hold must not keep the studio blocked. */
+  private async releaseUnpaidHold(bookingId: string) {
+    await this.prisma.booking.updateMany({
+      where: {
+        id: bookingId,
+        status: BookingStatus.TEMPORARY_HOLD,
+        payments: { none: { status: { in: [PaymentStatus.SUCCESS, PaymentStatus.PROCESSING] } } },
+      },
+      data: { status: BookingStatus.CANCELLED, holdExpiresAt: null },
+    });
   }
 
   private async renewExpiredHold(booking: {
@@ -279,6 +313,10 @@ export class PaymentsService {
     // Reuse an in-flight online balance checkout when it already covers the open amount.
     const reusable = processingOnline.find((p) => p.amountKobo === totalOutstanding && totalOutstanding > 0)
       ?? (totalOutstanding <= 0 ? processingOnline[0] : undefined);
+    const onlineChargeKobo = reusable ? reusable.amountKobo : totalOutstanding;
+    if (onlineChargeKobo > 0 && isBelowCustomerMinimum(onlineChargeKobo)) {
+      throw new BadRequestException(customerMinimumMessage(onlineChargeKobo));
+    }
     if (reusable) {
       const reuseEmail = bookingNotifyEmail(booking);
       if (!reuseEmail) throw new BadRequestException("Booking contact email is required for checkout");

@@ -40,7 +40,7 @@ export class AuthService {
 
   async login(email: string, password: string) {
     const submittedEmail = email.trim().toLowerCase();
-    const invalid = () => {
+    const invalid = (): never => {
       throw new UnauthorizedException("Email or password is incorrect");
     };
 
@@ -48,34 +48,35 @@ export class AuthService {
       where: { role: Role.OWNER, isActive: true },
       orderBy: { createdAt: "asc" },
     });
-
-    // One studio email only. Wrong email and wrong password share the same error text.
-    if (!ownerRow || submittedEmail !== ownerRow.email.toLowerCase()) {
-      invalid();
-    }
+    if (!ownerRow) invalid();
     const owner = ownerRow!;
 
     const activeUsers = await this.prisma.user.findMany({
       where: { isActive: true },
     });
 
-    // Password selects the person. Owner wins if the password matches the owner.
-    if (await compare(password, owner.passwordHash)) {
-      return this.issueSession(owner);
-    }
-
-    const matches: typeof activeUsers = [];
-    for (const candidate of activeUsers) {
-      if (candidate.id === owner.id) continue;
-      if (await compare(password, candidate.passwordHash)) {
-        matches.push(candidate);
+    // Studio email: password selects the person. Owner wins on a match.
+    if (submittedEmail === owner.email.toLowerCase()) {
+      if (await compare(password, owner.passwordHash)) {
+        return this.issueSession(owner);
       }
-    }
-    if (matches.length !== 1) {
-      invalid();
+      const matches: typeof activeUsers = [];
+      for (const candidate of activeUsers) {
+        if (candidate.id === owner.id) continue;
+        if (await compare(password, candidate.passwordHash)) {
+          matches.push(candidate);
+        }
+      }
+      if (matches.length !== 1) invalid();
+      return this.issueSession(matches[0]!);
     }
 
-    return this.issueSession(matches[0]!);
+    // Account email: password must match that person. Same error if it does not.
+    const named = activeUsers.find((user) => user.email.toLowerCase() === submittedEmail);
+    if (!named || !(await compare(password, named.passwordHash))) {
+      throw new UnauthorizedException("Email or password is incorrect");
+    }
+    return this.issueSession(named);
   }
 
   private async issueSession(user: {

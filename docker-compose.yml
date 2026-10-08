@@ -1,30 +1,87 @@
+# Production stack for VPS (photoarenang.com).
+# Local Postgres only: docker compose -f docker-compose.dev.yml up -d
+#
+# Requires a host .env (never commit it). See .env.production.example.
+
 services:
   db:
     image: postgres:16
     container_name: photoarena-postgres
-    ports:
-      - "5432:5432"
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: photoarena
-      POSTGRES_PASSWORD: photoarena
-      POSTGRES_DB: photoarena
+      POSTGRES_USER: ${POSTGRES_USER:-photoarena}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-photoarena}
     volumes:
       - photoarena_pg:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U photoarena -d photoarena"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 5s
       retries: 20
+    networks:
+      - photoarena
+    # Intentionally no host ports — Postgres stays on the Docker network only.
 
-  tunnel:
-    image: cloudflare/cloudflared:latest
-    container_name: photoarena-tunnel
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: photoarena-api
     restart: unless-stopped
-    network_mode: host
+    env_file:
+      - .env
     environment:
-      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN:-eyJhIjoiMGYyNjhlYzhiMGYwMzI3YjQ1MDA0ZDlmMzU5MzZlZjkiLCJ0IjoiNWE0MzgwY2ItNDgyZC00MGU1LTkyNWItYzUwNmFiYmM5ZTAxIiwicyI6IllUbGxORGxsTjJNdE1UUTVZeTAwWW1aa0xXRTRNRFF0WW1ZNU1HUmhOR05qWkdFMyJ9}
-    command: tunnel --no-autoupdate run
+      NODE_ENV: production
+      PORT: "3001"
+      TZ: Africa/Lagos
+      TRUST_PROXY: "true"
+      STORAGE_PROVIDER: local
+      UPLOADS_DIR: /app/uploads
+      DATABASE_URL: postgresql://${POSTGRES_USER:-photoarena}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-photoarena}
+    volumes:
+      - photoarena_uploads:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - photoarena
+    # Reachable only via the web proxy on the internal network.
+
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: photoarena-web
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx/web.conf:/etc/nginx/conf.d/default.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - photoarena_certbot:/var/www/certbot:ro
+    depends_on:
+      - api
+    networks:
+      - photoarena
+
+  # One-shot / renew helper: docker compose run --rm certbot renew
+  certbot:
+    image: certbot/certbot:latest
+    container_name: photoarena-certbot
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt
+      - photoarena_certbot:/var/www/certbot
+    entrypoint: certbot
+    profiles:
+      - certs
 
 volumes:
   photoarena_pg:
+  photoarena_uploads:
+  photoarena_certbot:
 
+networks:
+  photoarena:
+    driver: bridge

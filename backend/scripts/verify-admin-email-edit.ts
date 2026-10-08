@@ -189,28 +189,46 @@ async function main() {
     assert.equal(adminDeleteSelf.status, 403, "Admin deleting self must be rejected with 403");
     console.log("✓ Step 14: Admin deleting self correctly rejected (403)");
 
-    // 15. Admin deletes staff user via DELETE /admin/users/:staffId (must succeed 200)
-    const adminDeleteStaff = await api<{ id: string; isActive: boolean }>("DELETE", `/admin/users/${staffId}`, {
+    // 15. Admin deletes staff user via DELETE /admin/users/:staffId (row is removed)
+    const adminDeleteStaff = await api<{ ok: true }>("DELETE", `/admin/users/${staffId}`, {
       token: updateRes.data.token,
     });
     assert.equal(adminDeleteStaff.status, 200, `Admin deleting staff failed: ${JSON.stringify(adminDeleteStaff.data)}`);
-    assert.equal(adminDeleteStaff.data.isActive, false, "Staff user should be marked isActive=false");
+    assert.equal(adminDeleteStaff.data.ok, true);
 
-    // Verify in database
     const dbStaff = await prisma.user.findUnique({ where: { id: staffId } });
-    assert.equal(dbStaff?.isActive, false, "DB staff user must be inactive");
-    assert.ok((dbStaff?.tokenVersion ?? 0) >= 1, "Token version must be incremented");
-    console.log("✓ Step 15: Admin successfully deleted staff user (soft delete isActive=false)");
+    assert.equal(dbStaff, null, "Deleted staff user must be gone");
+    console.log("✓ Step 15: Admin successfully deleted staff user");
+
+    const toggleEmail = `staff-toggle-${stamp}@example.com`;
+    const toggleStaff = await api<{ id: string }>("POST", "/admin/users", {
+      token: ownerToken,
+      body: {
+        name: "Staff Toggle",
+        email: toggleEmail,
+        role: "STAFF",
+        password: "StaffToggle123",
+      },
+    });
+    assert.equal(toggleStaff.status, 201, `Failed to create toggle staff: ${JSON.stringify(toggleStaff.data)}`);
+    const toggleId = toggleStaff.data.id;
 
     // 16. Admin reactivates and deactivates staff user via PATCH /admin/users/:staffId
-    const adminReactivateStaff = await api<{ id: string; isActive: boolean }>("PATCH", `/admin/users/${staffId}`, {
+    const adminDeactivateFirst = await api<{ id: string; isActive: boolean }>("PATCH", `/admin/users/${toggleId}`, {
+      token: updateRes.data.token,
+      body: { isActive: false },
+    });
+    assert.equal(adminDeactivateFirst.status, 200, "Admin deactivating staff must succeed");
+    assert.equal(adminDeactivateFirst.data.isActive, false);
+
+    const adminReactivateStaff = await api<{ id: string; isActive: boolean }>("PATCH", `/admin/users/${toggleId}`, {
       token: updateRes.data.token,
       body: { isActive: true },
     });
     assert.equal(adminReactivateStaff.status, 200, "Admin reactivating staff must succeed");
     assert.equal(adminReactivateStaff.data.isActive, true);
 
-    const adminDeactivateStaff = await api<{ id: string; isActive: boolean }>("PATCH", `/admin/users/${staffId}`, {
+    const adminDeactivateStaff = await api<{ id: string; isActive: boolean }>("PATCH", `/admin/users/${toggleId}`, {
       token: updateRes.data.token,
       body: { isActive: false },
     });
@@ -219,7 +237,7 @@ async function main() {
     console.log("✓ Step 16: Admin toggled staff active status via PATCH /admin/users/:id");
 
     // Cleanup
-    await prisma.user.delete({ where: { id: staffId } });
+    await prisma.user.delete({ where: { id: toggleId } });
     await prisma.user.delete({ where: { id: adminId } });
     console.log("✓ Cleanup: Removed test staff and admin users");
 

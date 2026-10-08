@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState, type FormEvent } from "react";
-import { KeyRound, MoreHorizontal, Plus, ShieldAlert, Trash2, UserPlus, Users } from "lucide-react";
+import { Eye, EyeOff, KeyRound, MoreHorizontal, Plus, ShieldAlert, Trash2, UserPlus, Users } from "lucide-react";
 import { ActiveBadge, RoleBadge } from "../../admin/components/ui/status-badge";
 import { Button } from "../../admin/components/ui/button";
 import { useModal } from "../../admin/components/ui/confirm-dialog";
@@ -85,6 +85,7 @@ export function AdminUsersPage() {
   const [editing, setEditing] = useState<AdminUser | null>(null);
   const [form, setForm] = useState<EditorForm>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const stats = useMemo(() => {
@@ -127,6 +128,7 @@ export function AdminUsersPage() {
     setEditing(null);
     setForm(EMPTY_FORM);
     setSaving(false);
+    setShowPassword(false);
   }, []);
 
   function togglePermission(key: string) {
@@ -209,20 +211,20 @@ export function AdminUsersPage() {
     }
   }
 
-  async function deactivate(row: AdminUser) {
+  async function deleteUser(row: AdminUser) {
     if (!owner && me?.role !== "ADMIN") return;
-    if (row.role === "OWNER") {
-      toast.error("Only the owner can deactivate owner accounts");
+    if (row.role === "OWNER" && !owner) {
+      toast.error("Only the owner can delete owner accounts");
       return;
     }
     if (row.id === me?.id) {
-      toast.error("You cannot deactivate yourself");
+      toast.error("You cannot delete yourself");
       return;
     }
     const ok = await modal.confirm({
-      title: "Deactivate User",
-      description: `Are you sure you want to deactivate ${row.name}? Their active sessions will end immediately.`,
-      confirmLabel: "Deactivate user",
+      title: "Delete user",
+      description: `Delete ${row.name}? They will not be able to sign in. This cannot be undone.`,
+      confirmLabel: "Delete user",
       destructive: true,
       tone: "danger",
       icon: "alert",
@@ -230,13 +232,11 @@ export function AdminUsersPage() {
     if (!ok) return;
     setBusyId(row.id);
     try {
-      const updated = await api.users.remove(row.id);
-      listQuery.setData((current) =>
-        current ? current.map((item) => (item.id === updated.id ? { ...item, ...updated } : item)) : [updated],
-      );
-      toast.success("User deactivated");
+      await api.users.remove(row.id);
+      listQuery.setData((current) => (current ? current.filter((item) => item.id !== row.id) : []));
+      toast.success("User deleted");
     } catch (err) {
-      toast.error(errorMessage(err, "Could not deactivate user"));
+      toast.error(errorMessage(err, "Could not delete user"));
     } finally {
       setBusyId(null);
     }
@@ -286,7 +286,7 @@ export function AdminUsersPage() {
 
       {!owner ? (
         <p className="rounded-lg border border-border bg-card/50 px-3 py-2 text-sm text-muted-foreground">
-          You have admin permissions to update staff details (name, email, and active status) and deactivate accounts. Only the owner can create users, assign roles, or manage desk permissions.
+          You have admin permissions to update staff details (name, email, and active status) and delete staff accounts. Only the owner can create users, assign roles, or manage desk permissions.
         </p>
       ) : null}
 
@@ -369,15 +369,15 @@ export function AdminUsersPage() {
                               ) : null}
                             </>
                           ) : null}
-                          {row.isActive && row.id !== me?.id && (owner || (me?.role === "ADMIN" && row.role !== "OWNER")) ? (
+                          {row.id !== me?.id && (owner || (me?.role === "ADMIN" && row.role !== "OWNER")) ? (
                             <>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
                                 className="text-destructive focus:text-destructive"
-                                onClick={() => void deactivate(row)}
+                                onClick={() => void deleteUser(row)}
                               >
                                 <Trash2 className="h-4 w-4" />
-                                Deactivate
+                                Delete
                               </DropdownMenuItem>
                             </>
                           ) : null}
@@ -401,22 +401,38 @@ export function AdminUsersPage() {
             <DialogDescription>
               {mode === "password"
                 ? "Passwords must be unique across active desk users and at least 8 characters."
-                : "Access is loaded from the database on every request — not from the login form."}
+                : mode === "create"
+                  ? "They sign in with this email and password."
+                  : "Access is loaded from the database on every request — not from the login form."}
             </DialogDescription>
           </DialogHeader>
           <form className="space-y-admin-stack-sm" onSubmit={(event) => void onSubmit(event)}>
             {mode === "password" ? (
               <div className="space-y-1.5">
                 <Label htmlFor="user-password">New password</Label>
-                <Input
-                  id="user-password"
-                  type="password"
-                  autoComplete="new-password"
-                  value={form.password}
-                  onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
-                  required
-                  minLength={8}
-                />
+                <div className="relative">
+                  <Input
+                    id="user-password"
+                    type={showPassword ? "text" : "password"}
+                    autoComplete="new-password"
+                    value={form.password}
+                    onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
+                    required
+                    minLength={8}
+                    className="pr-10"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    onClick={() => setShowPassword((open) => !open)}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    aria-pressed={showPassword}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </Button>
+                </div>
               </div>
             ) : (
               <>
@@ -459,15 +475,29 @@ export function AdminUsersPage() {
                 {mode === "create" ? (
                   <div className="space-y-1.5">
                     <Label htmlFor="user-password-create">Password</Label>
-                    <Input
-                      id="user-password-create"
-                      type="password"
-                      autoComplete="new-password"
-                      value={form.password}
-                      onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
-                      required
-                      minLength={8}
-                    />
+                    <div className="relative">
+                      <Input
+                        id="user-password-create"
+                        type={showPassword ? "text" : "password"}
+                        autoComplete="new-password"
+                        value={form.password}
+                        onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
+                        required
+                        minLength={8}
+                        className="pr-10"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        onClick={() => setShowPassword((open) => !open)}
+                        aria-label={showPassword ? "Hide password" : "Show password"}
+                        aria-pressed={showPassword}
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
+                    </div>
                   </div>
                 ) : (
                   <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">

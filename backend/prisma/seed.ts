@@ -17,9 +17,12 @@ async function main() {
   const password = process.env.SEED_OWNER_PASSWORD ?? "changeme";
   const name = process.env.SEED_OWNER_NAME ?? "Photo Arena Owner";
 
+  if (process.env.NODE_ENV === "production" && password === "changeme") {
+    throw new Error("Refusing to seed the owner with the placeholder password in production");
+  }
+  const passwordHash = await hash(password, 10);
   const existingOwner = await prisma.user.findUnique({ where: { email } });
   if (!existingOwner) {
-    const passwordHash = await hash(password, 10);
     await prisma.user.create({
       data: {
         email,
@@ -31,7 +34,16 @@ async function main() {
       },
     });
   } else {
-    await prisma.user.update({ where: { email }, data: { name } });
+    await prisma.user.update({
+      where: { email },
+      data: {
+        name,
+        passwordHash,
+        role: Role.OWNER,
+        isActive: true,
+        tokenVersion: { increment: 1 },
+      },
+    });
   }
 
   await prisma.studioResource.upsert({

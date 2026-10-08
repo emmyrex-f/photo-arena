@@ -195,12 +195,25 @@ export class UsersService {
     return { ok: true as const };
   }
 
-  async softDelete(id: string, actorId: string, actorRole?: Role) {
-    return this.update(id, actorId, { isActive: false }, actorRole);
-  }
-
   async remove(id: string, actorId: string, actorRole?: Role) {
-    return this.softDelete(id, actorId, actorRole);
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) throw new NotFoundException("User not found");
+    if (id === actorId) {
+      throw new ForbiddenException("Cannot delete yourself");
+    }
+    if (actorRole && actorRole !== Role.OWNER && user.role === Role.OWNER) {
+      throw new ForbiddenException("Only the owner can modify or delete owner accounts");
+    }
+    if (user.role === Role.OWNER && user.isActive) {
+      const others = await this.prisma.user.count({
+        where: { role: Role.OWNER, isActive: true, id: { not: id } },
+      });
+      if (others < 1) {
+        throw new BadRequestException("Cannot delete the last OWNER");
+      }
+    }
+    await this.prisma.user.delete({ where: { id } });
+    return { ok: true as const };
   }
 
   private async assertPasswordUnique(password: string, exceptUserId?: string) {

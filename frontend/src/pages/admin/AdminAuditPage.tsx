@@ -2,9 +2,18 @@ import { useCallback, useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Shield } from "lucide-react";
 import { Badge } from "../../admin/components/ui/badge";
 import { Button } from "../../admin/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../../admin/components/ui/dialog";
 import { EmptyState } from "../../admin/components/ui/empty-state";
 import { ErrorBanner } from "../../admin/components/ui/error-banner";
 import { Input } from "../../admin/components/ui/input";
+import { Label } from "../../admin/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -23,8 +32,10 @@ import {
 } from "../../admin/components/ui/table";
 import { useAdminApi } from "../../admin/lib/adminApi";
 import { formatLagosDateTime } from "../../admin/lib/format";
-import type { AuditLog } from "../../admin/lib/types";
+import type { AuditLog, AuditPurgeStatus } from "../../admin/lib/types";
 import { errorMessage } from "../../lib/api";
+
+const PURGE_PERCENTS = [20, 40, 70, 100] as const;
 
 const PAGE_SIZE = 50;
 
@@ -54,6 +65,12 @@ export function AdminAuditPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [purge, setPurge] = useState<AuditPurgeStatus | null>(null);
+  const [purgeOpen, setPurgeOpen] = useState(false);
+  const [percent, setPercent] = useState<(typeof PURGE_PERCENTS)[number]>(70);
+  const [password, setPassword] = useState("");
+  const [purgeError, setPurgeError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -74,11 +91,61 @@ export function AdminAuditPage() {
     }
   }, [api, page, q, entity]);
 
+  const loadPurge = useCallback(async () => {
+    try {
+      const next = await api.audit.purgeStatus();
+      setPurge(next);
+      return next;
+    } catch (err) {
+      setError(errorMessage(err, "Could not load purge status"));
+      return null;
+    }
+  }, [api]);
+
   useEffect(() => {
     void load();
-  }, [load]);
+    void loadPurge();
+  }, [load, loadPurge]);
+
+  const jobActive = purge?.job?.status === "PENDING" || purge?.job?.status === "RUNNING";
+
+  useEffect(() => {
+    if (!jobActive) return;
+    const timer = window.setInterval(() => {
+      void loadPurge().then((next) => {
+        const still =
+          next?.job?.status === "PENDING" || next?.job?.status === "RUNNING";
+        if (!still) void load();
+      });
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [jobActive, load, loadPurge]);
 
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const selectedPreview = purge?.previews.find((row) => row.percent === percent);
+
+  function closePurge() {
+    setPurgeOpen(false);
+    setPassword("");
+    setPurgeError(null);
+    setSubmitting(false);
+  }
+
+  async function submitPurge() {
+    if (!purge?.eligible || submitting) return;
+    setSubmitting(true);
+    setPurgeError(null);
+    try {
+      await api.audit.purge({ percent, password });
+      setPassword("");
+      setPurgeOpen(false);
+      await loadPurge();
+    } catch (err) {
+      setPurgeError(errorMessage(err, "Could not start the purge"));
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <div className="pa-audit space-y-admin-stack">
@@ -86,7 +153,7 @@ export function AdminAuditPage() {
         <h1 className="font-display text-3xl font-normal tracking-tight text-foreground sm:text-[2rem]">
           Audit
         </h1>
-        <p className="mt-1 text-sm text-muted-foreground">Desk activity history. Read-only.</p>
+        <p className="mt-1 text-sm text-muted-foreground">Desk activity history.</p>
       </header>
 
       <ErrorBanner message={error} onRetry={() => void load()} retrying={loading} />
@@ -171,35 +238,134 @@ export function AdminAuditPage() {
               </TableBody>
             </Table>
           </div>
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-xs text-muted-foreground">
-              {total} events · page {page} of {pageCount}
-            </p>
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-              >
-                <ChevronLeft className="h-4 w-4" />
-                Prev
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={page >= pageCount}
-                onClick={() => setPage((p) => p + 1)}
-              >
-                Next
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
         </>
       )}
+
+      {!loading ? (
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs text-muted-foreground">
+            {total} events
+            {items.length > 0 ? ` · page ${page} of ${pageCount}` : ""}
+            {jobActive && purge?.job
+              ? ` · deleting ${purge.job.deletedCount.toLocaleString()} of ${purge.job.targetCount.toLocaleString()}`
+              : ""}
+          </p>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={jobActive}
+              onClick={() => {
+                setPurgeError(null);
+                setPercent(70);
+                setPurgeOpen(true);
+                void loadPurge();
+              }}
+            >
+              {jobActive ? "Deleting…" : "Delete oldest"}
+            </Button>
+            {items.length > 0 ? (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  Prev
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={page >= pageCount}
+                  onClick={() => setPage((p) => p + 1)}
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      <Dialog open={purgeOpen} onOpenChange={(open) => (open ? setPurgeOpen(true) : closePurge())}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete oldest audit events</DialogTitle>
+            <DialogDescription>
+              {!purge
+                ? "Checking whether a deletion is available."
+                : purge.eligible
+                  ? "This can run once. The next deletion is available 90 days after it finishes. Oldest events are removed in the background."
+                  : purge.job
+                    ? "A purge is already running. This page stays usable while it finishes."
+                    : purge.nextAllowedAt
+                      ? `The last deletion is still inside the 90-day interval. The next one is available ${formatLagosDateTime(purge.nextAllowedAt)}.`
+                      : "A deletion is not available right now."}
+            </DialogDescription>
+          </DialogHeader>
+          <fieldset className="space-y-2" disabled={!purge?.eligible || submitting}>
+            <legend className="text-sm font-medium">Share of the current log</legend>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {PURGE_PERCENTS.map((option) => {
+                const preview = purge?.previews.find((row) => row.percent === option);
+                const empty = (preview?.count ?? 0) < 1;
+                return (
+                  <label
+                    key={option}
+                    className="flex cursor-pointer flex-col gap-1 rounded-lg border border-border px-3 py-2 text-sm has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50"
+                  >
+                    <span className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="purge-percent"
+                        value={option}
+                        checked={percent === option}
+                        disabled={empty}
+                        onChange={() => setPercent(option)}
+                      />
+                      {option}%
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {preview ? `${preview.count.toLocaleString()} events` : "—"}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
+          <div className="space-y-2">
+            <Label htmlFor="audit-purge-password">Desk password</Label>
+            <Input
+              id="audit-purge-password"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              disabled={!purge?.eligible || submitting}
+              onChange={(event) => setPassword(event.target.value)}
+            />
+          </div>
+          {purgeError ? <p className="text-sm text-destructive">{purgeError}</p> : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={closePurge}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={!purge?.eligible || submitting || password.length === 0 || (selectedPreview?.count ?? 0) < 1}
+              onClick={() => void submitPurge()}
+            >
+              {submitting ? "Starting…" : `Delete ${selectedPreview?.count.toLocaleString() ?? 0} oldest`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

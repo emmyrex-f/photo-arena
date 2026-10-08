@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
 import { BookingStatus, PaymentStatus, Prisma } from "@prisma/client";
+import { AUDIT_PURGE_FLAG_AT } from "../audit/audit-purge.constants";
 import {
   addLagosDays,
   lagosWeekday,
@@ -203,6 +204,7 @@ export class DashboardService {
       todayRevenue,
       yesterdayRevenue,
       weeklyRevenue,
+      auditEventCount,
     ] = await Promise.all([
       this.prisma.booking.findMany({
         where: {
@@ -264,6 +266,7 @@ export class DashboardService {
       this.sumRevenue(todayStart, tomorrowStart),
       this.sumRevenue(yesterdayStart, todayStart),
       this.buildWeeklyRevenue(weekStart),
+      this.prisma.auditLog.count(),
     ]);
 
     const unpaidAll = unpaidPool
@@ -328,6 +331,10 @@ export class DashboardService {
         customerName: b.customer.name,
         serviceName: b.package.service?.name ?? b.package.name,
       })),
+      audit: {
+        eventCount: auditEventCount,
+        needsPurge: auditEventCount >= AUDIT_PURGE_FLAG_AT,
+      },
     };
   }
 

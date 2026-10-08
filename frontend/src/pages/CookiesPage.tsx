@@ -46,7 +46,8 @@ export function CookiesPage() {
 
           <h2>Your choices</h2>
           <p>
-            On your first visit you can accept all or reject optional cookies. See our{" "}
+            On your first visit you can accept all or reject optional cookies. That choice is remembered
+            for 6 months, or until you clear this site’s data. See our{" "}
             <Link to="/privacy">Privacy notice</Link> for how we handle personal data.
           </p>
 
