@@ -4,17 +4,23 @@ import { PageHeader } from "../components/layout/PageHeader";
 import { Container } from "../components/ui/Container";
 import { Section } from "../components/ui/Section";
 import { readServicePageCards, servicePageCardHref } from "../data/servicePageCards";
-import { servicesHeroImage } from "../data/serviceMedia";
-import { fetchServices } from "../lib/publicApi";
+import { serviceHeroSrc, servicesHeroImage } from "../data/serviceMedia";
+import { fetchServices, formatNairaFromKobo, type PublicService } from "../lib/publicApi";
 import { Seo } from "../lib/seo";
 import { useSetting, useSiteInfo } from "../lib/settings";
 import { usePublicData } from "../lib/usePublicData";
+
+function catalogueCards(services: PublicService[], linked: Set<string>): PublicService[] {
+  return services.filter((service) => service.slug !== "video-reels" && !linked.has(service.slug));
+}
 
 export function ServicesPage() {
   const info = useSiteInfo();
   const cards = readServicePageCards(useSetting("services.cards", ""));
   const { data } = usePublicData(() => fetchServices(), []);
-  const videoReels = (data ?? []).find((service) => service.slug === "video-reels");
+  const services = data ?? [];
+  const videoReels = services.find((service) => service.slug === "video-reels");
+  const added = catalogueCards(services, new Set(cards.map((card) => card.link)));
 
   return (
     <>
@@ -35,7 +41,7 @@ export function ServicesPage() {
         <Container>
           <ul className="grid gap-7 sm:grid-cols-2 xl:grid-cols-3">
             {cards.map((card, index) => (
-              <li key={`${card.title}-${index}`}>
+              <li key={`${card.title}-${index}`} id={card.link}>
                 <Link
                   to={servicePageCardHref(card)}
                   className="group flex h-full flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-soft transition hover:-translate-y-1.5 hover:border-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
@@ -64,6 +70,46 @@ export function ServicesPage() {
                 </Link>
               </li>
             ))}
+            {added.map((service, index) => {
+              const image = serviceHeroSrc(service);
+              const price = formatNairaFromKobo(service.startingPriceKobo);
+              const n = cards.length + index + 1;
+              return (
+                <li key={service.id} id={service.slug}>
+                  <Link
+                    to={`/book?service=${service.slug}`}
+                    className="group flex h-full flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-soft transition hover:-translate-y-1.5 hover:border-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  >
+                    <div className="relative h-[420px] shrink-0 overflow-hidden bg-ink">
+                      {image ? (
+                        <img
+                          src={image}
+                          alt=""
+                          className="h-full w-full object-cover object-top transition duration-500 group-hover:scale-[1.04]"
+                        />
+                      ) : null}
+                      <div
+                        aria-hidden="true"
+                        className="absolute inset-0 bg-gradient-to-b from-ink/10 to-ink/55"
+                      />
+                      <span className="absolute right-4 top-3.5 rounded-full border border-accent bg-ink px-2.5 py-1 font-display text-xs font-semibold tracking-[0.12em] text-accent">
+                        {String(n).padStart(2, "0")}
+                      </span>
+                    </div>
+                    <div className="flex flex-1 flex-col px-7 pb-8 pt-6">
+                      <h2 className="font-display text-xl text-text">{service.name}</h2>
+                      <p className="mt-2.5 flex-1 text-sm leading-relaxed text-text-secondary">
+                        {service.summary || service.description}
+                      </p>
+                      <span className="mt-4 inline-flex w-fit rounded-full border border-accent bg-accent px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-text-on-accent">
+                        From {price}
+                        {service.kind === "RENTAL" ? "/hr" : ""}
+                      </span>
+                    </div>
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
 
           {videoReels ? (

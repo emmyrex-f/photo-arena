@@ -15,7 +15,7 @@ import { Container } from "../ui/Container";
 import { Eyebrow, Heading } from "../ui/Heading";
 import { Section } from "../ui/Section";
 
-/** Prefer these live catalogue slugs for the 2×2 home preview. */
+/** Featured slugs lead the home grid. Every other active catalogue service follows. */
 const PREVIEW_SLUGS = ["personal-birthday", "bundle-of-joy-0-1", "pre-wedding", "space-rental"];
 
 function pickPreview(services: PublicService[]): PublicService[] {
@@ -23,9 +23,8 @@ function pickPreview(services: PublicService[]): PublicService[] {
   const preferred = PREVIEW_SLUGS.map((slug) => bySlug.get(slug)).filter(
     (service): service is PublicService => Boolean(service),
   );
-  if (preferred.length >= 4) return preferred.slice(0, 4);
   const rest = services.filter((service) => !PREVIEW_SLUGS.includes(service.slug));
-  return [...preferred, ...rest].slice(0, 4);
+  return [...preferred, ...rest];
 }
 
 export function ServicesPreviewSection() {

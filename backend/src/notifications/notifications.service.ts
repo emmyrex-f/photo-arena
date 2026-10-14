@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { Role } from "@prisma/client";
 import nodemailer from "nodemailer";
 import type { Transporter } from "nodemailer";
 import { Resend } from "resend";
@@ -104,16 +105,15 @@ export class NotificationsService {
     return TEMPLATES;
   }
 
+  /** Studio copy. The active owner account, read on each send. Not the env recipient list. */
   async getRecipients(): Promise<string[]> {
-    const row = await this.prisma.businessSettings.findUnique({
-      where: { key: "notifications.recipients" },
+    const owner = await this.prisma.user.findFirst({
+      where: { role: Role.OWNER, isActive: true },
+      orderBy: { createdAt: "asc" },
+      select: { email: true },
     });
-    const raw = (row?.value || this.config.get<string>("NOTIFICATION_EMAIL_RECIPIENTS") || "").trim();
-    return raw
-      .replace(/^["']|["']$/g, "")
-      .split(",")
-      .map((e) => e.trim().toLowerCase())
-      .filter(Boolean);
+    const email = owner?.email?.trim().toLowerCase() ?? "";
+    return email.includes("@") ? [email] : [];
   }
 
   async send(message: NotificationMessage) {
@@ -258,22 +258,33 @@ export class NotificationsService {
   ) {
     const tpl = TEMPLATES.find((t) => t.event === event) ?? TEMPLATES[0];
     const fill = (s: string) => s.replace(/\{\{(\w+)\}\}/g, (_, k: string) => vars[k] ?? "");
-    const recipients = [...new Set([...(await this.getRecipients()), ...extraTo.map((e) => e.toLowerCase())])];
+    const studio = await this.getRecipients();
+    const studioSet = new Set(studio);
+    const customers = [
+      ...new Set(
+        extraTo
+          .map((email) => email.trim().toLowerCase())
+          .filter((email) => email.includes("@") && !studioSet.has(email)),
+      ),
+    ];
 
     const built = buildEventEmail(event, vars);
     const subject = built.subject || fill(tpl.subject);
     const body = built.text || (fill(tpl.bodyPreview) + (vars.details ? `\n\n${vars.details}` : ""));
+    const copies = [studio, customers].filter((to) => to.length > 0);
 
-    try {
-      await this.send({
-        event,
-        to: recipients,
-        subject,
-        body,
-        html: built.html,
-      });
-    } catch (err) {
-      console.error(`Failed to send notification for ${event}:`, err);
+    for (const to of copies) {
+      try {
+        await this.send({
+          event,
+          to,
+          subject,
+          body,
+          html: built.html,
+        });
+      } catch (err) {
+        console.error(`Failed to send notification for ${event}:`, err);
+      }
     }
   }
 

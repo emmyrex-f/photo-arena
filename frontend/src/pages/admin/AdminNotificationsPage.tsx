@@ -232,14 +232,15 @@ export function AdminNotificationsPage() {
                   <p className="text-xs text-muted-foreground">From: {settings.fromAddress}</p>
                 ) : null}
                 <div className="space-y-1.5">
-                  <Label>Desk recipients</Label>
+                  <Label>Studio copy</Label>
                   <TagsInput
                     value={recipients}
                     onChange={setRecipients}
-                    placeholder="Add email and press Enter"
+                    placeholder="Owner account email"
+                    disabled
                   />
                   <p className="text-xs text-muted-foreground">
-                    Booking alerts go to these addresses. Use full emails only.
+                    Confirmations and other booking emails go to the active owner account. The customer gets a separate copy at the email on the booking.
                   </p>
                 </div>
                 <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">

@@ -33,13 +33,14 @@ async function main() {
       process.exitCode = 1;
       return;
     }
-    const recipientsRow = await prisma.businessSettings.findUnique({
-      where: { key: "notifications.recipients" },
+    const owner = await prisma.user.findFirst({
+      where: { role: "OWNER", isActive: true },
+      orderBy: { createdAt: "asc" },
+      select: { email: true },
     });
-    const deskRecipients = (recipientsRow?.value || process.env.NOTIFICATION_EMAIL_RECIPIENTS || "")
-      .split(",")
-      .map((e) => e.trim().toLowerCase())
-      .filter((e) => e && !/@example\.com$/i.test(e));
+    const deskRecipients = owner?.email?.trim().toLowerCase().includes("@")
+      ? [owner.email.trim().toLowerCase()]
+      : [];
 
     const to = [...new Set([customerEmail, ...deskRecipients])];
     const resendKey = (process.env.RESEND_API_KEY ?? "").trim();
