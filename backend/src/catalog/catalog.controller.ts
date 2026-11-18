@@ -70,6 +70,10 @@ class CreateServiceDto {
 
   @IsOptional()
   @IsBoolean()
+  featured?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   isProvisional?: boolean;
 
   @IsOptional()
@@ -109,6 +113,10 @@ class UpdateServiceDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  featured?: boolean;
 
   @IsOptional()
   @IsBoolean()

@@ -49,6 +49,7 @@ export class CatalogService {
     description: string;
     startingPriceKobo: number;
     isActive?: boolean;
+    featured?: boolean;
     isProvisional?: boolean;
     mediaId?: string | null;
   }) {
@@ -62,6 +63,7 @@ export class CatalogService {
         description: input.description.trim(),
         startingPriceKobo: input.startingPriceKobo,
         isActive: input.isActive ?? true,
+        featured: input.featured ?? false,
         isProvisional: input.isProvisional ?? true,
         sortOrder: (max._max.sortOrder ?? -1) + 1,
       },
@@ -92,6 +94,7 @@ export class CatalogService {
       description: string;
       startingPriceKobo: number;
       isActive: boolean;
+      featured: boolean;
       isProvisional: boolean;
     }> & { mediaId?: string | null },
   ) {
@@ -108,6 +111,7 @@ export class CatalogService {
           ? { startingPriceKobo: input.startingPriceKobo }
           : {}),
         ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
+        ...(input.featured !== undefined ? { featured: input.featured } : {}),
         ...(input.isProvisional !== undefined ? { isProvisional: input.isProvisional } : {}),
       },
       include: { packages: { orderBy: { sortOrder: "asc" } } },

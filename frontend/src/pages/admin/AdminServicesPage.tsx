@@ -88,6 +88,7 @@ type ServiceForm = {
   description: string;
   kind: ServiceKind;
   isActive: boolean;
+  featured: boolean;
   media: SelectedServiceMedia | null;
 };
 
@@ -274,6 +275,7 @@ export function AdminServicesPage() {
       description: selected.description,
       kind: selected.kind,
       isActive: selected.isActive,
+      featured: selected.featured,
       media: selected.media
         ? {
             id: selected.media.id,
@@ -331,6 +333,19 @@ export function AdminServicesPage() {
     try {
       await api.services.update(service.id, { isActive: next });
       toast.success(next ? "Service activated" : "Service deactivated");
+      await refreshKeepSelection();
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function toggleServiceFeatured(service: Service, next: boolean) {
+    setSaving(true);
+    try {
+      await api.services.update(service.id, { featured: next });
+      toast.success(next ? "Shown on the home page" : "Removed from the home page");
       await refreshKeepSelection();
     } catch (err) {
       toast.error(errorMessage(err));
@@ -474,6 +489,7 @@ export function AdminServicesPage() {
         description: serviceForm.description.trim(),
         kind: serviceForm.kind,
         isActive: serviceForm.isActive,
+        featured: serviceForm.featured,
         mediaId: serviceForm.media?.id ?? null,
         startingPriceKobo: lowestStudioKobo || selected.startingPriceKobo,
       });
@@ -1105,6 +1121,20 @@ export function AdminServicesPage() {
                                 />
                               </div>
                             </div>
+                            <div className="sm:col-span-3">
+                              <div className="flex h-9 items-center justify-between gap-2.5 rounded-lg border border-border px-3 py-1.5 bg-muted/20">
+                                <div className="min-w-0">
+                                  <p className="text-xs font-medium leading-none">Featured</p>
+                                  <p className="text-[10px] text-muted-foreground truncate">Home page</p>
+                                </div>
+                                <Switch
+                                  checked={serviceForm.featured}
+                                  onCheckedChange={(v) =>
+                                    setServiceForm((f) => (f ? { ...f, featured: v } : f))
+                                  }
+                                />
+                              </div>
+                            </div>
                           </div>
 
                           {/* Gallery Picker moved to the left */}
@@ -1239,6 +1269,15 @@ export function AdminServicesPage() {
                       disabled={saving}
                       aria-label="Toggle service active"
                       onCheckedChange={(v) => void toggleServiceActive(selected, v)}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-muted-foreground">Home page</span>
+                    <Switch
+                      checked={selected.featured}
+                      disabled={saving}
+                      aria-label="Toggle featured on the home page"
+                      onCheckedChange={(v) => void toggleServiceFeatured(selected, v)}
                     />
                   </div>
                 </CardContent>

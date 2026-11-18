@@ -1,13 +1,8 @@
 import { ArrowRight } from "lucide-react";
-import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { serviceHeroSrc } from "../../data/serviceMedia";
 import { Reveal, Stagger, StaggerItem } from "../../lib/motion";
-import {
-  fetchServices,
-  formatNairaFromKobo,
-  type PublicService,
-} from "../../lib/publicApi";
+import { fetchFeaturedServices, formatNairaFromKobo } from "../../lib/publicApi";
 import { usePublicData } from "../../lib/usePublicData";
 import { Button } from "../ui/Button";
 import { CameraSpinner } from "../ui/CameraSpinner";
@@ -15,21 +10,9 @@ import { Container } from "../ui/Container";
 import { Eyebrow, Heading } from "../ui/Heading";
 import { Section } from "../ui/Section";
 
-/** Featured slugs lead the home grid. Every other active catalogue service follows. */
-const PREVIEW_SLUGS = ["personal-birthday", "bundle-of-joy-0-1", "pre-wedding", "space-rental"];
-
-function pickPreview(services: PublicService[]): PublicService[] {
-  const bySlug = new Map(services.map((service) => [service.slug, service]));
-  const preferred = PREVIEW_SLUGS.map((slug) => bySlug.get(slug)).filter(
-    (service): service is PublicService => Boolean(service),
-  );
-  const rest = services.filter((service) => !PREVIEW_SLUGS.includes(service.slug));
-  return [...preferred, ...rest];
-}
-
 export function ServicesPreviewSection() {
-  const { data, loading } = usePublicData(() => fetchServices(), []);
-  const preview = useMemo(() => pickPreview(data ?? []), [data]);
+  const { data, loading } = usePublicData(() => fetchFeaturedServices(), []);
+  const preview = data ?? [];
 
   return (
     <Section className="bg-surface">

@@ -42,11 +42,14 @@ export class PublicService {
     return out;
   }
 
-  async services() {
+  async services(featuredOnly = false) {
     await this.pricing.refresh();
     const discountPercent = this.pricing.getOnlineDiscountBps() / 100;
     const services = await this.prisma.service.findMany({
-      where: { isActive: true },
+      where: {
+        isActive: true,
+        ...(featuredOnly ? { featured: true } : {}),
+      },
       orderBy: { sortOrder: "asc" },
       include: {
         packages: {

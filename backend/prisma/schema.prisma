@@ -64,6 +64,8 @@ model Service {
   description       String
   startingPriceKobo Int
   isActive          Boolean     @default(true)
+  /// Home page only. The home query filters on this column.
+  featured          Boolean     @default(false)
   isProvisional     Boolean     @default(true)
   createdAt         DateTime    @default(now())
   kind              ServiceKind @default(SESSION)
@@ -72,6 +74,8 @@ model Service {
   summary           String?
   updatedAt         DateTime    @default(now()) @updatedAt
   packages          Package[]
+
+  @@index([isActive, featured, sortOrder])
 }
 
 model Package {

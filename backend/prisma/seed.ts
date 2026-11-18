@@ -85,6 +85,7 @@ async function main() {
         description: service.description,
         startingPriceKobo,
         isActive: true,
+        featured: false,
         isProvisional: true,
         sortOrder: serviceOrder,
       },

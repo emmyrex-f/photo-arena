@@ -76,6 +76,7 @@ export type Service = {
   description: string;
   startingPriceKobo: number;
   isActive: boolean;
+  featured: boolean;
   isProvisional: boolean;
   sortOrder: number;
   media?: ServiceMedia | null;

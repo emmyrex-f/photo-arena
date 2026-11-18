@@ -12,8 +12,8 @@ export class PublicController {
   }
 
   @Get("services")
-  services() {
-    return this.publicService.services();
+  services(@Query("featured") featured?: string) {
+    return this.publicService.services(featured === "true");
   }
 
   @Get("gallery")

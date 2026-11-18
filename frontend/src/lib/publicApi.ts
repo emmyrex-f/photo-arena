@@ -205,6 +205,15 @@ export function fetchServices(): Promise<WithSource<PublicService[]>> {
   );
 }
 
+/** Home page. Postgres returns only rows with featured and active set. */
+export function fetchFeaturedServices(): Promise<WithSource<PublicService[]>> {
+  return withFallback(
+    () => request<PublicService[]>("/public/services?featured=true"),
+    [],
+    (value) => Array.isArray(value),
+  );
+}
+
 export function fetchGallery(): Promise<WithSource<GalleryImage[]>> {
   return withFallback(
     () => request<GalleryImage[]>("/public/gallery"),

@@ -15,6 +15,7 @@ export function AdminLoginPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordFieldReady, setPasswordFieldReady] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState("");
@@ -90,19 +91,22 @@ export function AdminLoginPage() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  autoComplete="username"
+                  autoComplete="off"
                   required
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
+                <Label htmlFor="desk-sign-in-secret">Password</Label>
                 <div className="relative">
                   <Input
-                    id="password"
+                    id="desk-sign-in-secret"
+                    name="desk-sign-in-secret"
                     type={showPassword ? "text" : "password"}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    autoComplete="current-password"
+                    autoComplete="off"
+                    readOnly={!passwordFieldReady}
+                    onFocus={() => setPasswordFieldReady(true)}
                     required
                     minLength={6}
                     className="pr-10"
