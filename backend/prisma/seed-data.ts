@@ -484,7 +484,7 @@ export function buildSeedSettings(env: NodeJS.ProcessEnv): Record<string, string
     // cta.* (home booking CTA)
     "cta.heading": "Ready to book your session?",
     "cta.body":
-      "Reserve a studio session online and receive 5% off. Walk-ins are welcome Monday–Saturday 8:00 AM – 6:00 PM and Sunday 12:00 PM – 6:00 PM.",
+      "Reserve a studio session online. Walk-ins are welcome Monday–Saturday 8:00 AM – 6:00 PM and Sunday 12:00 PM – 6:00 PM.",
     "cta.buttonLabel": "Book a Session",
     "cta.buttonHref": "/book",
 
@@ -527,7 +527,6 @@ export function buildSeedSettings(env: NodeJS.ProcessEnv): Record<string, string
     "policies.promoUsage": "Photo Arena may use photos for promos unless exclusive package purchased",
     "policies.nonRefundable": "true",
     "policies.rescheduleFeePercent": "15",
-    "policies.onlineDiscountPercent": "5",
 
     // booking.* (admin-only)
     "booking.slotIncrementMinutes": "30",

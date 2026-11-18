@@ -6,7 +6,7 @@ import {
 import { ServiceKind } from "@prisma/client";
 import { slugify } from "../common/utils";
 import { MediaUsageService } from "../media-usage/media-usage.service";
-import { PricingService } from "../pricing/pricing.service";
+import { MAX_PRICING_RULE_BPS, PricingService } from "../pricing/pricing.service";
 import { PrismaService } from "../prisma/prisma.service";
 
 const SERVICE_USAGE = "service";
@@ -286,8 +286,10 @@ export class CatalogService {
     }
     const bps = input.bps ?? rule.bps;
     const isActive = input.isActive ?? rule.isActive;
-    if (!Number.isInteger(bps) || bps < 0 || bps > 5000) {
-      throw new BadRequestException("bps must be 0–5000 (0–50%)");
+    if (!Number.isInteger(bps) || bps < 0 || bps > MAX_PRICING_RULE_BPS) {
+      throw new BadRequestException(
+        `bps must be 0–${MAX_PRICING_RULE_BPS} (0–${MAX_PRICING_RULE_BPS / 100}%)`,
+      );
     }
     const updated = await this.prisma.pricingRule.update({
       where: { key },

@@ -30,12 +30,11 @@ export const site = {
   mapEmbed:
     "https://www.openstreetmap.org/export/embed.html?bbox=7.013%2C4.798%2C7.033%2C4.818&layer=mapnik&marker=4.808%2C7.023",
   mapLink: "https://www.openstreetmap.org/?mlat=4.808&mlon=7.023#map=17/4.808/7.023",
-  onlineDiscountPercent: 5,
   pricesProvisional: true,
   hero: {
     headline: "Where every shot becomes a masterpiece",
     subheadline:
-      "Professional lighting, considered sets, and a calm studio on Peter Odili Road. Walk in, or book online and save 5%.",
+      "Professional lighting, considered sets, and a calm studio on Peter Odili Road. Walk in, or book online.",
     videoUrl: "/LANDSCAPE.mp4",
   },
   tour: {
@@ -47,7 +46,7 @@ export const site = {
   cta: {
     heading: "Ready to book your session?",
     body:
-      "Reserve a studio session online and receive 5% off. Walk-ins are welcome Monday–Saturday 8:00 AM – 6:00 PM and Sunday 12:00 PM – 6:00 PM.",
+      "Reserve a studio session online. Walk-ins are welcome Monday–Saturday 8:00 AM – 6:00 PM and Sunday 12:00 PM – 6:00 PM.",
     buttonLabel: "Book a Session",
     buttonHref: "/book",
   },
@@ -61,7 +60,7 @@ export const site = {
   seo: {
     defaultTitle: "Photo Arena — Port Harcourt Portrait Studio",
     defaultDescription:
-      "Photo Arena is a premium walk-in portrait studio in Port Harcourt. Birthdays, portraits, corporate headshots, kids and pre-wedding sessions. Book online and receive 5% off.",
+      "Photo Arena is a premium walk-in portrait studio in Port Harcourt. Birthdays, portraits, corporate headshots, kids and pre-wedding sessions. Book a studio session online.",
     ogImage: "/og-image.jpg",
   },
 } as const;

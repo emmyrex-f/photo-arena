@@ -11,7 +11,7 @@ export const API_URL: string = (import.meta.env.VITE_API_URL as string | undefin
 
 export class PublicApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, readonly code?: string) {
     super(message);
     this.status = status;
   }
@@ -38,11 +38,11 @@ async function request<T>(path: string, init: RequestInit = {}, timeoutMs = DEFA
       }
     }
     if (!response.ok) {
-      const body = data as { message?: string | string[] } | null;
+      const body = data as { message?: string | string[]; code?: string } | null;
       const message = Array.isArray(body?.message)
         ? body.message.join(" ")
         : body?.message || `Request failed (${response.status})`;
-      throw new PublicApiError(response.status, message);
+      throw new PublicApiError(response.status, message, body?.code);
     }
     return data as T;
   } finally {
@@ -191,7 +191,7 @@ async function withFallback<T>(fetcher: () => Promise<T>, fallback: T, validate?
 
 export function fetchSettings(): Promise<WithSource<SettingsMap>> {
   return withFallback(
-    () => request<SettingsMap>("/public/settings"),
+    () => request<SettingsMap>("/public/settings", { cache: "no-store" }),
     {},
     (value) => value != null && typeof value === "object" && !Array.isArray(value),
   );
@@ -199,7 +199,7 @@ export function fetchSettings(): Promise<WithSource<SettingsMap>> {
 
 export function fetchServices(): Promise<WithSource<PublicService[]>> {
   return withFallback(
-    () => request<PublicService[]>("/public/services"),
+    () => request<PublicService[]>("/public/services", { cache: "no-store" }),
     fallbackServices,
     (value) => Array.isArray(value),
   );
@@ -208,7 +208,7 @@ export function fetchServices(): Promise<WithSource<PublicService[]>> {
 /** Home page. Postgres returns only rows with featured and active set. */
 export function fetchFeaturedServices(): Promise<WithSource<PublicService[]>> {
   return withFallback(
-    () => request<PublicService[]>("/public/services?featured=true"),
+    () => request<PublicService[]>("/public/services?featured=true", { cache: "no-store" }),
     [],
     (value) => Array.isArray(value),
   );
@@ -309,6 +309,7 @@ export type HoldPayload = {
   customerName: string;
   customerPhone: string;
   customerEmail: string;
+  expectedPayableKobo?: number;
 };
 
 export type HoldResponse = {
@@ -565,6 +566,17 @@ export function formatPackageDeliverables(
     parts.push(pkg.editedPhotoCount === 1 ? "1 photo" : `${pkg.editedPhotoCount} photos`);
   }
   return parts.length ? parts.join(" · ") : null;
+}
+
+/** Lowest server-calculated price among packages that can be booked online. */
+export function getStartingOnlinePriceKobo(service: PublicService): number | null {
+  let startingPrice: number | null = null;
+  for (const pkg of service.packages) {
+    const onlinePrice = pkg.onlinePriceKobo;
+    if (onlinePrice == null || onlinePrice < (pkg.minCustomerTransactionKobo ?? 0)) continue;
+    if (startingPrice == null || onlinePrice < startingPrice) startingPrice = onlinePrice;
+  }
+  return startingPrice;
 }
 
 export function sortPublicPackages(packages: PublicPackage[]): PublicPackage[] {

@@ -32,6 +32,6 @@ export const faqs = [
   {
     question: "How do I pay for my session?",
     answer:
-      "Online bookings are paid in full through Bachs and receive a 5% discount. Walk-in and staff-created reservations can be paid at the studio. Bookings are non-refundable. Rescheduling attracts a 15% charge.",
+      "Online bookings are paid in full through Bachs. Walk-in and staff-created reservations can be paid at the studio. Bookings are non-refundable. Rescheduling attracts a 15% charge.",
   },
 ] as const;

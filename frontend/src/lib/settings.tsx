@@ -1,8 +1,9 @@
 /**
- * Site settings from GET /public/settings, fetched once, with src/lib/site.ts defaults.
+ * Site settings from GET /public/settings with src/lib/site.ts defaults.
  * The site must render fully when the API is offline — every consumer passes a fallback.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { onPricingChanged } from "./pricingEvents";
 import { fetchSettings, type SettingsMap } from "./publicApi";
 import { site } from "./site";
 
@@ -56,11 +57,12 @@ export function SiteSettingsProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<SettingsContextValue["status"]>("loading");
 
   useEffect(() => {
-    let cancelled = false;
+    let latestRequest = 0;
 
     function load() {
+      const request = ++latestRequest;
       fetchSettings().then(({ data, source }) => {
-        if (cancelled) return;
+        if (request !== latestRequest) return;
         setSettings(data);
         setStatus(source === "api" ? "ready" : "offline");
       });
@@ -72,10 +74,12 @@ export function SiteSettingsProvider({ children }: { children: ReactNode }) {
     };
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("focus", onVisible);
+    const stopPricingListener = onPricingChanged(load);
     return () => {
-      cancelled = true;
+      latestRequest++;
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", onVisible);
+      stopPricingListener();
     };
   }, []);
 

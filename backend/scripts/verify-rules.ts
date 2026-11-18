@@ -1,20 +1,22 @@
 import { PricingService } from "../src/pricing/pricing.service";
+import type { PrismaService } from "../src/prisma/prisma.service";
 import {
   generateCandidateStartsForYmd,
   slotFits,
   toLagosHour,
 } from "../src/bookings/availability";
 
-const pricing = new PricingService();
+const pricing = new PricingService({} as PrismaService);
 const base = 6_000_000;
-const online = pricing.calculatePayableKobo(base, "ONLINE");
-const studio = pricing.calculatePayableKobo(base, "WALK_IN");
+const discountBps = 725;
+const online = pricing.calculatePayableKobo(base, "ONLINE", discountBps);
+const studio = pricing.calculatePayableKobo(base, "WALK_IN", discountBps);
 const fee = pricing.calculateRescheduleFeeKobo(base);
 
-if (online !== 5_700_000) throw new Error(`Expected online 5700000, got ${online}`);
+if (online !== 5_565_000) throw new Error(`Expected online 5565000, got ${online}`);
 if (studio !== base) throw new Error("Studio price must stay full");
 if (fee !== 900_000) throw new Error(`Expected reschedule 900000, got ${fee}`);
-if (pricing.toBachsAmount(online) !== "57000.00") throw new Error("Bachs decimal conversion failed");
+if (pricing.toBachsAmount(online) !== "55650.00") throw new Error("Bachs decimal conversion failed");
 
 const sundayStarts = generateCandidateStartsForYmd("2026-09-13");
 if (toLagosHour(sundayStarts[0]!) !== 12) throw new Error("Sunday must start at 12:00");

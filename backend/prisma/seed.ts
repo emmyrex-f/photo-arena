@@ -1,5 +1,6 @@
 import { PrismaClient, Role } from "@prisma/client";
 import { hash } from "bcryptjs";
+import { ONLINE_DISCOUNT_RULE } from "../src/pricing/pricing.service";
 import {
   buildSeedSettings,
   deliverablesFromIncludes,
@@ -52,9 +53,11 @@ async function main() {
     update: { name: "Main Studio", isActive: true },
   });
 
-  if (!(await prisma.pricingRule.findUnique({ where: { key: "ONLINE_DISCOUNT" } }))) {
-    await prisma.pricingRule.create({ data: { key: "ONLINE_DISCOUNT", bps: 500, isActive: true } });
-  }
+  await prisma.pricingRule.upsert({
+    where: { key: ONLINE_DISCOUNT_RULE },
+    create: { key: ONLINE_DISCOUNT_RULE, bps: 0, isActive: false },
+    update: {},
+  });
   if (!(await prisma.pricingRule.findUnique({ where: { key: "RESCHEDULE_FEE" } }))) {
     await prisma.pricingRule.create({ data: { key: "RESCHEDULE_FEE", bps: 1500, isActive: true } });
   }

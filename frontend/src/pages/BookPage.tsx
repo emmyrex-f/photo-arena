@@ -22,6 +22,7 @@ import {
   formatNairaFromKobo,
   formatOutfitCount,
   formatPackageDeliverables,
+  getStartingOnlinePriceKobo,
   groupServicesByKind,
   PublicApiError,
   SERVICE_KIND_LABELS,
@@ -59,26 +60,24 @@ export function BookPage() {
   const [params] = useSearchParams();
   const info = useSiteInfo();
   const policies = usePolicyValues();
-  const { data: services, loading } = usePublicData(() => fetchServices(), []);
+  const { data: services, loading, refresh: refreshServices } = usePublicData(fetchServices, [], {
+    refreshPricing: true,
+  });
   const packages = useMemo(() => flattenPackages(services ?? []), [services]);
 
   const packageParam = params.get("package")?.trim() ?? "";
   const serviceParam = params.get("service")?.trim() ?? "";
   const [step, setStep] = useState<Step>("package");
   const [packageId, setPackageId] = useState(packageParam);
+  const defaultPackageId = packageParam || packages.find((pkg) => pkg.serviceSlug === serviceParam)?.id;
+  const hasServices = services !== null;
 
   useEffect(() => {
-    if (packageParam) {
-      setPackageId(packageParam);
-      return;
-    }
-    if (!serviceParam || packages.length === 0) return;
-    const fromService = packages.find((pkg) => pkg.serviceSlug === serviceParam);
-    if (fromService) setPackageId(fromService.id);
-  }, [packageParam, serviceParam, packages]);
+    if (defaultPackageId) setPackageId(defaultPackageId);
+  }, [defaultPackageId]);
 
   useEffect(() => {
-    if (!serviceParam || loading) return;
+    if (!serviceParam || !hasServices) return;
     const scroll = () => {
       document.getElementById(`book-service-${serviceParam}`)?.scrollIntoView({
         behavior: "auto",
@@ -88,7 +87,7 @@ export function BookPage() {
     scroll();
     const retry = window.setTimeout(scroll, 400);
     return () => window.clearTimeout(retry);
-  }, [serviceParam, loading, services]);
+  }, [serviceParam, hasServices]);
   const [date, setDate] = useState(lagosToday());
   const [slotIso, setSlotIso] = useState<string>("");
   const [slots, setSlots] = useState<string[]>([]);
@@ -106,16 +105,20 @@ export function BookPage() {
     (services ?? []).find((service) => service.slug === selected?.serviceSlug) ?? null;
   const selectedHeroSrc = selectedService ? serviceHeroSrc(selectedService) : undefined;
   const onlinePriceKobo = selected?.onlinePriceKobo ?? null;
+  const selectedDurationMinutes = selected?.durationMinutes;
+  const onlineSavingsKobo = selected && onlinePriceKobo != null ? selected.priceKobo - onlinePriceKobo : 0;
+  const discountPercent = selected?.discountPercent ?? 0;
+  const onlineDiscountLabel = discountPercent > 0 ? `Online discount (${discountPercent}%)` : "Online discount";
   const selectedDeliverables = selected ? formatPackageDeliverables(selected) : null;
   const showSummary = step === "details";
 
   useEffect(() => {
-    if (!selected || step !== "schedule") return;
+    if (selectedDurationMinutes == null || step !== "schedule") return;
     let cancelled = false;
     setSlotsLoading(true);
     setSlotsError(null);
     setSlotIso("");
-    fetchAvailability(date, selected.durationMinutes)
+    fetchAvailability(date, selectedDurationMinutes)
       .then((response) => {
         if (!cancelled) setSlots(response.slots);
       })
@@ -134,7 +137,7 @@ export function BookPage() {
     return () => {
       cancelled = true;
     };
-  }, [date, selected, step]);
+  }, [date, packageId, selectedDurationMinutes, step]);
 
   const dateOptions = useMemo(() => {
     const today = lagosToday();
@@ -164,7 +167,11 @@ export function BookPage() {
 
   async function onSubmitBooking(event: FormEvent) {
     event.preventDefault();
-    if (!selected || !slotIso) return;
+    if (!selected || !slotIso || loading) return;
+    if (onlinePriceKobo == null) {
+      setBookingError("Live pricing is unavailable. Please try again.");
+      return;
+    }
     if (belowCustomerMinimum(selected)) {
       setBookingError("Online payments must be at least ₦100. Choose another package or book at the studio.");
       return;
@@ -183,6 +190,7 @@ export function BookPage() {
         customerName: name.trim(),
         customerPhone: phone.trim(),
         customerEmail: email.trim(),
+        expectedPayableKobo: onlinePriceKobo,
       });
 
       const origin = window.location.origin;
@@ -199,7 +207,9 @@ export function BookPage() {
     } catch (error) {
       if (error instanceof PublicApiError) {
         setBookingError(error.message);
-        if (error.status === 409) {
+        if (error.code === "BOOKING_PRICE_CHANGED") {
+          refreshServices();
+        } else if (error.status === 409) {
           setSlots((current) => current.filter((iso) => iso !== slotIso));
           setSlotIso("");
           setStep("schedule");
@@ -215,7 +225,9 @@ export function BookPage() {
     <>
       <Seo
         title="Book"
-        description={`Reserve a Photo Arena session online and receive ${policies.onlineDiscountPercent}% off. Port Harcourt studio.`}
+        description={Number(policies.onlineDiscountPercent) > 0
+          ? `Reserve a Photo Arena session online and receive ${policies.onlineDiscountPercent}% off. Port Harcourt studio.`
+          : "Reserve a Photo Arena session online. Port Harcourt studio."}
         path="/book"
       />
       <PageHeader
@@ -266,7 +278,7 @@ export function BookPage() {
               </p>
             </div>
 
-            {loading ? <CameraSpinner label="Loading packages" caption="Loading packages…" /> : null}
+            {loading && !hasServices ? <CameraSpinner label="Loading packages" caption="Loading packages…" /> : null}
 
             {step === "package" ? (
               <div className="min-w-0 space-y-14 sm:space-y-10 overflow-x-hidden">
@@ -320,6 +332,7 @@ export function BookPage() {
                                   ? selectedPkg.discountPercent
                                   : null;
                               const usesOutfits = options.some((pkg) => pkg.outfitCount != null);
+                              const startingOnlinePriceKobo = getStartingOnlinePriceKobo(service);
                               const selectedDeliverables = selectedPkg
                                 ? formatPackageDeliverables(selectedPkg)
                                 : null;
@@ -381,7 +394,7 @@ export function BookPage() {
                                         {selectedPkg.includes}
                                       </p>
                                     ) : null}
-                                    {online != null && online !== selectedPkg.priceKobo ? (
+                                    {online != null && online < selectedPkg.priceKobo ? (
                                       <div className="mt-3 space-y-0.5">
                                         <div className="flex items-center gap-2 flex-wrap">
                                           <span className="font-display text-2xl font-bold text-emerald-800 dark:text-emerald-400">
@@ -428,7 +441,8 @@ export function BookPage() {
                                   </>
                                 ) : (
                                   <p className="text-sm text-text-muted">
-                                    From {formatNairaFromKobo(service.startingPriceKobo)}
+                                    {startingOnlinePriceKobo == null ? "From " : "Online from "}
+                                    {formatNairaFromKobo(startingOnlinePriceKobo ?? service.startingPriceKobo)}
                                     {usesOutfits ? " · choose an outfit" : ""}
                                   </p>
                                 )}
@@ -482,7 +496,7 @@ export function BookPage() {
                       {selected.includes}
                     </p>
                   ) : null}
-                  {onlinePriceKobo != null && onlinePriceKobo !== selected.priceKobo ? (
+                  {onlineSavingsKobo > 0 && onlinePriceKobo != null ? (
                     <div className="mt-3 space-y-0.5">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-display text-2xl font-bold text-emerald-800 dark:text-emerald-400">
@@ -491,9 +505,9 @@ export function BookPage() {
                         <span className="text-xs font-semibold uppercase tracking-wider text-emerald-900/80 dark:text-emerald-300">
                           online
                         </span>
-                        {typeof selected.discountPercent === "number" && selected.discountPercent > 0 ? (
+                        {discountPercent > 0 ? (
                           <span className="inline-flex items-center rounded-md bg-emerald-700 text-white dark:bg-emerald-500 dark:text-emerald-950 px-2 py-0.5 text-xs font-bold tracking-wide shadow-sm">
-                            {selected.discountPercent}% OFF
+                            {discountPercent}% OFF
                           </span>
                         ) : null}
                       </div>
@@ -571,7 +585,14 @@ export function BookPage() {
               </div>
             ) : null}
 
-            {step === "details" ? (
+            {step !== "package" && !loading && !selected ? (
+              <div className="space-y-form">
+                <p className="text-sm text-error">This package is currently unavailable. Choose another package or try again.</p>
+                <Button type="button" variant="ghost" onClick={() => setStep("package")}>Back to packages</Button>
+              </div>
+            ) : null}
+
+            {step === "details" && selected ? (
               <form onSubmit={onSubmitBooking} className="space-y-form">
                 <div>
                   <label htmlFor="customerName" className="pa-label">
@@ -640,24 +661,30 @@ export function BookPage() {
                   </p>
                 </div>
 
-                {selected ? (
+                {onlinePriceKobo != null ? (
                   <div className="rounded-xl border border-elevated bg-surface/80 p-4 space-y-2.5 text-sm mt-4">
                     <div className="flex justify-between gap-4 text-text-muted">
                       <span>Studio price</span>
-                      <span className="line-through">{formatNairaFromKobo(selected.priceKobo)}</span>
+                      <span className={onlineSavingsKobo > 0 ? "line-through" : undefined}>
+                        {formatNairaFromKobo(selected.priceKobo)}
+                      </span>
                     </div>
-                    <div className="flex justify-between gap-4 text-emerald-600 dark:text-emerald-400 font-medium">
-                      <span>Online discount ({policies.onlineDiscountPercent}%)</span>
-                      <span>−{formatNairaFromKobo(selected.priceKobo - (onlinePriceKobo ?? selected.priceKobo))}</span>
-                    </div>
+                    {onlineSavingsKobo > 0 ? (
+                      <div className="flex justify-between gap-4 text-emerald-600 dark:text-emerald-400 font-medium">
+                        <span>{onlineDiscountLabel}</span>
+                        <span>−{formatNairaFromKobo(onlineSavingsKobo)}</span>
+                      </div>
+                    ) : null}
                     <div className="flex justify-between gap-4 border-t border-elevated pt-2.5 text-base font-semibold text-text">
                       <span>Total payable</span>
                       <span className="font-display text-xl font-bold text-emerald-600 dark:text-emerald-400">
-                        {formatNairaFromKobo(onlinePriceKobo ?? selected.priceKobo)}
+                        {formatNairaFromKobo(onlinePriceKobo)}
                       </span>
                     </div>
                   </div>
-                ) : null}
+                ) : (
+                  <p className="text-sm text-error">Live pricing is unavailable. Please try again.</p>
+                )}
 
                 {bookingError ? <p className="text-sm text-error">{bookingError}</p> : null}
 
@@ -665,7 +692,7 @@ export function BookPage() {
                   <Button type="button" variant="ghost" onClick={() => setStep("schedule")}>
                     Back
                   </Button>
-                  <Button type="submit" disabled={submitting || belowCustomerMinimum(selected)}>
+                  <Button type="submit" disabled={submitting || loading || onlinePriceKobo == null || belowCustomerMinimum(selected)}>
                     {submitting ? "Redirecting to payment…" : "Proceed to payment →"}
                   </Button>
                 </div>
@@ -710,16 +737,20 @@ export function BookPage() {
                     <dt className="text-text-muted">Studio price</dt>
                     <dd>{formatNairaFromKobo(selected.priceKobo)}</dd>
                   </div>
-                  <div className="flex justify-between gap-4 text-emerald-600 dark:text-emerald-400 font-medium">
-                    <dt>Online discount ({policies.onlineDiscountPercent}%)</dt>
-                    <dd>−{formatNairaFromKobo(selected.priceKobo - (onlinePriceKobo ?? selected.priceKobo))}</dd>
-                  </div>
-                  <div className="flex justify-between gap-4 border-t border-elevated pt-2.5 text-base font-semibold text-text">
-                    <dt>Total payable</dt>
-                    <dd className="font-display text-xl font-bold text-emerald-600 dark:text-emerald-400">
-                      {formatNairaFromKobo(onlinePriceKobo ?? selected.priceKobo)}
-                    </dd>
-                  </div>
+                  {onlineSavingsKobo > 0 ? (
+                    <div className="flex justify-between gap-4 text-emerald-600 dark:text-emerald-400 font-medium">
+                      <dt>{onlineDiscountLabel}</dt>
+                      <dd>−{formatNairaFromKobo(onlineSavingsKobo)}</dd>
+                    </div>
+                  ) : null}
+                  {onlinePriceKobo != null ? (
+                    <div className="flex justify-between gap-4 border-t border-elevated pt-2.5 text-base font-semibold text-text">
+                      <dt>Total payable</dt>
+                      <dd className="font-display text-xl font-bold text-emerald-600 dark:text-emerald-400">
+                        {formatNairaFromKobo(onlinePriceKobo)}
+                      </dd>
+                    </div>
+                  ) : null}
                 </dl>
               ) : null}
               <p className="mt-6 text-xs leading-relaxed text-text-muted">

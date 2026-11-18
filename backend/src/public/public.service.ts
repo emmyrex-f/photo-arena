@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from "@nestjs/common";
 import { MediaKind, Prisma } from "@prisma/client";
 import { parsePage, parsePageSize, paginate } from "../common/pagination";
 import { plainTextPreview } from "../common/utils";
-import { MIN_CUSTOMER_TRANSACTION_KOBO, PricingService } from "../pricing/pricing.service";
+import { MIN_CUSTOMER_TRANSACTION_KOBO, ONLINE_DISCOUNT_SETTING, PricingService } from "../pricing/pricing.service";
 import { PrismaService } from "../prisma/prisma.service";
 
 function lowestPackagePriceKobo(packages: Array<{ priceKobo: number }>): number | null {
@@ -32,32 +32,37 @@ export class PublicService {
   ) {}
 
   async settings() {
-    const rows = await this.prisma.businessSettings.findMany();
+    const [rows, discountBps] = await Promise.all([
+      this.prisma.businessSettings.findMany(),
+      this.pricing.readOnlineDiscountBps(),
+    ]);
     const out: Record<string, string> = {};
     for (const row of rows) {
       if (PUBLIC_PREFIXES.some((p) => row.key.startsWith(p))) {
         out[row.key] = row.value;
       }
     }
+    out[ONLINE_DISCOUNT_SETTING] = String(discountBps / 100);
     return out;
   }
 
   async services(featuredOnly = false) {
-    await this.pricing.refresh();
-    const discountPercent = this.pricing.getOnlineDiscountBps() / 100;
-    const services = await this.prisma.service.findMany({
-      where: {
-        isActive: true,
-        ...(featuredOnly ? { featured: true } : {}),
-      },
-      orderBy: { sortOrder: "asc" },
-      include: {
-        packages: {
-          where: { isActive: true },
-          orderBy: { sortOrder: "asc" },
+    const [discountBps, services] = await Promise.all([
+      this.pricing.readOnlineDiscountBps(),
+      this.prisma.service.findMany({
+        where: {
+          isActive: true,
+          ...(featuredOnly ? { featured: true } : {}),
         },
-      },
-    });
+        orderBy: { sortOrder: "asc" },
+        include: {
+          packages: {
+            where: { isActive: true },
+            orderBy: { sortOrder: "asc" },
+          },
+        },
+      }),
+    ]);
     const usages = await this.prisma.mediaUsage.findMany({
       where: {
         usageType: "service",
@@ -96,9 +101,9 @@ export class PublicService {
         editedPhotoCount: p.editedPhotoCount,
         includes: p.includes,
         priceKobo: p.priceKobo,
-        onlinePriceKobo: this.pricing.calculatePayableKobo(p.priceKobo, "ONLINE"),
+        onlinePriceKobo: this.pricing.calculatePayableKobo(p.priceKobo, "ONLINE", discountBps),
         minCustomerTransactionKobo: MIN_CUSTOMER_TRANSACTION_KOBO,
-        discountPercent,
+        discountPercent: discountBps / 100,
         isProvisional: p.isProvisional,
         sortOrder: p.sortOrder,
       })),

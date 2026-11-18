@@ -9,7 +9,15 @@ import { Section } from "../ui/Section";
 
 export function BookingCtaSection() {
   const heading = useSetting("cta.heading", site.cta.heading);
-  const body = useSetting("cta.body", site.cta.body);
+  const savedBody = useSetting("cta.body", site.cta.body);
+  const discountPercent = useSetting("policies.onlineDiscountPercent");
+  const standardBody = savedBody.replace(
+    /^Reserve a studio session online and receive \d+(?:\.\d+)?% off\.(?= Walk-ins are welcome Monday–Saturday 8:00 AM – 6:00 PM and Sunday 12:00 PM – 6:00 PM\.$)/,
+    "Reserve a studio session online.",
+  );
+  const body = standardBody === site.cta.body && Number(discountPercent) > 0
+    ? standardBody.replace("Reserve a studio session online.", `Reserve a studio session online and receive ${discountPercent}% off.`)
+    : standardBody;
   const buttonLabel = useSetting("cta.buttonLabel", site.cta.buttonLabel);
   const buttonHref = useSetting("cta.buttonHref", site.cta.buttonHref);
 

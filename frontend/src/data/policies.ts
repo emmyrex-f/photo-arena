@@ -10,7 +10,7 @@ export const policyDefaults = {
   vatPercent: "7.5",
   accompanyingMax: "1",
   reschedulePercent: "15",
-  onlineDiscountPercent: "5",
+  onlineDiscountPercent: "",
 } as const;
 
 export type PolicyValues = Record<keyof typeof policyDefaults, string>;

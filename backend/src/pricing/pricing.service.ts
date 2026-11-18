@@ -3,6 +3,10 @@ import { PrismaService } from "../prisma/prisma.service";
 
 export type BookingSource = "ONLINE" | "WALK_IN" | "ADMIN";
 
+export const ONLINE_DISCOUNT_RULE = "ONLINE_DISCOUNT";
+export const ONLINE_DISCOUNT_SETTING = "policies.onlineDiscountPercent";
+export const MAX_PRICING_RULE_BPS = 5000;
+
 /** Bachs rejects an NGN checkout below 100.00. Customer online payments cannot go under this. */
 export const MIN_CUSTOMER_TRANSACTION_KOBO = 10_000;
 
@@ -24,7 +28,7 @@ export function customerMinimumMessage(amountKobo?: number): string {
 
 @Injectable()
 export class PricingService implements OnModuleInit {
-  private onlineDiscountBps = 500;
+  private onlineDiscountBps = 0;
   private rescheduleFeeBps = 1500;
   /** Photo Arena operates a strict no-refund policy on cancellations (100% forfeit / non-refundable deposit). */
   private cancellationPenaltyBps = 10000;
@@ -36,22 +40,26 @@ export class PricingService implements OnModuleInit {
   }
 
   async refresh() {
+    const rules = await this.prisma.pricingRule.findMany({
+      where: { key: { in: [ONLINE_DISCOUNT_RULE, "RESCHEDULE_FEE", "CANCELLATION_PENALTY"] } },
+    });
     this.onlineDiscountBps = 0;
     this.rescheduleFeeBps = 1500;
     this.cancellationPenaltyBps = 10000;
-    const rules = await this.prisma.pricingRule.findMany({
-      where: { key: { in: ["ONLINE_DISCOUNT", "RESCHEDULE_FEE", "CANCELLATION_PENALTY"] } },
-    });
     for (const rule of rules) {
       if (!rule.isActive) continue;
-      if (rule.key === "ONLINE_DISCOUNT") this.onlineDiscountBps = rule.bps;
+      if (rule.key === ONLINE_DISCOUNT_RULE) this.onlineDiscountBps = rule.bps;
       if (rule.key === "RESCHEDULE_FEE") this.rescheduleFeeBps = rule.bps;
       if (rule.key === "CANCELLATION_PENALTY") this.cancellationPenaltyBps = rule.bps;
     }
   }
 
-  getOnlineDiscountBps() {
-    return this.onlineDiscountBps;
+  async readOnlineDiscountBps() {
+    const rule = await this.prisma.pricingRule.findUnique({
+      where: { key: ONLINE_DISCOUNT_RULE },
+      select: { bps: true, isActive: true },
+    });
+    return rule?.isActive ? rule.bps : 0;
   }
 
   getRescheduleFeeBps() {
@@ -62,13 +70,13 @@ export class PricingService implements OnModuleInit {
     return this.cancellationPenaltyBps;
   }
 
-  calculatePayableKobo(basePriceKobo: number, source: BookingSource): number {
+  calculatePayableKobo(basePriceKobo: number, source: BookingSource, discountBps = this.onlineDiscountBps): number {
     if (source !== "ONLINE") return basePriceKobo;
-    return Math.floor((basePriceKobo * (10_000 - this.onlineDiscountBps)) / 10_000);
+    return Math.floor((basePriceKobo * (10_000 - discountBps)) / 10_000);
   }
 
-  calculateDiscountKobo(basePriceKobo: number, source: BookingSource): number {
-    return basePriceKobo - this.calculatePayableKobo(basePriceKobo, source);
+  calculateDiscountKobo(basePriceKobo: number, source: BookingSource, discountBps = this.onlineDiscountBps): number {
+    return basePriceKobo - this.calculatePayableKobo(basePriceKobo, source, discountBps);
   }
 
   calculateRescheduleFeeKobo(originalPackagePriceKobo: number): number {

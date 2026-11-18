@@ -110,7 +110,9 @@ export function AboutPage() {
           <Heading as="h2">Come experience the Arena</Heading>
           <p className="mx-auto mt-stack max-w-lg text-text-secondary">
             Open every day. Sunday from midday ({info.hoursSunday}). Monday–Saturday {info.hoursWeekday}.
-            Book online for {policies.onlineDiscountPercent}% off, or walk in.
+            {Number(policies.onlineDiscountPercent) > 0
+              ? ` Book online for ${policies.onlineDiscountPercent}% off, or walk in.`
+              : " Book online, or walk in."}
           </p>
           <div className="mt-stack-lg">
             <Button to="/book">Book Your Session</Button>

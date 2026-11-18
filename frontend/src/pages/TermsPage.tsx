@@ -37,9 +37,10 @@ export function TermsPage() {
               same time first, you will be asked to pick another available time.
             </li>
             <li>
-              Online bookings paid in full receive a {policies.onlineDiscountPercent}% discount. The
-              charged amount is calculated by the studio booking system at checkout — display
-              estimates on this site are not final.
+              {Number(policies.onlineDiscountPercent) > 0
+                ? `Online bookings paid in full receive a ${policies.onlineDiscountPercent}% discount. `
+                : ""}
+              The studio booking system calculates the final amount at checkout.
             </li>
             <li>Times are shown in Africa/Lagos (West Africa Time).</li>
             <li>

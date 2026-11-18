@@ -6,11 +6,14 @@ import { Seo } from "../lib/seo";
 
 export function PoliciesPage() {
   const policies = usePolicyValues();
+  const discountTerms = Number(policies.onlineDiscountPercent) > 0
+    ? ` and receive a ${policies.onlineDiscountPercent}% discount`
+    : "";
 
   const sections = [
     {
       title: "Payment",
-      body: `Online bookings are paid in full through our payment provider and receive a ${policies.onlineDiscountPercent}% discount. Walk-in and staff reservations can be paid at the studio.`,
+      body: `Online bookings are paid in full through our payment provider${discountTerms}. Walk-in and staff reservations can be paid at the studio.`,
     },
     {
       title: "Refunds and cancellation",

@@ -5,7 +5,7 @@ import { Container } from "../components/ui/Container";
 import { Section } from "../components/ui/Section";
 import { readServicePageCards, servicePageCardHref } from "../data/servicePageCards";
 import { serviceHeroSrc, servicesHeroImage } from "../data/serviceMedia";
-import { fetchServices, formatNairaFromKobo, type PublicService } from "../lib/publicApi";
+import { fetchServices, formatNairaFromKobo, getStartingOnlinePriceKobo, type PublicService } from "../lib/publicApi";
 import { Seo } from "../lib/seo";
 import { useSetting, useSiteInfo } from "../lib/settings";
 import { usePublicData } from "../lib/usePublicData";
@@ -17,7 +17,7 @@ function catalogueCards(services: PublicService[], linked: Set<string>): PublicS
 export function ServicesPage() {
   const info = useSiteInfo();
   const cards = readServicePageCards(useSetting("services.cards", ""));
-  const { data } = usePublicData(() => fetchServices(), []);
+  const { data } = usePublicData(fetchServices, [], { refreshPricing: true });
   const services = data ?? [];
   const videoReels = services.find((service) => service.slug === "video-reels");
   const added = catalogueCards(services, new Set(cards.map((card) => card.link)));
@@ -72,7 +72,8 @@ export function ServicesPage() {
             ))}
             {added.map((service, index) => {
               const image = serviceHeroSrc(service);
-              const price = formatNairaFromKobo(service.startingPriceKobo);
+              const onlinePrice = getStartingOnlinePriceKobo(service);
+              const price = formatNairaFromKobo(onlinePrice ?? service.startingPriceKobo);
               const n = cards.length + index + 1;
               return (
                 <li key={service.id} id={service.slug}>
@@ -102,7 +103,7 @@ export function ServicesPage() {
                         {service.summary || service.description}
                       </p>
                       <span className="mt-4 inline-flex w-fit rounded-full border border-accent bg-accent px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-text-on-accent">
-                        From {price}
+                        {onlinePrice == null ? "From " : "Online from "}{price}
                         {service.kind === "RENTAL" ? "/hr" : ""}
                       </span>
                     </div>

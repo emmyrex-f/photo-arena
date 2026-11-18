@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type DependencyList } from "react";
+import { useCallback, useEffect, useRef, useState, type DependencyList } from "react";
+import { onPricingChanged } from "./pricingEvents";
 import type { WithSource } from "./publicApi";
 
 type State<T> = {
@@ -8,11 +9,17 @@ type State<T> = {
 };
 
 /**
- * Runs a fetch-with-fallback function once (or when deps change) and exposes { data, source, loading }.
+ * Runs a fetch-with-fallback function on mount, when deps change, or when refreshed.
  * `data` is never an error state: fallbacks are baked into the fetcher.
  */
-export function usePublicData<T>(fetcher: () => Promise<WithSource<T>>, deps: DependencyList = []): State<T> {
+export function usePublicData<T>(
+  fetcher: () => Promise<WithSource<T>>,
+  deps: DependencyList = [],
+  { refreshPricing = false }: { refreshPricing?: boolean } = {},
+): State<T> & { refresh: () => void } {
   const [state, setState] = useState<State<T>>({ data: null, source: null, loading: true });
+  const [revision, setRevision] = useState(0);
+  const refresh = useCallback(() => setRevision((value) => value + 1), []);
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
 
@@ -26,7 +33,17 @@ export function usePublicData<T>(fetcher: () => Promise<WithSource<T>>, deps: De
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
+  }, [...deps, revision]);
 
-  return state;
+  useEffect(() => {
+    if (!refreshPricing) return;
+    window.addEventListener("focus", refresh);
+    const stopPricingListener = onPricingChanged(refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      stopPricingListener();
+    };
+  }, [refreshPricing, refresh]);
+
+  return { ...state, refresh };
 }

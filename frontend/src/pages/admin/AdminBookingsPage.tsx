@@ -1015,7 +1015,7 @@ function BookingDetailPanel({
   const due = amountDueKobo(booking);
   const paid = paidSuccessKobo(booking);
   const payStatus = paymentDisplay(booking);
-  const discount =
+  const belowStudioPriceKobo =
     booking.source === "ONLINE" && booking.package.priceKobo > due
       ? booking.package.priceKobo - due
       : 0;
@@ -1081,14 +1081,14 @@ function BookingDetailPanel({
 
         <div className="space-y-1.5 text-sm">
           <div className="flex justify-between gap-2">
-            <span className="text-muted-foreground">Studio price</span>
+            <span className="text-muted-foreground">Current studio price</span>
             <span className="tabular-nums">{formatNairaFromKobo(booking.package.priceKobo)}</span>
           </div>
-          {discount > 0 ? (
+          {belowStudioPriceKobo > 0 ? (
             <div className="flex justify-between gap-2">
-              <span className="text-muted-foreground">Online discount (5%)</span>
+              <span className="text-muted-foreground">Below current studio price</span>
               <span className="tabular-nums text-[var(--color-success)]">
-                −{formatNairaFromKobo(discount)}
+                −{formatNairaFromKobo(belowStudioPriceKobo)}
               </span>
             </div>
           ) : null}

@@ -359,7 +359,8 @@ export function formatNairaFromKobo(kobo: number): string {
   return new Intl.NumberFormat("en-NG", {
     style: "currency",
     currency: "NGN",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
   }).format(kobo / 100);
 }
 

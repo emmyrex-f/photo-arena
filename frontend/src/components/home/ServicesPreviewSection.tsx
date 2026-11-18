@@ -2,7 +2,7 @@ import { ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import { serviceHeroSrc } from "../../data/serviceMedia";
 import { Reveal, Stagger, StaggerItem } from "../../lib/motion";
-import { fetchFeaturedServices, formatNairaFromKobo } from "../../lib/publicApi";
+import { fetchFeaturedServices, formatNairaFromKobo, getStartingOnlinePriceKobo } from "../../lib/publicApi";
 import { usePublicData } from "../../lib/usePublicData";
 import { Button } from "../ui/Button";
 import { CameraSpinner } from "../ui/CameraSpinner";
@@ -11,7 +11,7 @@ import { Eyebrow, Heading } from "../ui/Heading";
 import { Section } from "../ui/Section";
 
 export function ServicesPreviewSection() {
-  const { data, loading } = usePublicData(() => fetchFeaturedServices(), []);
+  const { data, loading } = usePublicData(fetchFeaturedServices, [], { refreshPricing: true });
   const preview = data ?? [];
 
   return (
@@ -30,7 +30,8 @@ export function ServicesPreviewSection() {
           <Stagger className="grid gap-stack md:grid-cols-2">
             {preview.map((service) => {
               const image = serviceHeroSrc(service);
-              const from = formatNairaFromKobo(service.startingPriceKobo);
+              const onlinePrice = getStartingOnlinePriceKobo(service);
+              const from = formatNairaFromKobo(onlinePrice ?? service.startingPriceKobo);
               return (
                 <StaggerItem key={service.id}>
                   <Link
@@ -58,7 +59,7 @@ export function ServicesPreviewSection() {
                         </p>
                       ) : null}
                       <p className="mt-3 text-sm font-medium text-accent">
-                        From {from}
+                        {onlinePrice == null ? "From " : "Online from "}{from}
                         {service.kind === "RENTAL" ? "/hr" : ""}
                       </p>
                     </div>

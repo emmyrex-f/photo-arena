@@ -223,10 +223,27 @@ export class BookingsService {
     customerName: string;
     customerPhone: string;
     customerEmail: string;
+    expectedPayableKobo?: number;
   }) {
-    await this.pricing.refresh();
-    const pkg = await this.prisma.package.findUnique({ where: { id: input.packageId } });
+    const [discountBps, pkg] = await Promise.all([
+      this.pricing.readOnlineDiscountBps(),
+      this.prisma.package.findUnique({ where: { id: input.packageId } }),
+    ]);
     if (!pkg?.isActive) throw new BadRequestException("Choose an active package");
+
+    const baseKobo = pkg.priceKobo;
+    const payableKobo = this.pricing.calculatePayableKobo(baseKobo, "ONLINE", discountBps);
+    const discountKobo = baseKobo - payableKobo;
+    if (input.expectedPayableKobo != null && input.expectedPayableKobo !== payableKobo) {
+      throw new ConflictException({
+        statusCode: 409,
+        code: "BOOKING_PRICE_CHANGED",
+        message: "The online price changed. Review the updated total before continuing.",
+      });
+    }
+    if (isBelowCustomerMinimum(payableKobo)) {
+      throw new BadRequestException(customerMinimumMessage(payableKobo));
+    }
 
     const resource = await this.requireActiveResource();
 
@@ -236,12 +253,6 @@ export class BookingsService {
     const holdMinutes = await this.getHoldDurationMinutes();
     const cmsHours = await this.getCmsHours();
     const holdExpiresAt = new Date(Date.now() + holdMinutes * 60_000);
-    const baseKobo = pkg.priceKobo;
-    const discountKobo = this.pricing.calculateDiscountKobo(baseKobo, "ONLINE");
-    const payableKobo = this.pricing.calculatePayableKobo(baseKobo, "ONLINE");
-    if (isBelowCustomerMinimum(payableKobo)) {
-      throw new BadRequestException(customerMinimumMessage(payableKobo));
-    }
     const reference = newPaymentReference();
 
     const booking = await this.prisma.$transaction(async (tx) => {
@@ -334,7 +345,7 @@ export class BookingsService {
         baseKobo,
         discountKobo,
         payableKobo,
-        discountPercent: this.pricing.getOnlineDiscountBps() / 100,
+        discountPercent: discountBps / 100,
       },
     };
   }
@@ -391,8 +402,10 @@ export class BookingsService {
   }
 
   async createAdmin(dto: CreateAdminBookingDto) {
-    await this.pricing.refresh();
-    const pkg = await this.prisma.package.findUnique({ where: { id: dto.packageId } });
+    const [discountBps, pkg] = await Promise.all([
+      this.pricing.readOnlineDiscountBps(),
+      this.prisma.package.findUnique({ where: { id: dto.packageId } }),
+    ]);
     if (!pkg?.isActive) throw new BadRequestException("Choose an active package");
 
     const resource = await this.requireActiveResource();
@@ -400,7 +413,7 @@ export class BookingsService {
     const start = new Date(dto.startTime);
     if (Number.isNaN(start.getTime())) throw new BadRequestException("Invalid start time");
     const end = new Date(start.getTime() + pkg.durationMinutes * 60_000);
-    const amountKobo = this.pricing.calculatePayableKobo(pkg.priceKobo, dto.source);
+    const amountKobo = this.pricing.calculatePayableKobo(pkg.priceKobo, dto.source, discountBps);
     const reference = newPaymentReference();
     const cmsHours = await this.getCmsHours();
 

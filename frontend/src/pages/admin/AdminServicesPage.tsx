@@ -98,12 +98,7 @@ const PACKAGES_PAGE_SIZE = 7;
 
 /** Display-only mirror of PricingService for ONLINE — never used to charge. */
 function onlinePriceKobo(studioKobo: number, discountBps: number): number {
-  if (discountBps <= 0) return studioKobo;
   return Math.floor((studioKobo * (10_000 - discountBps)) / 10_000);
-}
-
-function percentFromBps(bps: number): string {
-  return `${(bps / 100).toFixed(bps % 100 === 0 ? 0 : 1)}%`;
 }
 
 function packageLabel(pkg: Package): string {
@@ -183,7 +178,7 @@ export function AdminServicesPage() {
   const tab = (params.get("tab") as TabKey | null) || "packages";
 
   const [services, setServices] = useState<Service[]>([]);
-  const [pricingRules, setPricingRules] = useState<PricingRule[]>([]);
+  const [pricingRules, setPricingRules] = useState<PricingRule[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -230,7 +225,7 @@ export function AdminServicesPage() {
     try {
       const [list, rules] = await Promise.all([
         api.services.list(),
-        api.pricingRules.list().catch(() => [] as PricingRule[]),
+        api.pricingRules.list().catch(() => null),
       ]);
       setServices(list);
       setPricingRules(rules);
@@ -287,10 +282,13 @@ export function AdminServicesPage() {
     });
   }, [selected]);
 
-  const onlineDiscountBps = useMemo(() => {
-    const rule = pricingRules.find((r) => r.key === "ONLINE_DISCOUNT" && r.isActive);
-    return rule?.bps ?? 500;
-  }, [pricingRules]);
+  const onlineDiscountBps = pricingRules
+    ? (pricingRules.find((rule) => rule.key === "ONLINE_DISCOUNT" && rule.isActive)?.bps ?? 0)
+    : null;
+  const onlineDiscountLabel = onlineDiscountBps != null && onlineDiscountBps > 0
+    ? `Online bookings receive ${onlineDiscountBps / 100}% off.`
+    : null;
+  const draftStudioPriceKobo = packageForm ? nairaInputToKobo(packageForm.priceNaira) : null;
 
   const packages = useMemo(
     () => [...(selected?.packages ?? [])].sort((a, b) => a.sortOrder - b.sortOrder),
@@ -920,8 +918,7 @@ export function AdminServicesPage() {
                     <div>
                       <p className="text-sm font-medium">Package Options</p>
                       <p className="text-xs text-muted-foreground">
-                        Studio prices only — online is {percentFromBps(onlineDiscountBps)} off
-                        (server).
+                        Prices shown are studio prices. {onlineDiscountLabel}
                       </p>
                     </div>
                     <Button
@@ -1320,7 +1317,7 @@ export function AdminServicesPage() {
                   {packageForm.id ? "Edit Package" : "Add Package"}
                 </DialogTitle>
                 <DialogDescription>
-                  Online price is calculated automatically ({percentFromBps(onlineDiscountBps)} off) by the system. Do not enter it here.
+                  Enter the studio price. {onlineDiscountLabel ?? "The online price is calculated automatically."}
                 </DialogDescription>
               </DialogHeader>
 
@@ -1359,15 +1356,10 @@ export function AdminServicesPage() {
                     }
                     required
                   />
-                  {nairaInputToKobo(packageForm.priceNaira) != null ? (
+                  {draftStudioPriceKobo != null && onlineDiscountBps != null ? (
                     <p className="text-[11px] text-muted-foreground">
                       Online preview:{" "}
-                      {formatNairaFromKobo(
-                        onlinePriceKobo(
-                          nairaInputToKobo(packageForm.priceNaira)!,
-                          onlineDiscountBps,
-                        ),
-                      )}
+                      {formatNairaFromKobo(onlinePriceKobo(draftStudioPriceKobo, onlineDiscountBps))}
                     </p>
                   ) : null}
                 </div>

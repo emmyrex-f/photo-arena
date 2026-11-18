@@ -50,6 +50,11 @@ export class HoldBookingDto {
 
   @IsEmail()
   customerEmail!: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  expectedPayableKobo?: number;
 }
 
 

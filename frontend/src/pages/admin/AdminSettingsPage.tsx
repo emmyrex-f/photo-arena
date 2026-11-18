@@ -11,8 +11,13 @@ import { Switch } from "../../admin/components/ui/switch";
 import { Textarea } from "../../admin/components/ui/textarea";
 import { toast } from "../../admin/components/ui/toaster";
 import { useAdminApi } from "../../admin/lib/adminApi";
+import { hasDeskPermission } from "../../admin/lib/permissions";
 import type { SettingsMap } from "../../admin/lib/types";
 import { errorMessage } from "../../lib/api";
+import { useAuth } from "../../lib/auth";
+import { notifyPricingChanged } from "../../lib/pricingEvents";
+
+const ONLINE_DISCOUNT_SETTING = "policies.onlineDiscountPercent";
 
 const POLICY_KEYS = [
   "policies.deliveryDays",
@@ -25,7 +30,7 @@ const POLICY_KEYS = [
   "policies.promoUsage",
   "policies.nonRefundable",
   "policies.rescheduleFeePercent",
-  "policies.onlineDiscountPercent",
+  ONLINE_DISCOUNT_SETTING,
 ] as const;
 
 const ANALYTICS_KEYS = ["analytics.ga4Id", "analytics.metaPixelId"] as const;
@@ -45,7 +50,7 @@ const LABELS: Record<EditableKey, string> = {
   "policies.promoUsage": "Promo usage note",
   "policies.nonRefundable": "Non-refundable",
   "policies.rescheduleFeePercent": "Reschedule fee %",
-  "policies.onlineDiscountPercent": "Online discount %",
+  [ONLINE_DISCOUNT_SETTING]: "Online discount %",
   "analytics.ga4Id": "GA4 measurement ID",
   "analytics.metaPixelId": "Meta Pixel ID",
 };
@@ -61,7 +66,7 @@ const DEFAULTS: Record<EditableKey, string> = {
   "policies.promoUsage": "Photo Arena may use photos for promos unless exclusive package purchased",
   "policies.nonRefundable": "true",
   "policies.rescheduleFeePercent": "15",
-  "policies.onlineDiscountPercent": "5",
+  [ONLINE_DISCOUNT_SETTING]: "",
   "analytics.ga4Id": "",
   "analytics.metaPixelId": "",
 };
@@ -76,6 +81,9 @@ function pick(source: SettingsMap): Record<EditableKey, string> {
 
 export function AdminSettingsPage() {
   const api = useAdminApi();
+  const { user } = useAuth();
+  const canEditOnlineDiscount =
+    (user?.role === "OWNER" || user?.role === "ADMIN") && hasDeskPermission(user, "services");
   const [saved, setSaved] = useState<Record<EditableKey, string>>(DEFAULTS);
   const [draft, setDraft] = useState<Record<EditableKey, string>>(DEFAULTS);
   const [loading, setLoading] = useState(true);
@@ -128,6 +136,7 @@ export function AdminSettingsPage() {
       setSaved(next);
       setDraft(next);
       setEditing(null);
+      if (Object.hasOwn(payload, ONLINE_DISCOUNT_SETTING)) notifyPricingChanged();
       toast.success("Settings saved");
     } catch (err) {
       toast.error(errorMessage(err, "Could not save settings"));
@@ -180,6 +189,30 @@ export function AdminSettingsPage() {
             ) : (
             <CardContent className="grid gap-admin-gap sm:grid-cols-2">
               {POLICY_KEYS.map((key) => {
+                if (key === ONLINE_DISCOUNT_SETTING) {
+                  return (
+                    <div key={key} className="space-y-1.5">
+                      <Label htmlFor={key}>{LABELS[key]}</Label>
+                      <Input
+                        id={key}
+                        type="number"
+                        inputMode="decimal"
+                        min={0}
+                        max={50}
+                        step={0.01}
+                        value={draft[key]}
+                        readOnly={!canEditOnlineDiscount}
+                        aria-describedby="online-discount-help"
+                        onChange={(event) => setDraft((prev) => ({ ...prev, [key]: event.target.value }))}
+                      />
+                      <p id="online-discount-help" className="text-xs text-muted-foreground">
+                        {canEditOnlineDiscount
+                          ? "Applies to all online bookings. Enter 0 to turn off the discount."
+                          : "Owners and admins with Services & packages access can edit this rate."}
+                      </p>
+                    </div>
+                  );
+                }
                 if (key === "policies.nonRefundable") {
                   return (
                     <div
@@ -284,7 +317,7 @@ const PERCENT_KEYS = new Set<EditableKey>([
   "policies.expressPercent",
   "policies.vatPercent",
   "policies.rescheduleFeePercent",
-  "policies.onlineDiscountPercent",
+  ONLINE_DISCOUNT_SETTING,
 ]);
 
 function displayValue(key: EditableKey, value: string): string {

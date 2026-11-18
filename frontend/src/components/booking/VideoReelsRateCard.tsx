@@ -69,7 +69,7 @@ export function VideoReelsRateCard({
 
             const isSelected = pkg.id === selectedPackageId;
             const online = pkg.onlinePriceKobo;
-            const discount = pkg.discountPercent;
+            const discount = pkg.discountPercent ?? 0;
 
             return (
               <div
@@ -110,9 +110,9 @@ export function VideoReelsRateCard({
                   <span className="font-display text-xl font-bold text-accent sm:text-2xl">
                     {formatNairaFromKobo(pkg.priceKobo)}
                   </span>
-                  {online != null && online !== pkg.priceKobo ? (
+                  {online != null && online < pkg.priceKobo ? (
                     <span className="mt-1 text-[11px] font-semibold text-emerald-400 bg-emerald-950/90 px-2 py-0.5 rounded border border-emerald-800/40">
-                      {formatNairaFromKobo(online)} online ({discount}% off)
+                      {formatNairaFromKobo(online)} online{discount > 0 ? ` (${discount}% off)` : ""}
                     </span>
                   ) : null}
 
